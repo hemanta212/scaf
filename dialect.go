@@ -82,6 +82,21 @@ type dialectWrapper struct {
 	Dialect
 }
 
+// Begin delegates to the underlying dialect if it supports transactions.
+func (w *dialectWrapper) Begin(ctx context.Context) (Transaction, error) {
+	if tx, ok := w.Dialect.(Transactional); ok {
+		return tx.Begin(ctx)
+	}
+
+	return nil, fmt.Errorf("dialect does not support transactions")
+}
+
+// Transactional returns true if the underlying dialect supports transactions.
+func (w *dialectWrapper) Transactional() bool {
+	_, ok := w.Dialect.(Transactional)
+	return ok
+}
+
 // RegisteredDialects returns the names of all registered dialects.
 func RegisteredDialects() []string {
 	names := make([]string, 0, len(dialects))

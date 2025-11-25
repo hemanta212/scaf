@@ -1,0 +1,75 @@
+query GetUser `
+MATCH (u:User {id: $userId})
+RETURN u.name, u.email, u.age
+`
+
+query CountUsers `
+MATCH (u:User)
+RETURN count(u) as count
+`
+
+setup `
+MATCH (n) DETACH DELETE n
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30})
+CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 25})
+`
+
+teardown `
+MATCH (n) DETACH DELETE n
+`
+
+GetUser {
+	test "finds Alice" {
+		$userId: 1
+
+		u.name: "Alice"
+		u.email: "alice@example.com"
+		u.age: 30
+	}
+
+	test "finds Bob" {
+		$userId: 2
+
+		u.name: "Bob"
+		u.age: 25
+	}
+
+	test "non-existent user returns null" {
+		$userId: 999
+
+		u.name: null
+		u.email: null
+	}
+
+	group "expected failures" {
+		test "fails on wrong name" {
+			$userId: 1
+
+			u.name: "Wrong Name"
+		}
+
+		test "fails on wrong age" {
+			$userId: 1
+
+			u.age: 99
+		}
+	}
+}
+
+CountUsers {
+	test "counts all users" {
+		count: 2
+	}
+
+	test "test isolation - created user should rollback" {
+		setup `
+		CREATE (:User {id: 999, name: "Temp"})
+		`
+
+		count: 3
+	}
+
+	test "still only 2 users after rollback" {
+		count: 2
+	}
+}

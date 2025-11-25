@@ -4,6 +4,7 @@ package cypher
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
@@ -71,23 +72,101 @@ func (d *Dialect) Name() string {
 // Execute runs a Cypher query and returns the results.
 // Results are flattened so that node/relationship properties are accessible
 // as "alias.property" keys (e.g., "u.name" for RETURN u).
+// Multi-statement queries (separated by newlines) are executed sequentially,
+// returning results from the last statement.
 func (d *Dialect) Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
-	result, err := d.session.Run(ctx, query, params)
-	if err != nil {
-		return nil, fmt.Errorf("cypher: query execution failed: %w", err)
-	}
+	statements := splitStatements(query)
 
-	records, err := result.Collect(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("cypher: failed to collect results: %w", err)
-	}
+	var rows []map[string]any
 
-	rows := make([]map[string]any, len(records))
-	for i, record := range records {
-		rows[i] = flattenRecord(record.Keys, record.Values)
+	for _, stmt := range statements {
+		result, err := d.session.Run(ctx, stmt, params)
+		if err != nil {
+			return nil, fmt.Errorf("cypher: query execution failed: %w", err)
+		}
+
+		records, err := result.Collect(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cypher: failed to collect results: %w", err)
+		}
+
+		// Keep results from the last statement
+		rows = make([]map[string]any, len(records))
+		for i, record := range records {
+			rows[i] = flattenRecord(record.Keys, record.Values)
+		}
 	}
 
 	return rows, nil
+}
+
+// splitStatements splits a multi-statement query into individual statements.
+// Statements are split when we see a new "starter" keyword (MATCH, CREATE, MERGE, etc.)
+// at the beginning of a line, AND the previous accumulated statement looks complete
+// (contains RETURN, or is a write-only statement like CREATE/DELETE).
+func splitStatements(query string) []string {
+	lines := strings.Split(strings.TrimSpace(query), "\n")
+	var statements []string
+	var current strings.Builder
+
+	starterKeywords := []string{"MATCH", "CREATE", "MERGE", "DETACH", "OPTIONAL", "CALL", "UNWIND", "FOREACH"}
+	writeKeywords := []string{"CREATE", "MERGE", "DELETE", "DETACH DELETE", "SET", "REMOVE"}
+
+	isStarter := func(s string) bool {
+		upper := strings.ToUpper(s)
+		for _, kw := range starterKeywords {
+			if strings.HasPrefix(upper, kw) {
+				return true
+			}
+		}
+		return false
+	}
+
+	isComplete := func(s string) bool {
+		upper := strings.ToUpper(s)
+		// Has RETURN clause
+		if strings.Contains(upper, "RETURN ") || strings.HasSuffix(upper, "RETURN") {
+			return true
+		}
+		// Is a write-only statement (CREATE, DELETE, etc. without needing RETURN)
+		for _, kw := range writeKeywords {
+			if strings.Contains(upper, kw) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// Check if this line starts a new statement AND previous is complete
+		if isStarter(trimmed) && current.Len() > 0 && isComplete(current.String()) {
+			stmt := strings.TrimSpace(current.String())
+			if stmt != "" {
+				statements = append(statements, stmt)
+			}
+			current.Reset()
+		}
+
+		if current.Len() > 0 {
+			current.WriteString("\n")
+		}
+		current.WriteString(line)
+	}
+
+	// Don't forget the last statement
+	if current.Len() > 0 {
+		stmt := strings.TrimSpace(current.String())
+		if stmt != "" {
+			statements = append(statements, stmt)
+		}
+	}
+
+	return statements
 }
 
 // flattenRecord converts a Neo4j record into a flat map.
@@ -180,19 +259,25 @@ type Transaction struct {
 
 // Execute runs a Cypher query within this transaction.
 func (t *Transaction) Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
-	result, err := t.tx.Run(ctx, query, params)
-	if err != nil {
-		return nil, fmt.Errorf("cypher: query execution failed: %w", err)
-	}
+	statements := splitStatements(query)
 
-	records, err := result.Collect(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("cypher: failed to collect results: %w", err)
-	}
+	var rows []map[string]any
 
-	rows := make([]map[string]any, len(records))
-	for i, record := range records {
-		rows[i] = flattenRecord(record.Keys, record.Values)
+	for _, stmt := range statements {
+		result, err := t.tx.Run(ctx, stmt, params)
+		if err != nil {
+			return nil, fmt.Errorf("cypher: query execution failed: %w", err)
+		}
+
+		records, err := result.Collect(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cypher: failed to collect results: %w", err)
+		}
+
+		rows = make([]map[string]any, len(records))
+		for i, record := range records {
+			rows[i] = flattenRecord(record.Keys, record.Values)
+		}
 	}
 
 	return rows, nil

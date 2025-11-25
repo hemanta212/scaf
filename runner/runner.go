@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -62,6 +64,11 @@ func New(opts ...Option) *Runner {
 	return r
 }
 
+// executor abstracts query execution - either direct dialect or transaction.
+type executor interface {
+	Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
+}
+
 // Run executes a parsed Suite and returns the results.
 func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (*Result, error) {
 	if r.dialect == nil {
@@ -81,20 +88,40 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 
 	handler := NewMultiHandler(handlers...)
 
+	// Build query lookup map
+	queries := make(map[string]string)
+	for _, q := range suite.Queries {
+		queries[q.Name] = q.Body
+	}
+
+	// Execute suite setup
 	if suite.Setup != nil {
-		if err := r.executeSetup(ctx, *suite.Setup); err != nil {
-			return result, err
+		if err := r.executeQuery(ctx, r.dialect, *suite.Setup, nil); err != nil {
+			return result, fmt.Errorf("suite setup: %w", err)
 		}
 	}
 
+	// Run all scopes
 	for _, scope := range suite.Scopes {
-		err := r.runQueryScope(ctx, scope, suitePath, handler, result)
+		err := r.runQueryScope(ctx, scope, queries, suitePath, handler, result)
 		if errors.Is(err, ErrMaxFailures) {
 			break
 		}
 
 		if err != nil {
+			// Run suite teardown even on error
+			if suite.Teardown != nil {
+				_ = r.executeQuery(ctx, r.dialect, *suite.Teardown, nil)
+			}
+
 			return result, err
+		}
+	}
+
+	// Execute suite teardown
+	if suite.Teardown != nil {
+		if err := r.executeQuery(ctx, r.dialect, *suite.Teardown, nil); err != nil {
+			return result, fmt.Errorf("suite teardown: %w", err)
 		}
 	}
 
@@ -106,16 +133,24 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 func (r *Runner) runQueryScope(
 	ctx context.Context,
 	scope *scaf.QueryScope,
+	queries map[string]string,
 	suitePath string,
 	handler Handler,
 	result *Result,
 ) error {
+	queryBody, ok := queries[scope.QueryName]
+	if !ok {
+		return fmt.Errorf("unknown query: %s", scope.QueryName)
+	}
+
+	// Execute scope setup
 	if scope.Setup != nil {
-		if err := r.executeSetup(ctx, *scope.Setup); err != nil {
-			return err
+		if err := r.executeQuery(ctx, r.dialect, *scope.Setup, nil); err != nil {
+			return fmt.Errorf("scope %s setup: %w", scope.QueryName, err)
 		}
 	}
 
+	// Run all items
 	for _, item := range scope.Items {
 		path := []string{scope.QueryName}
 
@@ -123,13 +158,25 @@ func (r *Runner) runQueryScope(
 
 		switch {
 		case item.Test != nil:
-			err = r.runTest(ctx, item.Test, path, suitePath, handler, result)
+			err = r.runTest(ctx, item.Test, queryBody, path, suitePath, handler, result)
 		case item.Group != nil:
-			err = r.runGroup(ctx, item.Group, path, suitePath, handler, result)
+			err = r.runGroup(ctx, item.Group, queryBody, path, suitePath, handler, result)
 		}
 
 		if errors.Is(err, ErrMaxFailures) {
+			// Run scope teardown before returning
+			if scope.Teardown != nil {
+				_ = r.executeQuery(ctx, r.dialect, *scope.Teardown, nil)
+			}
+
 			return err
+		}
+	}
+
+	// Execute scope teardown
+	if scope.Teardown != nil {
+		if err := r.executeQuery(ctx, r.dialect, *scope.Teardown, nil); err != nil {
+			return fmt.Errorf("scope %s teardown: %w", scope.QueryName, err)
 		}
 	}
 
@@ -139,6 +186,7 @@ func (r *Runner) runQueryScope(
 func (r *Runner) runGroup(
 	ctx context.Context,
 	group *scaf.Group,
+	queryBody string,
 	parentPath []string,
 	suitePath string,
 	handler Handler,
@@ -148,24 +196,38 @@ func (r *Runner) runGroup(
 	copy(path, parentPath)
 	path[len(parentPath)] = group.Name
 
+	// Execute group setup
 	if group.Setup != nil {
-		if err := r.executeSetup(ctx, *group.Setup); err != nil {
-			return err
+		if err := r.executeQuery(ctx, r.dialect, *group.Setup, nil); err != nil {
+			return fmt.Errorf("group %s setup: %w", group.Name, err)
 		}
 	}
 
+	// Run all items
 	for _, item := range group.Items {
 		var err error
 
 		switch {
 		case item.Test != nil:
-			err = r.runTest(ctx, item.Test, path, suitePath, handler, result)
+			err = r.runTest(ctx, item.Test, queryBody, path, suitePath, handler, result)
 		case item.Group != nil:
-			err = r.runGroup(ctx, item.Group, path, suitePath, handler, result)
+			err = r.runGroup(ctx, item.Group, queryBody, path, suitePath, handler, result)
 		}
 
 		if errors.Is(err, ErrMaxFailures) {
+			// Run group teardown before returning
+			if group.Teardown != nil {
+				_ = r.executeQuery(ctx, r.dialect, *group.Teardown, nil)
+			}
+
 			return err
+		}
+	}
+
+	// Execute group teardown
+	if group.Teardown != nil {
+		if err := r.executeQuery(ctx, r.dialect, *group.Teardown, nil); err != nil {
+			return fmt.Errorf("group %s teardown: %w", group.Name, err)
 		}
 	}
 
@@ -175,6 +237,7 @@ func (r *Runner) runGroup(
 func (r *Runner) runTest(
 	ctx context.Context,
 	test *scaf.Test,
+	queryBody string,
 	parentPath []string,
 	suitePath string,
 	handler Handler,
@@ -198,9 +261,55 @@ func (r *Runner) runTest(
 		Path:   path,
 	}, result)
 
+	// Try to run test in a transaction for isolation
+	txDialect, canTx := r.dialect.(scaf.Transactional)
+	if canTx {
+		return r.runTestInTransaction(ctx, txDialect, test, queryBody, path, suitePath, start, handler, result)
+	}
+
+	// Fallback: run without transaction isolation
+	return r.runTestDirect(ctx, r.dialect, test, queryBody, path, suitePath, start, handler, result)
+}
+
+func (r *Runner) runTestInTransaction(
+	ctx context.Context,
+	txDialect scaf.Transactional,
+	test *scaf.Test,
+	queryBody string,
+	path []string,
+	suitePath string,
+	start time.Time,
+	handler Handler,
+	result *Result,
+) error {
+	tx, err := txDialect.Begin(ctx)
+	if err != nil {
+		return r.emitError(ctx, path, suitePath, start, fmt.Errorf("begin transaction: %w", err), handler, result)
+	}
+
+	// Always rollback - tests should not persist changes
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	return r.runTestDirect(ctx, tx, test, queryBody, path, suitePath, start, handler, result)
+}
+
+func (r *Runner) runTestDirect(
+	ctx context.Context,
+	exec executor,
+	test *scaf.Test,
+	queryBody string,
+	path []string,
+	suitePath string,
+	start time.Time,
+	handler Handler,
+	result *Result,
+) error {
+	// Execute test setup (within transaction if available)
 	if test.Setup != nil {
-		if err := r.executeSetup(ctx, *test.Setup); err != nil {
-			return r.emitError(ctx, path, suitePath, start, err, handler, result)
+		if err := r.executeQuery(ctx, exec, *test.Setup, nil); err != nil {
+			return r.emitError(ctx, path, suitePath, start, fmt.Errorf("test setup: %w", err), handler, result)
 		}
 	}
 
@@ -216,9 +325,43 @@ func (r *Runner) runTest(
 		}
 	}
 
-	// TODO(query): Execute query and compare results
-	_ = params
-	_ = expectations
+	// Execute query
+	rows, err := exec.Execute(ctx, queryBody, params)
+	if err != nil {
+		return r.emitError(ctx, path, suitePath, start, err, handler, result)
+	}
+
+	// Compare results - check first row against expectations
+	var actual map[string]any
+	if len(rows) > 0 {
+		actual = rows[0]
+	} else {
+		actual = make(map[string]any)
+	}
+
+	// Check each expectation
+	for field, expected := range expectations {
+		got, exists := actual[field]
+		if !exists {
+			// Field doesn't exist in result - treat as nil
+			got = nil
+		}
+
+		if !valuesEqual(expected, got) {
+			elapsed := time.Since(start)
+
+			return handler.Event(ctx, Event{
+				Time:     time.Now(),
+				Action:   ActionFail,
+				Suite:    suitePath,
+				Path:     path,
+				Elapsed:  elapsed,
+				Field:    field,
+				Expected: expected,
+				Actual:   got,
+			}, result)
+		}
+	}
 
 	elapsed := time.Since(start)
 
@@ -231,8 +374,41 @@ func (r *Runner) runTest(
 	}, result)
 }
 
-func (r *Runner) executeSetup(ctx context.Context, query string) error {
-	_, err := r.dialect.Execute(ctx, query, nil)
+// valuesEqual compares expected and actual values for equality.
+func valuesEqual(expected, actual any) bool {
+	// Handle nil cases
+	if expected == nil && actual == nil {
+		return true
+	}
+
+	if expected == nil || actual == nil {
+		return false
+	}
+
+	// Handle numeric comparison (int64 from neo4j vs float64 from parser)
+	switch e := expected.(type) {
+	case float64:
+		switch a := actual.(type) {
+		case float64:
+			return e == a
+		case int64:
+			return e == float64(a)
+		}
+	case int64:
+		switch a := actual.(type) {
+		case float64:
+			return float64(e) == a
+		case int64:
+			return e == a
+		}
+	}
+
+	// Default: use reflect.DeepEqual
+	return reflect.DeepEqual(expected, actual)
+}
+
+func (r *Runner) executeQuery(ctx context.Context, exec executor, query string, params map[string]any) error {
+	_, err := exec.Execute(ctx, query, params)
 
 	return err
 }

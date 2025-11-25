@@ -1,0 +1,59 @@
+query GetUser `
+MATCH (u:User {id: $userId})
+RETURN u.name, u.email
+`
+
+// Global setup/teardown - teardown runs after entire suite
+// (only needed for non-transactional cleanup like external services)
+setup `
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com"})
+CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com"})
+`
+teardown `
+MATCH (u:User) DELETE u
+`
+
+GetUser {
+	// Scope-level setup/teardown
+	setup `
+	CREATE (p:Post {id: 101, authorId: 1, title: "Hello World"})
+	`
+	teardown `
+	MATCH (p:Post) DELETE p
+	`
+
+	group "existing users" {
+		// Group-level setup/teardown
+		setup `
+		CREATE (s:Session {userId: 1, token: "abc123"})
+		`
+		teardown `
+		MATCH (s:Session) DELETE s
+		`
+
+		test "finds Alice by id" {
+			$userId: 1
+
+			u.name: "Alice"
+			u.email: "alice@example.com"
+		}
+
+		test "finds Bob by id" {
+			$userId: 2
+
+			u.name: "Bob"
+			u.email: "bob@example.com"
+		}
+	}
+
+	// Tests run in transactions that rollback - no teardown needed
+	test "test with setup only" {
+		setup `
+		CREATE (t:Temp {value: 42})
+		`
+
+		$userId: 1
+
+		u.name: "Alice"
+	}
+}

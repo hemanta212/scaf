@@ -18,6 +18,7 @@ func main() {
 		Usage:   "Database test scaffolding DSL tool",
 		Commands: []*cli.Command{
 			fmtCommand(),
+			testCommand(),
 		},
 	}
 

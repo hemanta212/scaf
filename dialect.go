@@ -17,6 +17,28 @@ type Dialect interface {
 	Close() error
 }
 
+// Transaction represents an active database transaction.
+// Queries executed through a transaction are isolated until Commit or Rollback.
+type Transaction interface {
+	// Execute runs a query within this transaction.
+	Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
+
+	// Commit commits the transaction.
+	Commit(ctx context.Context) error
+
+	// Rollback aborts the transaction.
+	Rollback(ctx context.Context) error
+}
+
+// Transactional is an optional interface for dialects that support transactions.
+// The runner uses this for test isolation (rollback after each test).
+type Transactional interface {
+	Dialect
+
+	// Begin starts a new transaction.
+	Begin(ctx context.Context) (Transaction, error)
+}
+
 // DialectFactory creates a Dialect from connection configuration.
 type DialectFactory func(cfg DialectConfig) (Dialect, error)
 

@@ -11,13 +11,13 @@ type Action string
 
 // Action constants for test events.
 const (
-	ActionRun    Action = "run"    // Test/group starting
-	ActionPass   Action = "pass"   // Test passed
-	ActionFail   Action = "fail"   // Test failed
-	ActionSkip   Action = "skip"   // Test skipped
-	ActionError  Action = "error"  // Infrastructure error
-	ActionOutput Action = "output" // Log/debug output
-	ActionSetup  Action = "setup"  // Setup block executing
+	ActionRun    Action = "run"
+	ActionPass   Action = "passed"
+	ActionFail   Action = "failed"
+	ActionSkip   Action = "skipped"
+	ActionError  Action = "error"
+	ActionOutput Action = "output"
+	ActionSetup  Action = "setup"
 )
 
 // IsTerminal returns true if this action ends a test.
@@ -39,11 +39,23 @@ type Event struct {
 	Expected any
 	Actual   any
 	Field    string // Which field failed (e.g., "u.name")
+
+	// Source location for diagnostics
+	Line int // 0-indexed line number in source file
 }
 
 // PathString returns the path as a slash-separated string.
 func (e Event) PathString() string {
 	return strings.Join(e.Path, "/")
+}
+
+// ID returns a unique identifier: "suite::path::components".
+func (e Event) ID() string {
+	if e.Suite == "" {
+		return strings.Join(e.Path, "::")
+	}
+
+	return e.Suite + "::" + strings.Join(e.Path, "::")
 }
 
 // TestName returns the leaf test name.

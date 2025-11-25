@@ -43,99 +43,7 @@ func (h *FormatHandler) Summary(result *Result) error {
 }
 
 // -----------------------------------------------------------------------------
-// Dots Formatter
-// -----------------------------------------------------------------------------
-
-// DotsFormatter is a minimal formatter that prints dots for progress.
-type DotsFormatter struct {
-	w     io.Writer
-	count int
-}
-
-// NewDotsFormatter creates a dots formatter.
-func NewDotsFormatter(w io.Writer) *DotsFormatter {
-	return &DotsFormatter{w: w}
-}
-
-const lineWidth = 80
-
-// Format prints a single character per terminal event.
-func (d *DotsFormatter) Format(event Event, _ *Result) error {
-	if !event.Action.IsTerminal() {
-		return nil
-	}
-
-	var char string
-
-	switch event.Action {
-	case ActionPass:
-		char = "."
-	case ActionFail:
-		char = "F"
-	case ActionSkip:
-		char = "S"
-	case ActionError:
-		char = "E"
-	case ActionRun, ActionOutput, ActionSetup:
-		return nil
-	}
-
-	_, err := fmt.Fprint(d.w, char)
-	d.count++
-
-	if d.count%lineWidth == 0 {
-		_, _ = fmt.Fprintln(d.w)
-	}
-
-	return err
-}
-
-// Summary prints the final results.
-func (d *DotsFormatter) Summary(result *Result) error {
-	if d.count > 0 && d.count%lineWidth != 0 {
-		_, _ = fmt.Fprintln(d.w)
-	}
-
-	_, _ = fmt.Fprintln(d.w)
-
-	for _, tr := range result.FailedTests() {
-		switch tr.Status {
-		case ActionFail:
-			_, _ = fmt.Fprintf(d.w, "FAIL %s\n", tr.PathString())
-
-			if tr.Field != "" {
-				_, _ = fmt.Fprintf(d.w, "  %s:\n", tr.Field)
-				_, _ = fmt.Fprintf(d.w, "    expected: %v\n", tr.Expected)
-				_, _ = fmt.Fprintf(d.w, "    actual:   %v\n", tr.Actual)
-			}
-		case ActionError:
-			_, _ = fmt.Fprintf(d.w, "ERROR %s: %v\n", tr.PathString(), tr.Error)
-		case ActionPass, ActionSkip, ActionRun, ActionOutput, ActionSetup:
-			// Not failures
-		}
-
-		_, _ = fmt.Fprintln(d.w)
-	}
-
-	status := "PASS"
-	if !result.Ok() {
-		status = "FAIL"
-	}
-
-	_, _ = fmt.Fprintf(d.w, "%s %d tests, %d passed, %d failed, %d skipped in %s\n",
-		status,
-		result.Total,
-		result.Passed,
-		result.Failed,
-		result.Skipped,
-		result.Elapsed().Round(time.Millisecond),
-	)
-
-	return nil
-}
-
-// -----------------------------------------------------------------------------
-// Verbose Formatter
+// Verbose Formatter (placeholder until Charm TUI)
 // -----------------------------------------------------------------------------
 
 // VerboseFormatter prints full test names and output.
@@ -213,18 +121,27 @@ func NewJSONFormatter(w io.Writer) *JSONFormatter {
 	return &JSONFormatter{enc: json.NewEncoder(w)}
 }
 
+// jsonError represents an error with source location.
+type jsonError struct {
+	Message  string `json:"message"`
+	Line     *int   `json:"line,omitempty"`
+	Severity int    `json:"severity,omitempty"` // 1=error, 2=warn, 3=info, 4=hint
+}
+
 type jsonEvent struct {
-	Time     string  `json:"time"`
-	Action   string  `json:"action"`
-	Suite    string  `json:"suite,omitempty"`
-	Path     string  `json:"path"`
-	Test     string  `json:"test,omitempty"`
-	Elapsed  float64 `json:"elapsed,omitempty"`
-	Output   string  `json:"output,omitempty"`
-	Error    string  `json:"error,omitempty"`
-	Field    string  `json:"field,omitempty"`
-	Expected any     `json:"expected,omitempty"`
-	Actual   any     `json:"actual,omitempty"`
+	Time     string       `json:"time"`
+	Action   string       `json:"action"`
+	ID       string       `json:"id"`
+	Suite    string       `json:"suite,omitempty"`
+	Path     string       `json:"path"`
+	Test     string       `json:"test,omitempty"`
+	Elapsed  float64      `json:"elapsed,omitempty"`
+	Output   string       `json:"output,omitempty"`
+	Short    string       `json:"short,omitempty"`
+	Errors   []jsonError  `json:"errors,omitempty"`
+	Field    string       `json:"field,omitempty"`
+	Expected any          `json:"expected,omitempty"`
+	Actual   any          `json:"actual,omitempty"`
 }
 
 // Format outputs a JSON event.
@@ -232,6 +149,7 @@ func (j *JSONFormatter) Format(event Event, _ *Result) error {
 	je := jsonEvent{
 		Time:   event.Time.Format(time.RFC3339Nano),
 		Action: string(event.Action),
+		ID:     event.ID(),
 		Suite:  event.Suite,
 		Path:   event.PathString(),
 		Test:   event.TestName(),
@@ -246,31 +164,86 @@ func (j *JSONFormatter) Format(event Event, _ *Result) error {
 	}
 
 	if event.Error != nil {
-		je.Error = event.Error.Error()
+		je.Short = event.Error.Error()
+		je.Errors = []jsonError{{
+			Message:  event.Error.Error(),
+			Line:     intPtr(event.Line),
+			Severity: 1,
+		}}
 	}
 
 	if event.Action == ActionFail {
 		je.Field = event.Field
 		je.Expected = event.Expected
 		je.Actual = event.Actual
+
+		if event.Field != "" {
+			je.Short = fmt.Sprintf("%s: expected %v, got %v", event.Field, event.Expected, event.Actual)
+			je.Errors = []jsonError{{
+				Message:  je.Short,
+				Line:     intPtr(event.Line),
+				Severity: 1,
+			}}
+		}
 	}
 
 	return j.enc.Encode(je)
 }
 
+func intPtr(i int) *int {
+	if i == 0 {
+		return nil
+	}
+
+	return &i
+}
+
+type jsonTestResult struct {
+	Status string      `json:"status"`
+	Short  string      `json:"short,omitempty"`
+	Errors []jsonError `json:"errors,omitempty"`
+}
+
 type jsonSummary struct {
-	Action  string  `json:"action"`
-	Total   int     `json:"total"`
-	Passed  int     `json:"passed"`
-	Failed  int     `json:"failed"`
-	Skipped int     `json:"skipped"`
-	Errors  int     `json:"errors"`
-	Elapsed float64 `json:"elapsed"`
-	Ok      bool    `json:"ok"`
+	Action  string                    `json:"action"`
+	Total   int                       `json:"total"`
+	Passed  int                       `json:"passed"`
+	Failed  int                       `json:"failed"`
+	Skipped int                       `json:"skipped"`
+	Errors  int                       `json:"errors"`
+	Elapsed float64                   `json:"elapsed"`
+	Ok      bool                      `json:"ok"`
+	Results map[string]jsonTestResult `json:"results"`
 }
 
 // Summary outputs the final JSON summary.
 func (j *JSONFormatter) Summary(result *Result) error {
+	results := make(map[string]jsonTestResult, len(result.Tests))
+
+	for _, tr := range result.Tests {
+		jtr := jsonTestResult{
+			Status: string(tr.Status),
+		}
+
+		if tr.Error != nil {
+			jtr.Short = tr.Error.Error()
+			jtr.Errors = []jsonError{{
+				Message:  tr.Error.Error(),
+				Line:     intPtr(tr.Line),
+				Severity: 1,
+			}}
+		} else if tr.Status == ActionFail && tr.Field != "" {
+			jtr.Short = fmt.Sprintf("%s: expected %v, got %v", tr.Field, tr.Expected, tr.Actual)
+			jtr.Errors = []jsonError{{
+				Message:  jtr.Short,
+				Line:     intPtr(tr.Line),
+				Severity: 1,
+			}}
+		}
+
+		results[tr.ID()] = jtr
+	}
+
 	return j.enc.Encode(jsonSummary{
 		Action:  "summary",
 		Total:   result.Total,
@@ -280,25 +253,8 @@ func (j *JSONFormatter) Summary(result *Result) error {
 		Errors:  result.Errors,
 		Elapsed: result.Elapsed().Seconds(),
 		Ok:      result.Ok(),
+		Results: results,
 	})
 }
 
-// NewFormatter creates a formatter by name.
-func NewFormatter(name string, w io.Writer) *formatterWrapper {
-	var f Formatter
 
-	switch name {
-	case "verbose":
-		f = NewVerboseFormatter(w)
-	case "json":
-		f = NewJSONFormatter(w)
-	default:
-		f = NewDotsFormatter(w)
-	}
-
-	return &formatterWrapper{f}
-}
-
-type formatterWrapper struct {
-	Formatter
-}

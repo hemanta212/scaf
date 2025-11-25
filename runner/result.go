@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -45,10 +46,12 @@ func (r *Result) Add(event Event) {
 	path := event.PathString()
 
 	tr := &TestResult{
+		Suite:   event.Suite,
 		Path:    event.Path,
 		Status:  event.Action,
 		Elapsed: event.Elapsed,
 		Error:   event.Error,
+		Line:    event.Line,
 	}
 
 	if event.Action == ActionFail {
@@ -135,13 +138,41 @@ func (r *Result) FailedTests() []*TestResult {
 	return failed
 }
 
+// Merge combines another result into this one.
+func (r *Result) Merge(other *Result) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	other.mu.RLock()
+	defer other.mu.RUnlock()
+
+	r.Total += other.Total
+	r.Passed += other.Passed
+	r.Failed += other.Failed
+	r.Skipped += other.Skipped
+	r.Errors += other.Errors
+
+	for path, tr := range other.Tests {
+		r.Tests[path] = tr
+	}
+
+	r.Order = append(r.Order, other.Order...)
+
+	// Update end time to the latest
+	if other.EndTime.After(r.EndTime) {
+		r.EndTime = other.EndTime
+	}
+}
+
 // TestResult holds the outcome of a single test.
 type TestResult struct {
+	Suite   string
 	Path    []string
 	Status  Action
 	Elapsed time.Duration
 	Error   error
 	Output  []string
+	Line    int // 0-indexed line number in source file
 
 	// Assertion failure details
 	Expected any
@@ -151,15 +182,14 @@ type TestResult struct {
 
 // PathString returns the path as a slash-separated string.
 func (tr *TestResult) PathString() string {
-	result := ""
+	return strings.Join(tr.Path, "/")
+}
 
-	for i, p := range tr.Path {
-		if i > 0 {
-			result += "/"
-		}
-
-		result += p
+// ID returns a unique identifier: "suite::path::components".
+func (tr *TestResult) ID() string {
+	if tr.Suite == "" {
+		return strings.Join(tr.Path, "::")
 	}
 
-	return result
+	return tr.Suite + "::" + strings.Join(tr.Path, "::")
 }

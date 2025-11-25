@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/rlch/scaf"
@@ -13,6 +15,7 @@ type Runner struct {
 	dialect  scaf.Dialect
 	handler  Handler
 	failFast bool
+	filter   *regexp.Regexp
 }
 
 // Option configures a Runner.
@@ -36,6 +39,16 @@ func WithHandler(h Handler) Option {
 func WithFailFast(enabled bool) Option {
 	return func(r *Runner) {
 		r.failFast = enabled
+	}
+}
+
+// WithFilter sets a regex pattern to filter which tests run.
+// Tests whose path matches the pattern will be executed.
+func WithFilter(pattern string) Option {
+	return func(r *Runner) {
+		if pattern != "" {
+			r.filter = regexp.MustCompile(pattern)
+		}
 	}
 }
 
@@ -171,6 +184,11 @@ func (r *Runner) runTest(
 	copy(path, parentPath)
 	path[len(parentPath)] = test.Name
 
+	// Check if test matches filter
+	if !r.matchesFilter(path) {
+		return nil
+	}
+
 	start := time.Now()
 
 	_ = handler.Event(ctx, Event{
@@ -236,4 +254,16 @@ func (r *Runner) emitError(
 		Elapsed: time.Since(start),
 		Error:   err,
 	}, result)
+}
+
+// matchesFilter returns true if the test path matches the filter pattern.
+// If no filter is set, all tests match.
+func (r *Runner) matchesFilter(path []string) bool {
+	if r.filter == nil {
+		return true
+	}
+
+	pathStr := strings.Join(path, "/")
+
+	return r.filter.MatchString(pathStr)
 }

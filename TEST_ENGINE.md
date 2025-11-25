@@ -217,6 +217,56 @@ type testContext struct {
 }
 ```
 
+## Dialect vs Adapter
+
+**Important distinction:**
+
+### Dialect (scaf's domain)
+- Powers the **test runner**
+- Executes raw queries with parameters
+- Returns results as `[]map[string]any` for simple value comparisons
+- Provides transaction support for test isolation (rollback after each test)
+- No struct mapping, no ORM features - just raw execution
+
+### Adapter (user's application domain)  
+- Powers the **user's actual application code**
+- ORM features, struct mapping, fluent query builders
+- Examples: neogo (Neo4j ORM), gorm (SQL ORM), raw neo4j-go-driver
+- **Not scaf's concern** - users choose their own adapter for production code
+
+The dialect is intentionally simple because tests just need to:
+1. Execute setup queries
+2. Run the query under test with parameters
+3. Compare returned values against expectations
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User's Application                        │
+├─────────────────────────────────────────────────────────────┤
+│  adapters/neogo/       adapters/gorm/                       │
+│  - Struct mapping, ORM features                             │
+│  - Fluent query builders                                    │
+│  - Associated with a dialect                                │
+├─────────────────────────────────────────────────────────────┤
+│  Database Driver (neo4j-go-driver, pgx, etc.)               │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    scaf Test Runner                          │
+├─────────────────────────────────────────────────────────────┤
+│  dialects/cypher/      dialects/sql/                        │
+│  - Raw query execution                                      │
+│  - Returns []map[string]any                                 │
+│  - Transaction support for test isolation                   │
+├─────────────────────────────────────────────────────────────┤
+│  Database Driver (neo4j-go-driver, pgx, etc.)               │
+└─────────────────────────────────────────────────────────────┘
+
+Adapter ←──────── associated with ────────→ Dialect
+neogo                                        cypher
+gorm                                         sql
+```
+
 ## File Structure
 
 ```
@@ -228,9 +278,11 @@ scaf/
 │   ├── handler.go      # Handler interface + multiplexer
 │   ├── format.go       # Formatter interface + implementations (dots, verbose, json)
 │   └── errors.go       # Sentinel errors
-├── dialect.go          # Dialect interface (exists)
-├── dialect/
-│   └── neo4j/          # Neo4j implementation (future)
+├── dialect.go          # Dialect interface
+├── dialects/
+│   └── cypher/         # Cypher dialect (uses neo4j-go-driver)
+├── adapters/
+│   └── neogo/          # neogo adapter (associated with cypher dialect)
 └── cmd/scaf/
     ├── main.go
     ├── fmt.go          # exists

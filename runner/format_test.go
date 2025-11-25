@@ -7,54 +7,6 @@ import (
 	"time"
 )
 
-func TestDotsFormatter_Format(t *testing.T) {
-	var buf bytes.Buffer
-
-	f := NewDotsFormatter(&buf)
-
-	_ = f.Format(Event{Action: ActionRun}, nil)
-
-	if buf.Len() != 0 {
-		t.Error("Non-terminal should produce no output")
-	}
-
-	_ = f.Format(Event{Action: ActionPass}, nil)
-	_ = f.Format(Event{Action: ActionFail}, nil)
-	_ = f.Format(Event{Action: ActionSkip}, nil)
-	_ = f.Format(Event{Action: ActionError}, nil)
-
-	if got := buf.String(); got != ".FSE" {
-		t.Errorf("got %q, want %q", got, ".FSE")
-	}
-}
-
-func TestDotsFormatter_Summary(t *testing.T) {
-	var buf bytes.Buffer
-
-	f := NewDotsFormatter(&buf)
-
-	result := NewResult()
-	result.Add(Event{Action: ActionPass, Path: []string{"Test1"}})
-	result.Add(Event{Action: ActionFail, Path: []string{"Test2"}, Field: "name", Expected: "a", Actual: "b"})
-	result.Finish()
-
-	_ = f.Summary(result)
-
-	got := buf.String()
-
-	if !bytes.Contains(buf.Bytes(), []byte("FAIL Test2")) {
-		t.Errorf("missing 'FAIL Test2' in:\n%s", got)
-	}
-
-	if !bytes.Contains(buf.Bytes(), []byte("expected: a")) {
-		t.Errorf("missing 'expected: a' in:\n%s", got)
-	}
-
-	if !bytes.Contains(buf.Bytes(), []byte("2 tests, 1 passed, 1 failed")) {
-		t.Errorf("missing summary counts in:\n%s", got)
-	}
-}
-
 func TestVerboseFormatter_Format(t *testing.T) {
 	var buf bytes.Buffer
 
@@ -108,8 +60,8 @@ func TestJSONFormatter_Format(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if got["action"] != "pass" {
-		t.Errorf("action = %v, want pass", got["action"])
+	if got["action"] != "passed" {
+		t.Errorf("action = %v, want passed", got["action"])
 	}
 
 	if got["path"] != "Query/Test" {

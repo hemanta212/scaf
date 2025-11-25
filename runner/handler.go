@@ -11,6 +11,11 @@ type Handler interface {
 	Err(text string) error
 }
 
+// Summarizer can render a final summary after tests complete.
+type Summarizer interface {
+	Summary(result *Result) error
+}
+
 // MultiHandler fans out events to multiple handlers.
 type MultiHandler struct {
 	handlers []Handler

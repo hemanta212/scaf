@@ -116,20 +116,24 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer dialect.Close()
 
-	// Create formatter
-	var formatter runner.Formatter
+	// Create formatter/handler
+	var formatHandler runner.Handler
 	verbose := cmd.Bool("verbose")
 
 	if cmd.Bool("json") {
-		formatter = runner.NewJSONFormatter(os.Stdout)
+		formatter := runner.NewJSONFormatter(os.Stdout)
+		formatHandler = runner.NewFormatHandler(formatter, os.Stderr)
+	} else if verbose {
+		formatter := runner.NewVerboseFormatter(os.Stdout)
+		formatHandler = runner.NewFormatHandler(formatter, os.Stderr)
 	} else {
-		// TODO: Charm TUI with verbose option
-		// For now use verbose formatter as placeholder
-		_ = verbose
-		formatter = runner.NewVerboseFormatter(os.Stdout)
+		// Use animated TUI
+		tuiHandler := runner.NewTUIHandler(os.Stdout, os.Stderr)
+		if err := tuiHandler.Start(); err != nil {
+			return fmt.Errorf("failed to start TUI: %w", err)
+		}
+		formatHandler = tuiHandler
 	}
-
-	formatHandler := runner.NewFormatHandler(formatter, os.Stderr)
 
 	// Create runner
 	r := runner.New(
@@ -167,7 +171,9 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 
 	// Print summary
 	if totalResult != nil {
-		_ = formatHandler.Summary(totalResult)
+		if summarizer, ok := formatHandler.(runner.Summarizer); ok {
+			_ = summarizer.Summary(totalResult)
+		}
 
 		if !totalResult.Ok() {
 			return cli.Exit("", 1)

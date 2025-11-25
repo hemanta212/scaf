@@ -1,0 +1,12 @@
+# Example scaf configuration
+dialect: neo4j
+
+connection:
+  uri: bolt://localhost:7687
+  username: neo4j
+  password: password
+
+# Optional: per-pattern dialect overrides
+# files:
+#   "postgres/**/*.scaf": postgres
+#   "integration/*.scaf": postgres

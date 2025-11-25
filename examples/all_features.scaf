@@ -1,0 +1,109 @@
+query GetUser `
+MATCH (u:User {id: $userId})
+RETURN u.name, u.email, u.age
+`
+
+query CreatePost `
+CREATE (p:Post {title: $title, authorId: $authorId})
+RETURN p
+`
+
+setup `
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30})
+CREATE (bob:User   {id: 2, name: "Bob",   email: "bob@example.com",   age: 25})
+CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", age: null})
+`
+
+GetUser {
+	setup `
+    CREATE (p:Post {id: 101, authorId: 1, title: "Hello World"})
+    `
+
+	group "existing users" {
+		setup `
+        CREATE (session:Session {userId: 1, token: "abc123"})
+        `
+
+		test "finds Alice by id" {
+			$userId: 1
+
+			u.name: "Alice"
+			u.email: "alice@example.com"
+			u.age: 30
+		}
+
+		test "finds Bob by id" {
+			$userId: 2
+
+			u.name: "Bob"
+			u.email: "bob@example.com"
+			u.age: 25
+		}
+
+		group "with posts" {
+			test "user has posts" {
+				$userId: 1
+
+				u.name: "Alice"
+			}
+		}
+	}
+
+	group "edge cases" {
+		test "user with null age" {
+			$userId: 3
+
+			u.name: "Charlie"
+			u.age: null
+		}
+
+		test "non-existent user returns null" {
+			$userId: 999
+
+			u.name: null
+			u.email: null
+		}
+	}
+
+	test "direct test without group" {
+		$userId: 1
+
+		u.name: "Alice"
+	}
+}
+
+CreatePost {
+	test "creates a post" {
+		setup `
+        MATCH (u:User {id: 1}) SET u.postCount = 0
+        `
+
+		$title: "My New Post"
+		$authorId: 1
+
+		p: {title: "My New Post", authorId: 1}
+
+		assert `
+        MATCH (p:Post {authorId: 1})
+        RETURN count(p) as postCount
+        ` {
+			postCount: 1
+		}
+	}
+
+	test "complex value types" {
+		$title: "Test"
+		$authorId: 1
+
+		tags: ["go", "testing", "dsl"]
+		metadata: {author: {id: 1, name: "Alice"}, tags: ["go", "testing"], published: true, views: 0}
+		stringVal: "hello"
+		intVal: 42
+		floatVal: 3.14
+		boolTrue: true
+		boolFalse: false
+		nullVal: null
+		listVal: [1, 2, 3]
+		mapVal: {key: "value"}
+	}
+}

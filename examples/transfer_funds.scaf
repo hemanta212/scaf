@@ -1,0 +1,59 @@
+query TransferFunds `
+MATCH (from:Account {id: $fromId})
+MATCH (to:Account {id: $toId})
+WHERE from.balance >= $amount
+SET from.balance = from.balance - $amount,
+    to.balance = to.balance + $amount
+CREATE (t:Transaction {
+    id: randomUUID(),
+    fromId: $fromId,
+    toId: $toId,
+    amount: $amount,
+    timestamp: datetime()
+})
+RETURN from.balance as fromBalance, to.balance as toBalance, t.id as txId
+`
+
+setup `
+CREATE (checking:Account {id: "acc-001", balance: 1000.00, type: "checking"})
+CREATE (savings:Account  {id: "acc-002", balance: 500.00,  type: "savings"})
+CREATE (external:Account {id: "acc-003", balance: 0.00,    type: "external"})
+`
+
+TransferFunds {
+	test "Transfer $200 from checking to savings" {
+		$fromId: "acc-001"
+		$toId: "acc-002"
+		$amount: 200
+
+		fromBalance: 800
+		toBalance: 700
+
+		assert `MATCH (t:Transaction {fromId: "acc-001", toId: "acc-002"}) RETURN count(t) as c` {
+			c: 1
+		}
+	}
+
+	test "Transfer entire balance" {
+		setup `
+        MATCH (a:Account {id: "acc-001"}) SET a.balance = 500.00
+        `
+
+		$fromId: "acc-001"
+		$toId: "acc-003"
+		$amount: 500
+
+		fromBalance: 0
+		toBalance: 500
+	}
+
+	test "Insufficient funds returns no results" {
+		$fromId: "acc-001"
+		$toId: "acc-002"
+		$amount: 9999
+
+		assert `MATCH (a:Account {id: "acc-001"}) RETURN a.balance as bal` {
+			bal: 1000
+		}
+	}
+}

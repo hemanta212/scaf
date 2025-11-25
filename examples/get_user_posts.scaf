@@ -1,0 +1,55 @@
+query GetUserPosts `
+MATCH (u:User {id: $userId})
+OPTIONAL MATCH (u)-[:AUTHORED]->(p:Post)
+WHERE p.published = $publishedOnly OR $publishedOnly = false
+RETURN  u.email, collect(p) as posts
+`
+
+setup `
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com"})
+CREATE (bob:User   {id: 2, name: "Bob",   email: "bob@example.com"})
+
+CREATE (p1:Post {id: 101, title: "Hello World",  published: true})
+CREATE (p2:Post {id: 102, title: "Draft Post",   published: false})
+CREATE (p3:Post {id: 103, title: "Another Post", published: true})
+
+CREATE (alice)-[:AUTHORED]->(p1)
+CREATE (alice)-[:AUTHORED]->(p2)
+CREATE (bob)-[:AUTHORED]->(p3)
+`
+
+GetUserPosts {
+	test "Alice has 2 posts when including drafts" {
+		$userId: 1
+		$publishedOnly: false
+
+		u.name: "Alice"
+		u.email: "alice@example.com"
+		posts: [{id: 101, title: "Hello World", published: true}, {id: 102, title: "Draft Post", published: false}]
+	}
+
+	test "Alice has 1 post when filtering published" {
+		$userId: 1
+		$publishedOnly: true
+
+		u.name: "Alice"
+		posts: [{id: 101, title: "Hello World", published: true}]
+	}
+
+	test "Bob has 1 published post" {
+		$userId: 2
+		$publishedOnly: true
+
+		u.name: "Bob"
+		posts: [{id: 103, title: "Another Post", published: true}]
+	}
+
+	test "Non-existent user returns null" {
+		$userId: 999
+		$publishedOnly: false
+
+		u.name: null
+		u.email: null
+		posts: []
+	}
+}

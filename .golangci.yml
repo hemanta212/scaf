@@ -1,0 +1,22 @@
+version: "2"
+
+run:
+  timeout: "1m"
+  go: "1.21"
+
+linters:
+  default: all
+  disable:
+    - depguard # We need participle
+    - gocognit # Table-driven tests are naturally complex
+    - cyclop # Same as above
+    - funlen # Test helpers can be long
+    - wsl # Deprecated
+    - exhaustruct # Not all fields need to be set
+    - gochecknoglobals # Parser globals are fine
+    - goconst # Test strings don't need constants
+    - gocyclo # Table-driven tests
+    - paralleltest # Not needed
+    - varnamelen # s, t, etc are fine
+    - wrapcheck # Not wrapping participle errors
+    - maintidx # Table-driven tests

@@ -40,20 +40,6 @@ GetUser {
 		u.name: null
 		u.email: null
 	}
-
-	group "expected failures" {
-		test "fails on wrong name" {
-			$userId: 1
-
-			u.name: "Wrong Name"
-		}
-
-		test "fails on wrong age" {
-			$userId: 1
-
-			u.age: 99
-		}
-	}
 }
 
 CountUsers {

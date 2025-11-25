@@ -248,6 +248,107 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "global teardown",
+			input: `
+				query Q ` + "`Q`" + `
+				setup ` + "`CREATE (:User)`" + `
+				teardown ` + "`MATCH (u:User) DELETE u`" + `
+				Q { test "t" {} }
+			`,
+			expected: &scaf.Suite{
+				Queries:  []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Setup:    ptr("CREATE (:User)"),
+				Teardown: ptr("MATCH (u:User) DELETE u"),
+				Scopes: []*scaf.QueryScope{
+					{QueryName: "Q", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}}},
+				},
+			},
+		},
+		{
+			name: "scope teardown",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					setup ` + "`SCOPE SETUP`" + `
+					teardown ` + "`SCOPE TEARDOWN`" + `
+					test "t" {}
+				}
+			`,
+			expected: &scaf.Suite{
+				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Scopes: []*scaf.QueryScope{
+					{
+						QueryName: "Q",
+						Setup:     ptr("SCOPE SETUP"),
+						Teardown:  ptr("SCOPE TEARDOWN"),
+						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+					},
+				},
+			},
+		},
+		{
+			name: "group teardown",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					group "g" {
+						setup ` + "`GROUP SETUP`" + `
+						teardown ` + "`GROUP TEARDOWN`" + `
+						test "t" {}
+					}
+				}
+			`,
+			expected: &scaf.Suite{
+				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Scopes: []*scaf.QueryScope{
+					{
+						QueryName: "Q",
+						Items: []*scaf.TestOrGroup{
+							{
+								Group: &scaf.Group{
+									Name:     "g",
+									Setup:    ptr("GROUP SETUP"),
+									Teardown: ptr("GROUP TEARDOWN"),
+									Items:    []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test teardown",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						setup ` + "`TEST SETUP`" + `
+						teardown ` + "`TEST TEARDOWN`" + `
+						$id: 1
+					}
+				}
+			`,
+			expected: &scaf.Suite{
+				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Scopes: []*scaf.QueryScope{
+					{
+						QueryName: "Q",
+						Items: []*scaf.TestOrGroup{
+							{
+								Test: &scaf.Test{
+									Name:       "t",
+									Setup:      ptr("TEST SETUP"),
+									Teardown:   ptr("TEST TEARDOWN"),
+									Statements: []*scaf.Statement{{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

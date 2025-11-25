@@ -59,9 +59,14 @@ func (f *formatter) formatSuite(s *Suite) {
 		f.formatSetup(*s.Setup)
 	}
 
+	// Global teardown
+	if s.Teardown != nil {
+		f.formatTeardown(*s.Teardown)
+	}
+
 	// Scopes
 	for i, scope := range s.Scopes {
-		if i > 0 || len(s.Queries) > 0 || s.Setup != nil {
+		if i > 0 || len(s.Queries) > 0 || s.Setup != nil || s.Teardown != nil {
 			f.blankLine()
 		}
 
@@ -77,6 +82,10 @@ func (f *formatter) formatSetup(body string) {
 	f.writeLine("setup " + f.rawString(body))
 }
 
+func (f *formatter) formatTeardown(body string) {
+	f.writeLine("teardown " + f.rawString(body))
+}
+
 func (f *formatter) formatScope(s *QueryScope) {
 	f.writeLine(s.QueryName + " {")
 	f.indent++
@@ -85,15 +94,19 @@ func (f *formatter) formatScope(s *QueryScope) {
 		f.formatSetup(*s.Setup)
 	}
 
-	f.formatItems(s.Items, s.Setup != nil)
+	if s.Teardown != nil {
+		f.formatTeardown(*s.Teardown)
+	}
+
+	f.formatItems(s.Items, s.Setup != nil || s.Teardown != nil)
 
 	f.indent--
 	f.writeLine("}")
 }
 
-func (f *formatter) formatItems(items []*TestOrGroup, hasSetup bool) {
+func (f *formatter) formatItems(items []*TestOrGroup, hasSetupOrTeardown bool) {
 	for i, item := range items {
-		needsBlank := i > 0 || hasSetup
+		needsBlank := i > 0 || hasSetupOrTeardown
 
 		if item.Test != nil {
 			if needsBlank {
@@ -119,7 +132,11 @@ func (f *formatter) formatGroup(g *Group) {
 		f.formatSetup(*g.Setup)
 	}
 
-	f.formatItems(g.Items, g.Setup != nil)
+	if g.Teardown != nil {
+		f.formatTeardown(*g.Teardown)
+	}
+
+	f.formatItems(g.Items, g.Setup != nil || g.Teardown != nil)
 
 	f.indent--
 	f.writeLine("}")
@@ -131,6 +148,10 @@ func (f *formatter) formatTest(t *Test) {
 
 	if t.Setup != nil {
 		f.formatSetup(*t.Setup)
+	}
+
+	if t.Teardown != nil {
+		f.formatTeardown(*t.Teardown)
 	}
 
 	// Separate inputs from outputs
@@ -146,7 +167,7 @@ func (f *formatter) formatTest(t *Test) {
 
 	// Format inputs
 	for i, stmt := range inputs {
-		if i == 0 && t.Setup != nil {
+		if i == 0 && (t.Setup != nil || t.Teardown != nil) {
 			f.blankLine()
 		}
 
@@ -164,7 +185,7 @@ func (f *formatter) formatTest(t *Test) {
 
 	// Assertion
 	if t.Assertion != nil {
-		if len(t.Statements) > 0 || t.Setup != nil {
+		if len(t.Statements) > 0 || t.Setup != nil || t.Teardown != nil {
 			f.blankLine()
 		}
 
@@ -211,7 +232,6 @@ func (f *formatter) formatValue(v *Value) string {
 }
 
 func (f *formatter) formatNumber(n float64) string {
-	// Check if it's an integer
 	if n == float64(int64(n)) {
 		return strconv.FormatInt(int64(n), 10)
 	}

@@ -7,11 +7,12 @@ import (
 	"strings"
 )
 
-// Suite represents a complete test file with queries, setup, and test scopes.
+// Suite represents a complete test file with queries, setup, teardown, and test scopes.
 type Suite struct {
-	Queries []*Query      `parser:"@@*"`
-	Setup   *string       `parser:"('setup' @RawString)?"`
-	Scopes  []*QueryScope `parser:"@@*"`
+	Queries  []*Query      `parser:"@@*"`
+	Setup    *string       `parser:"('setup' @RawString)?"`
+	Teardown *string       `parser:"('teardown' @RawString)?"`
+	Scopes   []*QueryScope `parser:"@@*"`
 }
 
 // Query defines a named database query.
@@ -24,6 +25,7 @@ type Query struct {
 type QueryScope struct {
 	QueryName string         `parser:"@Ident '{'"`
 	Setup     *string        `parser:"('setup' @RawString)?"`
+	Teardown  *string        `parser:"('teardown' @RawString)?"`
 	Items     []*TestOrGroup `parser:"@@* '}'"`
 }
 
@@ -33,17 +35,19 @@ type TestOrGroup struct {
 	Group *Group `parser:"| @@"`
 }
 
-// Group organizes related tests with optional shared setup.
+// Group organizes related tests with optional shared setup and teardown.
 type Group struct {
-	Name  string         `parser:"'group' @String '{'"`
-	Setup *string        `parser:"('setup' @RawString)?"`
-	Items []*TestOrGroup `parser:"@@* '}'"`
+	Name     string         `parser:"'group' @String '{'"`
+	Setup    *string        `parser:"('setup' @RawString)?"`
+	Teardown *string        `parser:"('teardown' @RawString)?"`
+	Items    []*TestOrGroup `parser:"@@* '}'"`
 }
 
 // Test defines a single test case with inputs, expected outputs, and optional assertions.
 type Test struct {
 	Name       string       `parser:"'test' @String '{'"`
 	Setup      *string      `parser:"('setup' @RawString)?"`
+	Teardown   *string      `parser:"('teardown' @RawString)?"`
 	Statements []*Statement `parser:"@@*"`
 	Assertion  *Assertion   `parser:"('assert' @@)?"`
 	Close      string       `parser:"'}'"`

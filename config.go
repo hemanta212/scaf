@@ -1,7 +1,6 @@
 package scaf
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 
@@ -36,23 +35,24 @@ func LoadConfig(dir string) (*Config, error) {
 
 // FindConfig searches for a config file starting from dir and walking up.
 func FindConfig(dir string) (string, error) {
-	dir, err := filepath.Abs(dir)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
 
-	for {
+	for dir := absDir; ; {
 		for _, name := range DefaultConfigNames {
 			path := filepath.Join(dir, name)
-			if _, err := os.Stat(path); err == nil {
+
+			_, err := os.Stat(path)
+			if err == nil {
 				return path, nil
 			}
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root
-			return "", errors.New("no .scaf.yaml found")
+			return "", ErrConfigNotFound
 		}
 
 		dir = parent
@@ -61,13 +61,15 @@ func FindConfig(dir string) (string, error) {
 
 // LoadConfigFile loads a config from a specific path.
 func LoadConfigFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+
+	err = yaml.Unmarshal(data, &cfg)
+	if err != nil {
 		return nil, err
 	}
 

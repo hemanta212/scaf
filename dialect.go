@@ -41,13 +41,23 @@ func RegisterDialect(name string, factory DialectFactory) {
 }
 
 // NewDialect creates a dialect instance by name.
-func NewDialect(name string, cfg DialectConfig) (Dialect, error) {
+func NewDialect(name string, cfg DialectConfig) (*dialectWrapper, error) {
 	factory, ok := dialects[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown dialect: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownDialect, name)
 	}
 
-	return factory(cfg)
+	d, err := factory(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dialectWrapper{d}, nil
+}
+
+// dialectWrapper wraps a Dialect to return concrete type.
+type dialectWrapper struct {
+	Dialect
 }
 
 // RegisteredDialects returns the names of all registered dialects.

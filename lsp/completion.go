@@ -49,7 +49,7 @@ func (s *Server) Completion(_ context.Context, params *protocol.CompletionParams
 
 	// Get completion context
 	cc := s.getCompletionContext(completionDoc, params.Position, triggerChar)
-	s.logger.Debug("Completion context", zap.String("context", string(cc.Kind)))
+	s.logger.Debug("Completion context", zap.String("kind", string(cc.Kind)))
 
 	var items []protocol.CompletionItem
 
@@ -213,20 +213,22 @@ func (s *Server) determineCompletionKind(cc *CompletionContext, trimmedBefore st
 		return CompletionKindNone
 	}
 
+	// After 'setup ' keyword - offer import aliases for setup function calls
+	// This handles "setup fixtures" at scope level, inside setup blocks, and inside tests
+	// IMPORTANT: This check must come BEFORE the InTest check, because setup can appear
+	// in multiple contexts and should always offer import aliases
+	trimmedLower := strings.ToLower(strings.TrimSpace(trimmedBefore))
+	if strings.HasPrefix(trimmedLower, "setup ") || trimmedLower == "setup" {
+		// User is typing after "setup " - offer import aliases
+		return CompletionKindImportAlias
+	}
+
 	// Inside a test but not typing a parameter - could be return field
 	if cc.InTest && !strings.HasPrefix(cc.Prefix, "$") {
 		// Check if we're at the start of a statement (not after :)
 		if !strings.Contains(trimmedBefore, ":") {
 			return CompletionKindReturnField
 		}
-	}
-
-	// After 'setup ' keyword - offer import aliases for setup function calls
-	// This handles both "setup fixtures" at scope level and inside setup blocks
-	trimmedLower := strings.ToLower(strings.TrimSpace(trimmedBefore))
-	if strings.HasPrefix(trimmedLower, "setup ") || trimmedLower == "setup" {
-		// User is typing after "setup " - offer import aliases
-		return CompletionKindImportAlias
 	}
 
 	// At top level or start of scope - keywords and query names

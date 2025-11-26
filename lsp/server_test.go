@@ -63,6 +63,16 @@ func newTestServer(t *testing.T) (*lsp.Server, *mockClient) {
 	return server, client
 }
 
+func newTestServerWithDebug(t *testing.T) (*lsp.Server, *mockClient) {
+	t.Helper()
+
+	logger, _ := zap.NewDevelopment()
+	client := &mockClient{}
+	server := lsp.NewServer(client, logger, "cypher")
+
+	return server, client
+}
+
 func TestServer_Initialize(t *testing.T) {
 	t.Parallel()
 

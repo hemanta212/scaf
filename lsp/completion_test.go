@@ -605,7 +605,279 @@ GetUser {
 	}
 }
 
-// writeFile is a test helper to write content to a file
+// writeFile is a test helper to write content to a file.
 func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content), 0644) //nolint:gosec // Test helper
+}
+
+func TestServer_Completion_SetupImportAlias_InScope(t *testing.T) {
+	t.Parallel()
+
+	// This test simulates typing "setup " inside a scope.
+	// We first open a valid document, then simulate a change to add the incomplete line.
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First, open a valid document
+	validContent := `import fixtures "../shared/fixtures"
+
+query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+
+GetUser {
+	test "t" {}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Now simulate typing "setup " - document becomes temporarily invalid
+	invalidContent := `import fixtures "../shared/fixtures"
+
+query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+
+GetUser {
+	setup 
+	test "t" {}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: invalidContent},
+		},
+	})
+
+	// Request completion after "setup " (line 5, character 7)
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 5, Character: 7},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	// Debug
+	t.Logf("Got %d completion items", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should offer import aliases
+	found := false
+	for _, item := range result.Items {
+		if item.Label == "fixtures" && item.Kind == protocol.CompletionItemKindModule {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'fixtures' import alias in completions")
+	}
+}
+
+func TestServer_Completion_SetupImportAlias_InTest(t *testing.T) {
+	t.Parallel()
+
+	// Simulates typing "setup " inside a test - uses LastValidAnalysis fallback
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First, open a valid document
+	validContent := `import fixtures "../shared/fixtures"
+
+query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+
+GetUser {
+	test "t" {
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Now simulate typing "setup " inside the test
+	invalidContent := `import fixtures "../shared/fixtures"
+
+query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+
+GetUser {
+	test "t" {
+		setup 
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: invalidContent},
+		},
+	})
+
+	// Request completion after "setup " (line 6, character 8)
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 6, Character: 8},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	// Debug
+	t.Logf("Got %d completion items", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should offer import aliases
+	found := false
+	for _, item := range result.Items {
+		if item.Label == "fixtures" && item.Kind == protocol.CompletionItemKindModule {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'fixtures' import alias in completions")
+	}
+}
+
+// completionTestCase represents a test case for completion using ^ as cursor position.
+type completionTestCase struct {
+	name     string
+	content  string // Use ^ to mark cursor position
+	wantKind protocol.CompletionItemKind
+	wantAny  []string // At least one of these labels should be present
+	wantAll  []string // All of these labels should be present
+	wantNone []string // None of these labels should be present
+}
+
+// parseContentWithCursor parses test content with ^ as cursor marker.
+// Returns the content without the marker and the cursor position.
+func parseContentWithCursor(content string) (string, protocol.Position) {
+	lines := strings.Split(content, "\n")
+	var line, char uint32
+
+	for i, l := range lines {
+		if idx := strings.Index(l, "^"); idx >= 0 {
+			line = uint32(i)
+			char = uint32(idx)
+			// Remove the ^ from the line, keeping everything else
+			lines[i] = l[:idx] + l[idx+1:]
+			break
+		}
+	}
+
+	return strings.Join(lines, "\n"), protocol.Position{Line: line, Character: char}
+}
+
+// runCompletionTest runs a completion test case.
+func runCompletionTest(t *testing.T, tc completionTestCase) {
+	t.Helper()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	content, pos := parseContentWithCursor(tc.content)
+
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    content,
+		},
+	})
+
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     pos,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	// Build label set
+	labels := make(map[string]protocol.CompletionItemKind)
+	for _, item := range result.Items {
+		labels[item.Label] = item.Kind
+	}
+
+	// Check wantAny
+	if len(tc.wantAny) > 0 {
+		found := false
+		for _, want := range tc.wantAny {
+			if _, ok := labels[want]; ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected at least one of %v in completions, got: %v", tc.wantAny, labels)
+		}
+	}
+
+	// Check wantAll
+	for _, want := range tc.wantAll {
+		if _, ok := labels[want]; !ok {
+			t.Errorf("Expected %q in completions, got: %v", want, labels)
+		}
+	}
+
+	// Check wantNone
+	for _, notWant := range tc.wantNone {
+		if _, ok := labels[notWant]; ok {
+			t.Errorf("Did not expect %q in completions, got: %v", notWant, labels)
+		}
+	}
+
+	// Check kind if specified
+	if tc.wantKind != 0 && len(tc.wantAll) > 0 {
+		for _, want := range tc.wantAll {
+			if kind, ok := labels[want]; ok && kind != tc.wantKind {
+				t.Errorf("Expected %q to have kind %v, got %v", want, tc.wantKind, kind)
+			}
+		}
+	}
 }

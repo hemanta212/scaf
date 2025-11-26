@@ -7,6 +7,9 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v3"
+
+	// Register dialects
+	_ "github.com/rlch/scaf/dialects/cypher"
 )
 
 var version = "dev"

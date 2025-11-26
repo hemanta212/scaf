@@ -470,7 +470,7 @@ func TestRunner_NamedSetupWithModules(t *testing.T) {
 					Module: ptr("fixtures"),
 					Name:   "SetupUsers",
 					Params: []*scaf.SetupParam{
-						{Name: "$name", Value: &scaf.Value{Str: ptr("Alice")}},
+						{Name: "$name", Value: &scaf.ParamValue{Literal: &scaf.Value{Str: ptr("Alice")}}},
 					},
 				},
 			},

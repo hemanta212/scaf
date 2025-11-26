@@ -56,8 +56,55 @@ type NamedSetup struct {
 
 // SetupParam is a parameter passed to a named setup.
 type SetupParam struct {
-	Name  string `parser:"@Ident Colon"`
-	Value *Value `parser:"@@"`
+	Name  string      `parser:"@Ident Colon"`
+	Value *ParamValue `parser:"@@"`
+}
+
+// ParamValue represents a value in a parameter - either a literal or a field reference.
+// Field references allow passing result values to assert queries.
+// Examples:
+//
+//	$userId: 1           // literal
+//	$authorId: u.id      // field reference from parent scope
+//
+// Note: Literal must come first to match keywords (true, false, null) before they're
+// captured as identifiers by FieldRef.
+type ParamValue struct {
+	Literal  *Value       `parser:"@@"`
+	FieldRef *DottedIdent `parser:"| @@"`
+}
+
+// ToGo converts a ParamValue to a native Go type.
+// For field refs, returns nil - caller must resolve from scope.
+func (p *ParamValue) ToGo() any {
+	if p.Literal != nil {
+		return p.Literal.ToGo()
+	}
+	return nil // Field ref - must be resolved by runner
+}
+
+// IsFieldRef returns true if this is a field reference.
+func (p *ParamValue) IsFieldRef() bool {
+	return p.FieldRef != nil && p.Literal == nil
+}
+
+// FieldRefString returns the field reference as a string, or empty if not a field ref.
+func (p *ParamValue) FieldRefString() string {
+	if p.FieldRef != nil {
+		return p.FieldRef.String()
+	}
+	return ""
+}
+
+// String returns a string representation of the ParamValue.
+func (p *ParamValue) String() string {
+	if p.FieldRef != nil {
+		return p.FieldRef.String()
+	}
+	if p.Literal != nil {
+		return p.Literal.String()
+	}
+	return ""
 }
 
 // QueryScope groups tests that target a specific query.

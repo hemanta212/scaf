@@ -21,7 +21,7 @@ func TestResolver_Resolve(t *testing.T) {
 query SetupUtils ` + "`CREATE (:Utils)`" + `
 `
 	utilsPath := filepath.Join(tmpDir, "utils.scaf")
-	if err := os.WriteFile(utilsPath, []byte(utilsContent), 0o644); err != nil {
+	if err := os.WriteFile(utilsPath, []byte(utilsContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -30,7 +30,7 @@ import "./utils"
 query SetupFixtures ` + "`CREATE (:Fixture {n: $n})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
-	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
+	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -44,7 +44,7 @@ GetUser {
 }
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
-	if err := os.WriteFile(rootPath, []byte(rootContent), 0o644); err != nil {
+	if err := os.WriteFile(rootPath, []byte(rootContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +132,7 @@ import "./b"
 query Q ` + "`Q`" + `
 `
 	aPath := filepath.Join(tmpDir, "a.scaf")
-	if err := os.WriteFile(aPath, []byte(aContent), 0o644); err != nil {
+	if err := os.WriteFile(aPath, []byte(aContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +141,7 @@ import "./c"
 query Q ` + "`Q`" + `
 `
 	bPath := filepath.Join(tmpDir, "b.scaf")
-	if err := os.WriteFile(bPath, []byte(bContent), 0o644); err != nil {
+	if err := os.WriteFile(bPath, []byte(bContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -150,7 +150,7 @@ import "./a"
 query Q ` + "`Q`" + `
 `
 	cPath := filepath.Join(tmpDir, "c.scaf")
-	if err := os.WriteFile(cPath, []byte(cContent), 0o644); err != nil {
+	if err := os.WriteFile(cPath, []byte(cContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ import "./self"
 query Q ` + "`Q`" + `
 `
 	selfPath := filepath.Join(tmpDir, "self.scaf")
-	if err := os.WriteFile(selfPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(selfPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,7 +213,7 @@ func TestResolver_DiamondDependency(t *testing.T) {
 query SetupCommon ` + "`CREATE (:Common)`" + `
 `
 	commonPath := filepath.Join(tmpDir, "common.scaf")
-	if err := os.WriteFile(commonPath, []byte(commonContent), 0o644); err != nil {
+	if err := os.WriteFile(commonPath, []byte(commonContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +222,7 @@ import "./common"
 query SetupA ` + "`CREATE (:A)`" + `
 `
 	aPath := filepath.Join(tmpDir, "a.scaf")
-	if err := os.WriteFile(aPath, []byte(aContent), 0o644); err != nil {
+	if err := os.WriteFile(aPath, []byte(aContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +231,7 @@ import "./common"
 query SetupB ` + "`CREATE (:B)`" + `
 `
 	bPath := filepath.Join(tmpDir, "b.scaf")
-	if err := os.WriteFile(bPath, []byte(bContent), 0o644); err != nil {
+	if err := os.WriteFile(bPath, []byte(bContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -241,7 +241,7 @@ import "./b"
 query SetupRoot ` + "`CREATE (:Root)`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
-	if err := os.WriteFile(rootPath, []byte(rootContent), 0o644); err != nil {
+	if err := os.WriteFile(rootPath, []byte(rootContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,7 +274,7 @@ import "./nonexistent"
 query Q ` + "`Q`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
-	if err := os.WriteFile(rootPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(rootPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -305,7 +305,7 @@ func TestResolver_NestedDirectories(t *testing.T) {
 
 	sharedDir := filepath.Join(tmpDir, "shared")
 	libDir := filepath.Join(sharedDir, "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
+	if err := os.MkdirAll(libDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -313,7 +313,7 @@ func TestResolver_NestedDirectories(t *testing.T) {
 query SetupHelpers ` + "`CREATE (:Helper)`" + `
 `
 	helpersPath := filepath.Join(libDir, "helpers.scaf")
-	if err := os.WriteFile(helpersPath, []byte(helpersContent), 0o644); err != nil {
+	if err := os.WriteFile(helpersPath, []byte(helpersContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -322,7 +322,7 @@ import "./lib/helpers"
 query SetupFixtures ` + "`CREATE (:Fixture)`" + `
 `
 	fixturesPath := filepath.Join(sharedDir, "fixtures.scaf")
-	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
+	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -331,7 +331,7 @@ import fixtures "./shared/fixtures"
 query GetData ` + "`MATCH (n) RETURN n`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
-	if err := os.WriteFile(rootPath, []byte(rootContent), 0o644); err != nil {
+	if err := os.WriteFile(rootPath, []byte(rootContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -378,7 +378,7 @@ func TestResolver_SetupWithMultipleParams(t *testing.T) {
 query SetupUserWithDetails ` + "`CREATE (:User {name: $name, email: $email, age: $age, active: $active})`" + `
 `
 	modulePath := filepath.Join(tmpDir, "fixtures.scaf")
-	if err := os.WriteFile(modulePath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -421,14 +421,14 @@ func TestResolver_AliasCollision(t *testing.T) {
 	mod1Content := `query SetupMod1 ` + "`CREATE (:Mod1)`" + `
 `
 	mod1Path := filepath.Join(tmpDir, "mod1.scaf")
-	if err := os.WriteFile(mod1Path, []byte(mod1Content), 0o644); err != nil {
+	if err := os.WriteFile(mod1Path, []byte(mod1Content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	mod2Content := `query SetupMod2 ` + "`CREATE (:Mod2)`" + `
 `
 	mod2Path := filepath.Join(tmpDir, "mod2.scaf")
-	if err := os.WriteFile(mod2Path, []byte(mod2Content), 0o644); err != nil {
+	if err := os.WriteFile(mod2Path, []byte(mod2Content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -439,7 +439,7 @@ import shared "./mod2"
 query Q ` + "`Q`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
-	if err := os.WriteFile(rootPath, []byte(rootContent), 0o644); err != nil {
+	if err := os.WriteFile(rootPath, []byte(rootContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -464,7 +464,7 @@ func TestResolver_ResolveFromSuite(t *testing.T) {
 	fixturesContent := `query SetupData ` + "`CREATE (:Data)`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
-	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
+	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

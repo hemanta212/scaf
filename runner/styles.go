@@ -12,13 +12,11 @@ var (
 	colorSlow    = lipgloss.Color("#f59e0b") // amber-500
 	colorRetry   = lipgloss.Color("#d946ef") // fuchsia-500
 
-	// UI colors
-	colorDim     = lipgloss.Color("#6b7280") // gray-500
-	colorMuted   = lipgloss.Color("#9ca3af") // gray-400
-	colorBorder  = lipgloss.Color("#374151") // gray-700
-	colorAccent  = lipgloss.Color("#3b82f6") // blue-500
-	colorBg      = lipgloss.Color("#0f172a") // slate-900
-	colorBgLight = lipgloss.Color("#1e293b") // slate-800
+	// UI colors.
+	colorDim    = lipgloss.Color("#6b7280") // gray-500
+	colorMuted  = lipgloss.Color("#9ca3af") // gray-400
+	colorBorder = lipgloss.Color("#374151") // gray-700
+	colorAccent = lipgloss.Color("#3b82f6") // blue-500
 )
 
 // Styles holds all lipgloss styles for the TUI.

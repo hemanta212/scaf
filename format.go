@@ -117,7 +117,7 @@ func (f *formatter) formatNamedSetup(ns *NamedSetup) {
 		}
 		b.WriteString(p.Name)
 		b.WriteString(": ")
-		b.WriteString(f.formatValue(p.Value))
+		b.WriteString(f.formatParamValue(p.Value))
 	}
 
 	b.WriteString(")")
@@ -248,7 +248,7 @@ func (f *formatter) formatAssert(a *Assert) {
 			if len(a.Query.Params) > 0 {
 				var params []string
 				for _, p := range a.Query.Params {
-					params = append(params, p.Name+": "+f.formatValue(p.Value))
+					params = append(params, p.Name+": "+f.formatParamValue(p.Value))
 				}
 				queryPart += "(" + strings.Join(params, ", ") + ") "
 			} else {
@@ -299,6 +299,16 @@ func (f *formatter) formatValue(v *Value) string {
 	default:
 		return "null"
 	}
+}
+
+func (f *formatter) formatParamValue(v *ParamValue) string {
+	if v.IsFieldRef() {
+		return v.FieldRefString()
+	}
+	if v.Literal != nil {
+		return f.formatValue(v.Literal)
+	}
+	return "null"
 }
 
 func (f *formatter) formatNumber(n float64) string {

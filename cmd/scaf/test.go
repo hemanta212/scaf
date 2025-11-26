@@ -12,9 +12,6 @@ import (
 	"github.com/rlch/scaf/module"
 	"github.com/rlch/scaf/runner"
 	"github.com/urfave/cli/v3"
-
-	// Register dialects.
-	_ "github.com/rlch/scaf/dialects/cypher"
 )
 
 func testCommand() *cli.Command {
@@ -61,6 +58,11 @@ func testCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:  "run",
 				Usage: "run only tests matching pattern",
+			},
+			&cli.BoolFlag{
+				Name:   "lag",
+				Usage:  "add artificial lag (500ms-1.5s) for TUI testing",
+				Hidden: true,
 			},
 		},
 		Action: runTest,
@@ -196,6 +198,7 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 			runner.WithFailFast(cmd.Bool("fail-fast")),
 			runner.WithFilter(cmd.String("run")),
 			runner.WithModules(ps.resolved),
+			runner.WithLag(cmd.Bool("lag")),
 		)
 
 		result, err := suiteRunner.Run(ctx, ps.suite, ps.path)

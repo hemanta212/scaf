@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"regexp"
 	"strings"
@@ -20,6 +21,7 @@ type Runner struct {
 	failFast bool
 	filter   *regexp.Regexp
 	modules  *module.ResolvedContext
+	lag      bool // artificial lag for TUI testing
 }
 
 // Option configures a Runner.
@@ -60,6 +62,13 @@ func WithFilter(pattern string) Option {
 func WithModules(ctx *module.ResolvedContext) Option {
 	return func(r *Runner) {
 		r.modules = ctx
+	}
+}
+
+// WithLag enables artificial lag (500ms-1.5s) for TUI testing.
+func WithLag(enabled bool) Option {
+	return func(r *Runner) {
+		r.lag = enabled
 	}
 }
 
@@ -292,6 +301,11 @@ func (r *Runner) runTest(
 		Suite:  suitePath,
 		Path:   path,
 	}, result)
+
+	// Artificial lag for TUI testing
+	if r.lag {
+		time.Sleep(time.Duration(500+rand.Intn(1000)) * time.Millisecond)
+	}
 
 	// Try to run test in a transaction for isolation
 	txDialect, canTx := r.dialect.(scaf.Transactional)
@@ -558,7 +572,7 @@ func (r *Runner) evaluateAssert(
 
 	// If assert has a query, run it first
 	if assert.Query != nil {
-		assertResult, err := r.runAssertQuery(ctx, exec, assert.Query, queries)
+		assertResult, err := r.runAssertQuery(ctx, exec, assert.Query, queries, mainResult)
 		if err != nil {
 			return r.emitError(ctx, path, suitePath, start, fmt.Errorf("assert query: %w", err), handler, result)
 		}
@@ -594,11 +608,13 @@ func (r *Runner) evaluateAssert(
 }
 
 // runAssertQuery executes the query specified in an assert block.
+// parentScope contains the main query results, used to resolve field references in params.
 func (r *Runner) runAssertQuery(
 	ctx context.Context,
 	exec executor,
 	query *scaf.AssertQuery,
 	queries map[string]string,
+	parentScope map[string]any,
 ) (map[string]any, error) {
 	var queryBody string
 	params := make(map[string]any)
@@ -623,7 +639,17 @@ func (r *Runner) runAssertQuery(
 				key = key[1:]
 			}
 
-			params[key] = p.Value.ToGo()
+			// Resolve field references from parent scope
+			if p.Value.IsFieldRef() {
+				fieldRef := p.Value.FieldRefString()
+				val, err := resolveFieldRef(fieldRef, parentScope)
+				if err != nil {
+					return nil, fmt.Errorf("param $%s: %w", key, err)
+				}
+				params[key] = val
+			} else {
+				params[key] = p.Value.ToGo()
+			}
 		}
 	default:
 		return nil, ErrAssertNoQuery
@@ -640,4 +666,31 @@ func (r *Runner) runAssertQuery(
 	}
 
 	return make(map[string]any), nil
+}
+
+// resolveFieldRef resolves a dotted field reference (e.g., "u.id") from a scope.
+func resolveFieldRef(ref string, scope map[string]any) (any, error) {
+	// First try direct lookup (handles "u.name" as a column name)
+	if val, ok := scope[ref]; ok {
+		return val, nil
+	}
+
+	// Try nested field access (e.g., "u.id" where u is a map)
+	parts := strings.Split(ref, ".")
+	var current any = scope
+
+	for _, part := range parts {
+		switch v := current.(type) {
+		case map[string]any:
+			val, ok := v[part]
+			if !ok {
+				return nil, fmt.Errorf("field %q not found in scope", ref)
+			}
+			current = val
+		default:
+			return nil, fmt.Errorf("cannot access field %q on non-map value", part)
+		}
+	}
+
+	return current, nil
 }

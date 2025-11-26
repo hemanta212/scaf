@@ -4,12 +4,17 @@ import fixtures "./shared/fixtures"
 
 query GetUser `
 MATCH (u:User {id: $userId})
-RETURN u.name, u.email, u.age, u.verified
+RETURN u.id, u.name, u.email, u.age, u.verified
 `
 
 query GetUserPosts `
-MATCH (p:Post {authorId: $userId})
+MATCH (p:Post {authorId: $authorId})
 RETURN p.title, p.views
+`
+
+query CountUserPosts `
+MATCH (p:Post {authorId: $authorId})
+RETURN count(p) as postCount
 `
 
 // Global setup using imported fixture
@@ -45,10 +50,12 @@ GetUser {
 			$userId: 1
 
 			u.name: "Alice"
+			u.age: 30
+			u.verified: true
 
-			assert {
-				u.age >= 18;
-				u.verified == true
+			// Use field ref: pass u.id from GetUser result to CountUserPosts
+			assert CountUserPosts($authorId: u.id) {
+				postCount == 0
 			}
 		}
 	}
@@ -60,9 +67,9 @@ GetUserPosts {
 
 	test "user with post" {
 		// Additional test-level setup using imported fixture
-		setup fixtures.SetupPosts($postId: 101, $title: "Hello World", $authorId: 1)
+		setup fixtures.SetupPosts($postId: 0, $title: "Hello World", $authorId: 1)
 
-		$userId: 1
+		$authorId: 1
 
 		p.title: "Hello World"
 		p.views: 0

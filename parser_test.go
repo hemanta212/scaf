@@ -240,6 +240,51 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "assert with field ref param",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert OtherQuery($id: u.id) {
+							count > 0
+						}
+					}
+				}
+			`,
+			expected: &scaf.Suite{
+				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Scopes: []*scaf.QueryScope{
+					{
+						QueryName: "Q",
+						Items: []*scaf.TestOrGroup{
+							{
+								Test: &scaf.Test{
+									Name: "t",
+									Asserts: []*scaf.Assert{
+										{
+											Query: &scaf.AssertQuery{
+												QueryName: ptr("OtherQuery"),
+												Params: []*scaf.SetupParam{
+													{Name: "$id", Value: &scaf.ParamValue{FieldRef: &scaf.DottedIdent{Parts: []string{"u", "id"}}}},
+												},
+											},
+											Conditions: []*scaf.Expr{
+												{Tokens: []*scaf.ExprToken{
+													{Ident: ptr("count")},
+													{Op: ptr(">")},
+													{Number: ptr("0")},
+												}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "multiple queries and scopes",
 			input: `
 				query A ` + "`A`" + `
@@ -458,8 +503,8 @@ func TestParseNamedSetup(t *testing.T) {
 				Named: &scaf.NamedSetup{
 					Name: "CreatePosts",
 					Params: []*scaf.SetupParam{
-						{Name: "$n", Value: &scaf.Value{Number: ptr(10.0)}},
-						{Name: "$title", Value: &scaf.Value{Str: ptr("Post")}},
+						{Name: "$n", Value: &scaf.ParamValue{Literal: &scaf.Value{Number: ptr(10.0)}}},
+						{Name: "$title", Value: &scaf.ParamValue{Literal: &scaf.Value{Str: ptr("Post")}}},
 					},
 				},
 			},
@@ -478,8 +523,8 @@ func TestParseNamedSetup(t *testing.T) {
 					Module: ptr("fixtures"),
 					Name:   "CreatePosts",
 					Params: []*scaf.SetupParam{
-						{Name: "$n", Value: &scaf.Value{Number: ptr(10.0)}},
-						{Name: "$authorId", Value: &scaf.Value{Number: ptr(1.0)}},
+						{Name: "$n", Value: &scaf.ParamValue{Literal: &scaf.Value{Number: ptr(10.0)}}},
+						{Name: "$authorId", Value: &scaf.ParamValue{Literal: &scaf.Value{Number: ptr(1.0)}}},
 					},
 				},
 			},

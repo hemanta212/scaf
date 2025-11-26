@@ -90,15 +90,35 @@ func (l *Loader) normalizeScafPath(path string) (string, error) {
 		return filepath.Abs(path)
 	}
 
-	// If no extension, try adding .scaf
+	// If no extension, try common patterns
 	if filepath.Ext(path) == "" {
-		withExt := path + ".scaf"
-		if _, err := os.Stat(withExt); err == nil {
-			return filepath.Abs(withExt)
+		// Try .scaf first
+		if resolved := tryExtensions(path, ".scaf"); resolved != "" {
+			return filepath.Abs(resolved)
+		}
+
+		// Try dialect-specific extensions (e.g., .cypher.scaf, .sql.scaf)
+		// by globbing for any *.scaf file matching the base name
+		dir := filepath.Dir(path)
+		base := filepath.Base(path)
+		pattern := filepath.Join(dir, base+"*.scaf")
+
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) == 1 {
+			return filepath.Abs(matches[0])
 		}
 	}
 
 	return "", fmt.Errorf("%w: %s", ErrModuleNotFound, path)
+}
+
+// tryExtensions tries to find a file with the given extension.
+func tryExtensions(path, ext string) string {
+	withExt := path + ext
+	if _, err := os.Stat(withExt); err == nil {
+		return withExt
+	}
+	return ""
 }
 
 // loadAbsolute loads a module from an absolute path.

@@ -25,7 +25,7 @@ SetupTest {
 }
 `
 	scafPath := filepath.Join(tmpDir, "test.scaf")
-	if err := os.WriteFile(scafPath, []byte(scafContent), 0o644); err != nil {
+	if err := os.WriteFile(scafPath, []byte(scafContent), 0o600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestLoader_LoadFrom(t *testing.T) {
 
 	// Create directory structure
 	subDir := filepath.Join(tmpDir, "sub")
-	if err := os.MkdirAll(subDir, 0o755); err != nil {
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
@@ -105,7 +105,7 @@ import "./sub/helper"
 query Q ` + "`Q`" + `
 `
 	mainPath := filepath.Join(tmpDir, "main.scaf")
-	if err := os.WriteFile(mainPath, []byte(mainContent), 0o644); err != nil {
+	if err := os.WriteFile(mainPath, []byte(mainContent), 0o600); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
 
@@ -114,7 +114,7 @@ query Q ` + "`Q`" + `
 query SetupHelper ` + "`CREATE (:Helper)`" + `
 `
 	helperPath := filepath.Join(subDir, "helper.scaf")
-	if err := os.WriteFile(helperPath, []byte(helperContent), 0o644); err != nil {
+	if err := os.WriteFile(helperPath, []byte(helperContent), 0o600); err != nil {
 		t.Fatalf("Failed to write helper.scaf: %v", err)
 	}
 
@@ -146,7 +146,7 @@ func TestLoader_Clear(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	scafPath := filepath.Join(tmpDir, "test.scaf")
-	if err := os.WriteFile(scafPath, []byte(`query Q `+"`Q`"), 0o644); err != nil {
+	if err := os.WriteFile(scafPath, []byte(`query Q `+"`Q`"), 0o600); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
 

@@ -723,35 +723,6 @@ func (m *tuiModel) renderSymbol(node *treeNode) string {
 	}
 }
 
-func (m *tuiModel) renderSummary() string {
-	var parts []string
-
-	if m.counters.passed > 0 {
-		parts = append(parts, m.styles.Pass.Render(fmt.Sprintf("%d passed", m.counters.passed)))
-	}
-
-	if m.counters.failed > 0 {
-		parts = append(parts, m.styles.Fail.Render(fmt.Sprintf("%d failed", m.counters.failed)))
-	}
-
-	if m.counters.skipped > 0 {
-		parts = append(parts, m.styles.Skip.Render(fmt.Sprintf("%d skipped", m.counters.skipped)))
-	}
-
-	if m.counters.errors > 0 {
-		parts = append(parts, m.styles.Error.Render(fmt.Sprintf("%d errors", m.counters.errors)))
-	}
-
-	if len(parts) == 0 {
-		return m.styles.Dim.Render("  No tests run")
-	}
-
-	total := m.styles.Muted.Render(fmt.Sprintf("(%d total)", m.counters.total))
-	sep := m.styles.Dim.Render(" │ ")
-
-	return "  " + strings.Join(parts, sep) + " " + total
-}
-
 func (m *tuiModel) renderSummaryWithProgress() string {
 	done := m.counters.passed + m.counters.failed + m.counters.skipped + m.counters.errors
 	total := m.counters.total

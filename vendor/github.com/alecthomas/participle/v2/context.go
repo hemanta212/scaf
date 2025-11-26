@@ -155,20 +155,113 @@ func (p *parseContext) tryRecover(err error, parent reflect.Value) (bool, []refl
 
 	// Check if we've exceeded max errors
 	if p.recovery.maxErrors > 0 && len(p.recoveryErrors) >= p.recovery.maxErrors {
+		p.traceRecovery("max errors (%d) reached, not attempting recovery", p.recovery.maxErrors)
 		return false, nil
 	}
+
+	startPos := p.Peek().Pos
+	p.traceRecoveryAttempt(startPos, err, "context-level")
 
 	// Try each strategy in order
 	for _, strategy := range p.recovery.strategies {
 		checkpoint := p.PeekingLexer.MakeCheckpoint()
-		recovered, values, newErr := strategy.Recover(p, err, parent)
-		if recovered {
-			p.addRecoveryError(newErr)
-			return true, values
+		currentPos := p.Peek().Pos
+
+		// Get strategy name if available
+		strategyName := "unknown"
+		if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
+			strategyName = enhanced.Name()
+		}
+
+		p.traceRecoveryStrategy(strategyName, currentPos)
+
+		// Try enhanced recovery if available
+		if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
+			result := enhanced.RecoverWithContext(p, err, parent)
+			if result.recovered {
+				p.traceRecoverySuccess(result.strategyName, len(result.skippedTokens), p.Peek().Pos)
+				p.addRecoveryError(result.err)
+				return true, result.values
+			}
+			p.traceRecoveryFailed(strategyName, "strategy returned false")
+		} else {
+			recovered, values, newErr := strategy.Recover(p, err, parent)
+			if recovered {
+				p.traceRecoverySuccess(strategyName, 0, p.Peek().Pos)
+				p.addRecoveryError(newErr)
+				return true, values
+			}
+			p.traceRecoveryFailed(strategyName, "strategy returned false")
 		}
 		// Restore checkpoint if strategy failed
 		p.PeekingLexer.LoadCheckpoint(checkpoint)
 	}
 
+	p.traceRecoveryAllFailed()
 	return false, nil
+}
+
+// getTypeStrategies returns parse-time type-specific recovery strategies for the given type.
+// This allows RecoverVia() strategies to be applied at the capture node level.
+func (p *parseContext) getTypeStrategies(t reflect.Type) []RecoveryStrategy {
+	if p.recovery == nil || p.recovery.typeStrategies == nil {
+		return nil
+	}
+	// Try exact type match first
+	if strategies := p.recovery.typeStrategies[t]; len(strategies) > 0 {
+		return strategies
+	}
+	// For pointer types, also check the element type
+	if t.Kind() == reflect.Ptr {
+		if strategies := p.recovery.typeStrategies[t.Elem()]; len(strategies) > 0 {
+			return strategies
+		}
+	}
+	return nil
+}
+
+// Recovery tracing methods
+
+// traceRecovery writes a trace message if recovery tracing is enabled.
+func (p *parseContext) traceRecovery(format string, args ...interface{}) {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery] "+format+"\n", args...)
+	}
+}
+
+// traceRecoveryAttempt logs when a recovery attempt begins.
+func (p *parseContext) traceRecoveryAttempt(pos lexer.Position, err error, nodeName string) {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery] %s: attempting recovery for %q (error: %v)\n",
+			pos, nodeName, err)
+	}
+}
+
+// traceRecoveryStrategy logs when a specific strategy is being tried.
+func (p *parseContext) traceRecoveryStrategy(strategyName string, pos lexer.Position) {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   trying strategy %q at %v\n", strategyName, pos)
+	}
+}
+
+// traceRecoverySuccess logs when recovery succeeds.
+func (p *parseContext) traceRecoverySuccess(strategyName string, skippedCount int, newPos lexer.Position) {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   SUCCESS: %q skipped %d token(s), now at %v\n",
+			strategyName, skippedCount, newPos)
+	}
+}
+
+// traceRecoveryFailed logs when a strategy fails.
+func (p *parseContext) traceRecoveryFailed(strategyName string, reason string) {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   FAILED: %q - %s\n", strategyName, reason)
+	}
+}
+
+// traceRecoveryAllFailed logs when all strategies fail.
+func (p *parseContext) traceRecoveryAllFailed() {
+	if p.recovery != nil && p.recovery.traceWriter != nil {
+		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   all strategies failed\n")
+	}
 }

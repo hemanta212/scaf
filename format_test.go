@@ -10,9 +10,9 @@ import (
 	"github.com/rlch/scaf"
 )
 
-// ignorePos ignores lexer.Position and comment fields in comparisons.
+// ignorePos ignores lexer.Position, Tokens, and comment fields in comparisons.
 var ignorePos = cmp.Options{
-	cmpopts.IgnoreTypes(lexer.Position{}),
+	cmpopts.IgnoreTypes(lexer.Position{}, lexer.Token{}, []lexer.Token{}),
 	cmpopts.IgnoreFields(scaf.Suite{}, "LeadingComments", "TrailingComment"),
 	cmpopts.IgnoreFields(scaf.Import{}, "LeadingComments", "TrailingComment"),
 	cmpopts.IgnoreFields(scaf.Query{}, "LeadingComments", "TrailingComment"),
@@ -200,7 +200,7 @@ Q {
 												Inline: ptr("MATCH (n) RETURN count(n) as c"),
 											},
 											Conditions: []*scaf.Expr{
-												{Tokens: []*scaf.ExprToken{
+												{ExprTokens: []*scaf.ExprToken{
 													{Ident: ptr("c")},
 													{Op: ptr("==")},
 													{Number: ptr("1")},
@@ -663,7 +663,7 @@ func TestFormatPreservesSemantics(t *testing.T) {
 													Inline: ptr("MATCH (s:Session) RETURN count(s) as c"),
 												},
 												Conditions: []*scaf.Expr{
-													{Tokens: []*scaf.ExprToken{
+													{ExprTokens: []*scaf.ExprToken{
 														{Ident: ptr("c")},
 														{Op: ptr("==")},
 														{Number: ptr("1")},

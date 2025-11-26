@@ -19,6 +19,7 @@ type Node interface {
 type Suite struct {
 	Pos      lexer.Position `parser:""`
 	EndPos   lexer.Position `parser:""`
+	Tokens   []lexer.Token  `parser:""`
 	Imports  []*Import      `parser:"@@*"`
 	Queries  []*Query       `parser:"@@*"`
 	Setup    *SetupClause   `parser:"('setup' @@)?"`
@@ -26,8 +27,8 @@ type Suite struct {
 	Scopes   []*QueryScope  `parser:"@@*"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -41,12 +42,13 @@ func (s *Suite) Span() Span { return Span{Start: s.Pos, End: s.EndPos} }
 type Import struct {
 	Pos    lexer.Position `parser:""`
 	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	Alias  *string        `parser:"'import' @Ident?"`
 	Path   string         `parser:"@String"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -56,12 +58,13 @@ func (i *Import) Span() Span { return Span{Start: i.Pos, End: i.EndPos} }
 type Query struct {
 	Pos    lexer.Position `parser:""`
 	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	Name   string         `parser:"'query' @Ident"`
 	Body   string         `parser:"@RawString"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -77,6 +80,7 @@ func (q *Query) Span() Span { return Span{Start: q.Pos, End: q.EndPos} }
 type SetupClause struct {
 	Pos    lexer.Position `parser:""`
 	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	Inline *string        `parser:"@RawString"`
 	Named  *NamedSetup    `parser:"| @@"`
 	Block  []*SetupItem   `parser:"| '{' @@* '}'"`
@@ -88,8 +92,11 @@ func (s *SetupClause) Span() Span { return Span{Start: s.Pos, End: s.EndPos} }
 // SetupItem represents a single item in a setup block.
 // Can be either an inline query or a named setup call.
 type SetupItem struct {
-	Inline *string     `parser:"@RawString"`
-	Named  *NamedSetup `parser:"| @@"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Inline *string        `parser:"@RawString"`
+	Named  *NamedSetup    `parser:"| @@"`
 }
 
 // NamedSetup references a setup defined elsewhere (local or imported).
@@ -100,6 +107,7 @@ type SetupItem struct {
 type NamedSetup struct {
 	Pos    lexer.Position `parser:""`
 	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	Module *string        `parser:"(@Ident Dot)?"`
 	Name   string         `parser:"@Ident '('"`
 	Params []*SetupParam  `parser:"(@@ (Comma @@)*)? ')'"`
@@ -110,8 +118,11 @@ func (n *NamedSetup) Span() Span { return Span{Start: n.Pos, End: n.EndPos} }
 
 // SetupParam is a parameter passed to a named setup.
 type SetupParam struct {
-	Name  string      `parser:"@Ident Colon"`
-	Value *ParamValue `parser:"@@"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Name   string         `parser:"@Ident Colon"`
+	Value  *ParamValue    `parser:"@@"`
 }
 
 // ParamValue represents a value in a parameter - either a literal or a field reference.
@@ -124,8 +135,11 @@ type SetupParam struct {
 // Note: Literal must come first to match keywords (true, false, null) before they're
 // captured as identifiers by FieldRef.
 type ParamValue struct {
-	Literal  *Value       `parser:"@@"`
-	FieldRef *DottedIdent `parser:"| @@"`
+	Pos      lexer.Position `parser:""`
+	EndPos   lexer.Position `parser:""`
+	Tokens   []lexer.Token  `parser:""`
+	Literal  *Value         `parser:"@@"`
+	FieldRef *DottedIdent   `parser:"| @@"`
 }
 
 // ToGo converts a ParamValue to a native Go type.
@@ -169,14 +183,15 @@ func (p *ParamValue) String() string {
 type QueryScope struct {
 	Pos       lexer.Position `parser:""`
 	EndPos    lexer.Position `parser:""`
+	Tokens    []lexer.Token  `parser:""`
 	QueryName string         `parser:"@Ident '{'"`
 	Setup     *SetupClause   `parser:"('setup' @@)?"`
 	Teardown  *string        `parser:"('teardown' @RawString)?"`
 	Items     []*TestOrGroup `parser:"@@* '}'"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -186,6 +201,7 @@ func (q *QueryScope) Span() Span { return Span{Start: q.Pos, End: q.EndPos} }
 type TestOrGroup struct {
 	Pos    lexer.Position `parser:""`
 	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	Test   *Test          `parser:"@@"`
 	Group  *Group         `parser:"| @@"`
 }
@@ -197,14 +213,15 @@ func (t *TestOrGroup) Span() Span { return Span{Start: t.Pos, End: t.EndPos} }
 type Group struct {
 	Pos      lexer.Position `parser:""`
 	EndPos   lexer.Position `parser:""`
+	Tokens   []lexer.Token  `parser:""`
 	Name     string         `parser:"'group' @String '{'"`
 	Setup    *SetupClause   `parser:"('setup' @@)?"`
 	Teardown *string        `parser:"('teardown' @RawString)?"`
 	Items    []*TestOrGroup `parser:"@@* '}'"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -215,6 +232,7 @@ func (g *Group) Span() Span { return Span{Start: g.Pos, End: g.EndPos} }
 type Test struct {
 	Pos        lexer.Position `parser:""`
 	EndPos     lexer.Position `parser:""`
+	Tokens     []lexer.Token  `parser:""`
 	Name       string         `parser:"'test' @String '{'"`
 	Setup      *SetupClause   `parser:"('setup' @@)?"`
 	Statements []*Statement   `parser:"@@*"`
@@ -222,8 +240,8 @@ type Test struct {
 	Close      string         `parser:"'}'"`
 
 	// Comments attached to this node (populated after parsing).
-	LeadingComments  []string `parser:""`
-	TrailingComment  string   `parser:""`
+	LeadingComments []string `parser:""`
+	TrailingComment string   `parser:""`
 }
 
 // Span returns the source span of this node.
@@ -240,6 +258,7 @@ func (t *Test) Span() Span { return Span{Start: t.Pos, End: t.EndPos} }
 type Assert struct {
 	Pos        lexer.Position `parser:""`
 	EndPos     lexer.Position `parser:""`
+	Tokens     []lexer.Token  `parser:""`
 	Query      *AssertQuery   `parser:"'assert' @@? '{'"`
 	Conditions []*Expr        `parser:"(@@ Semi?)* '}'"`
 }
@@ -250,6 +269,9 @@ func (a *Assert) Span() Span { return Span{Start: a.Pos, End: a.EndPos} }
 // AssertQuery specifies the query to run before evaluating conditions.
 // Either an inline raw string query or a named query reference with params.
 type AssertQuery struct {
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
 	// Inline query (raw string)
 	Inline *string `parser:"@RawString"`
 	// Or named query reference with required parentheses
@@ -260,20 +282,23 @@ type AssertQuery struct {
 // Expr captures tokens for expr-lang evaluation.
 // Tokens are reconstructed into a string and parsed by expr.Compile() at runtime.
 type Expr struct {
-	Tokens []*ExprToken `parser:"@@+"`
+	Pos        lexer.Position `parser:""`
+	EndPos     lexer.Position `parser:""`
+	RawTokens  []lexer.Token  `parser:""`
+	ExprTokens []*ExprToken   `parser:"@@+"`
 }
 
 // String reconstructs the expression as a string for expr-lang.
 func (e *Expr) String() string {
-	if e == nil || len(e.Tokens) == 0 {
+	if e == nil || len(e.ExprTokens) == 0 {
 		return ""
 	}
 
 	var b strings.Builder
 
-	for i, tok := range e.Tokens {
+	for i, tok := range e.ExprTokens {
 		if i > 0 {
-			prev := e.Tokens[i-1]
+			prev := e.ExprTokens[i-1]
 			// Add space between tokens except:
 			// - around dots (u.name)
 			// - after open brackets (foo(x), arr[0])
@@ -302,17 +327,20 @@ func (e *Expr) String() string {
 // Matches expr-lang's token kinds: Identifier, Number, String, Operator, Bracket.
 // Note: { } ; are NOT captured as they're expression delimiters.
 type ExprToken struct {
-	Str     *string `parser:"@String"`
-	Number  *string `parser:"| @Number"`
-	Ident   *string `parser:"| @Ident"`
-	Op      *string `parser:"| @Op"`
-	Dot     bool    `parser:"| @Dot"`
-	Colon   bool    `parser:"| @Colon"`
-	Comma   bool    `parser:"| @Comma"`
-	LParen  bool    `parser:"| @'('"`
-	RParen  bool    `parser:"| @')'"`
-	LBrack  bool    `parser:"| @'['"`
-	RBrack  bool    `parser:"| @']'"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Str    *string        `parser:"@String"`
+	Number *string        `parser:"| @Number"`
+	Ident  *string        `parser:"| @Ident"`
+	Op     *string        `parser:"| @Op"`
+	Dot    bool           `parser:"| @Dot"`
+	Colon  bool           `parser:"| @Colon"`
+	Comma  bool           `parser:"| @Comma"`
+	LParen bool           `parser:"| @'('"`
+	RParen bool           `parser:"| @')'"`
+	LBrack bool           `parser:"| @'['"`
+	RBrack bool           `parser:"| @']'"`
 }
 
 // String returns the string representation of a token.
@@ -367,7 +395,10 @@ func (t *ExprToken) IsIdent() bool {
 
 // DottedIdent represents a dot-separated identifier like "u.name" or "$userId".
 type DottedIdent struct {
-	Parts []string `parser:"@Ident (Dot @Ident)*"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Parts  []string       `parser:"@Ident (Dot @Ident)*"`
 }
 
 // String returns the dot-joined identifier.
@@ -381,8 +412,11 @@ func (d *DottedIdent) String() string {
 //	$userId: 1                                    // input parameter
 //	u.name: "Alice"                               // expected output (equality)
 type Statement struct {
-	KeyParts *DottedIdent `parser:"@@"`
-	Value    *Value       `parser:"Colon @@"`
+	Pos      lexer.Position `parser:""`
+	EndPos   lexer.Position `parser:""`
+	Tokens   []lexer.Token  `parser:""`
+	KeyParts *DottedIdent   `parser:"@@"`
+	Value    *Value         `parser:"Colon @@"`
 }
 
 // Key returns the statement key as a dot-joined string.
@@ -419,28 +453,40 @@ func (b *Boolean) Capture(values []string) error {
 
 // Value represents a literal value (string, number, bool, null, map, or list).
 type Value struct {
-	Null    bool     `parser:"@'null'"`
-	Str     *string  `parser:"| @String"`
-	Number  *float64 `parser:"| @Number"`
-	Boolean *Boolean `parser:"| @('true' | 'false')"`
-	Map     *Map     `parser:"| @@"`
-	List    *List    `parser:"| @@"`
+	Pos     lexer.Position `parser:""`
+	EndPos  lexer.Position `parser:""`
+	Tokens  []lexer.Token  `parser:""`
+	Null    bool           `parser:"@'null'"`
+	Str     *string        `parser:"| @String"`
+	Number  *float64       `parser:"| @Number"`
+	Boolean *Boolean       `parser:"| @('true' | 'false')"`
+	Map     *Map           `parser:"| @@"`
+	List    *List          `parser:"| @@"`
 }
 
 // Map represents a key-value map literal.
 type Map struct {
-	Entries []*MapEntry `parser:"'{' (@@ (Comma @@)*)? '}'"`
+	Pos     lexer.Position `parser:""`
+	EndPos  lexer.Position `parser:""`
+	Tokens  []lexer.Token  `parser:""`
+	Entries []*MapEntry    `parser:"'{' (@@ (Comma @@)*)? '}'"`
 }
 
 // MapEntry represents a single entry in a map literal.
 type MapEntry struct {
-	Key   string `parser:"@Ident Colon"`
-	Value *Value `parser:"@@"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Key    string         `parser:"@Ident Colon"`
+	Value  *Value         `parser:"@@"`
 }
 
 // List represents an array/list literal.
 type List struct {
-	Values []*Value `parser:"'[' (@@ (Comma @@)*)? ']'"`
+	Pos    lexer.Position `parser:""`
+	EndPos lexer.Position `parser:""`
+	Tokens []lexer.Token  `parser:""`
+	Values []*Value       `parser:"'[' (@@ (Comma @@)*)? ']'"`
 }
 
 // ToGo converts a Value to a native Go type.

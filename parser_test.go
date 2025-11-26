@@ -9,10 +9,10 @@ import (
 	"github.com/rlch/scaf"
 )
 
-// ignorePositions is a cmp option that ignores lexer.Position fields in comparisons.
-// This allows tests to compare AST structure without specifying exact source positions.
+// ignorePositions is a cmp option that ignores lexer.Position and Token fields in comparisons.
+// This allows tests to compare AST structure without specifying exact source positions or tokens.
 var ignorePositions = cmp.Options{
-	cmpopts.IgnoreTypes(lexer.Position{}),
+	cmpopts.IgnoreTypes(lexer.Position{}, lexer.Token{}, []lexer.Token{}),
 	cmpopts.IgnoreFields(scaf.Suite{}, "LeadingComments", "TrailingComment"),
 	cmpopts.IgnoreFields(scaf.Import{}, "LeadingComments", "TrailingComment"),
 	cmpopts.IgnoreFields(scaf.Query{}, "LeadingComments", "TrailingComment"),
@@ -238,7 +238,7 @@ func TestParse(t *testing.T) {
 												Inline: ptr("MATCH (n) RETURN count(n) as c"),
 											},
 											Conditions: []*scaf.Expr{
-												{Tokens: []*scaf.ExprToken{
+												{ExprTokens: []*scaf.ExprToken{
 													{Ident: ptr("c")},
 													{Op: ptr("==")},
 													{Number: ptr("1")},
@@ -283,7 +283,7 @@ func TestParse(t *testing.T) {
 												},
 											},
 											Conditions: []*scaf.Expr{
-												{Tokens: []*scaf.ExprToken{
+												{ExprTokens: []*scaf.ExprToken{
 													{Ident: ptr("count")},
 													{Op: ptr(">")},
 													{Number: ptr("0")},

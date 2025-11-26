@@ -14,31 +14,6 @@ var parser = participle.MustBuild[Suite](
 	participle.Elide("Whitespace", "Comment"),
 )
 
-// defaultRecoveryStrategies returns the recovery strategies for parsing scaf files.
-//
-// The strategies are tried in order:
-// 1. Skip to statement/block delimiters (}, test, group, query, import, setup, teardown, assert)
-// 2. Skip past semicolons (for inline statements)
-func defaultRecoveryStrategies() []participle.RecoveryStrategy {
-	return []participle.RecoveryStrategy{
-		// Skip to common statement terminators and keywords that start new constructs
-		participle.SkipUntil(
-			"}", // Block closer
-			"test",
-			"group",
-			"query",
-			"import",
-			"setup",
-			"teardown",
-			"assert",
-		),
-		// Handle nested braces in setup blocks, tests, etc.
-		participle.NestedDelimiters("{", "}"),
-		// Handle parentheses in function calls like fixtures.CreateUser()
-		participle.NestedDelimiters("(", ")"),
-	}
-}
-
 // Parse parses a scaf DSL file and returns the AST with comments attached to nodes.
 // This function is thread-safe.
 //
@@ -67,7 +42,23 @@ func ParseWithRecovery(data []byte, withRecovery bool) (*Suite, error) {
 
 	if withRecovery {
 		suite, err = parser.ParseBytes("", data,
-			participle.Recover(defaultRecoveryStrategies()...),
+			participle.Recover(
+				// Skip to common statement terminators and keywords that start new constructs
+				participle.SkipUntil(
+					"}", // Block closer
+					"test",
+					"group",
+					"query",
+					"import",
+					"setup",
+					"teardown",
+					"assert",
+				),
+				// Handle nested braces in setup blocks, tests, etc.
+				participle.NestedDelimiters("{", "}"),
+				// Handle parentheses in function calls like fixtures.CreateUser()
+				participle.NestedDelimiters("(", ")"),
+			),
 			participle.MaxRecoveryErrors(50),
 		)
 	} else {

@@ -237,7 +237,7 @@ func TestRunner_AssertPassing(t *testing.T) {
 					Name: "user is adult",
 					Asserts: []*scaf.Assert{{
 						Conditions: []*scaf.Expr{{
-							Tokens: []*scaf.ExprToken{
+							ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("age")},
 								{Op: ptr(">=")},
 								{Number: ptr("18")},
@@ -274,7 +274,7 @@ func TestRunner_AssertFailing(t *testing.T) {
 					Name: "user is adult",
 					Asserts: []*scaf.Assert{{
 						Conditions: []*scaf.Expr{{
-							Tokens: []*scaf.ExprToken{
+							ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("age")},
 								{Op: ptr(">=")},
 								{Number: ptr("18")},
@@ -312,13 +312,13 @@ func TestRunner_AssertMultipleConditions(t *testing.T) {
 					Asserts: []*scaf.Assert{{
 						Conditions: []*scaf.Expr{
 							// age >= 18
-							{Tokens: []*scaf.ExprToken{
+							{ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("age")},
 								{Op: ptr(">=")},
 								{Number: ptr("18")},
 							}},
 							// verified == true
-							{Tokens: []*scaf.ExprToken{
+							{ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("verified")},
 								{Op: ptr("==")},
 								{Ident: ptr("true")},
@@ -360,7 +360,7 @@ func TestRunner_AssertWithInlineQuery(t *testing.T) {
 							Inline: ptr("COUNT"),
 						},
 						Conditions: []*scaf.Expr{{
-							Tokens: []*scaf.ExprToken{
+							ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("cnt")},
 								{Op: ptr(">")},
 								{Number: ptr("0")},
@@ -405,7 +405,7 @@ func TestRunner_AssertWithNamedQuery(t *testing.T) {
 							QueryName: ptr("CountAll"),
 						},
 						Conditions: []*scaf.Expr{{
-							Tokens: []*scaf.ExprToken{
+							ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("total")},
 								{Op: ptr("==")},
 								{Number: ptr("10")},

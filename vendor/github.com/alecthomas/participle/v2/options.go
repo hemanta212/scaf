@@ -112,6 +112,40 @@ func Union[T any](members ...T) Option {
 	}
 }
 
+// RecoverTypeWith associates recovery strategies with a specific grammar type at build time.
+//
+// When parsing of type T fails, the specified recovery strategies will be tried in order.
+// This is useful when you want "always on" recovery for a specific type, baked into the parser.
+//
+// For more flexibility, prefer using ViaParser with Recover() at parse time:
+//
+//	ast, err := parser.ParseString("", input,
+//	    participle.Recover(
+//	        participle.ViaParser(func(lex *lexer.PeekingLexer) (*Expr, error) {
+//	            // Recovery logic...
+//	            return &Expr{IsError: true}, nil
+//	        }),
+//	    ),
+//	)
+//
+// Use RecoverTypeWith when you need build-time type-specific recovery:
+//
+//	parser := participle.MustBuild[Program](
+//	    participle.Lexer(myLexer),
+//	    participle.RecoverTypeWith[*Expr](
+//	        participle.NestedDelimiters("(", ")"), // Try nested first
+//	        participle.SkipUntil(";"),             // Fall back to skip
+//	    ),
+//	)
+func RecoverTypeWith[T any](strategies ...RecoveryStrategy) Option {
+	return func(p *parserOptions) error {
+		var t T
+		typ := reflect.TypeOf(t)
+		p.recoveryDefs = append(p.recoveryDefs, recoveryDef{typ, strategies})
+		return nil
+	}
+}
+
 // ParseOption modifies how an individual parse is applied.
 type ParseOption func(p *parseContext)
 
@@ -138,10 +172,22 @@ func AllowTrailing(ok bool) ParseOption {
 // continues. This allows the parser to report multiple errors and produce a
 // partial AST even when the input contains errors.
 //
+// Strategies can be global (applied to any parse failure) or type-specific.
+// Type-specific strategies (like ViaParser) are only applied when parsing
+// their target type fails.
+//
 // Example usage:
 //
 //	ast, err := parser.ParseString("", input,
 //	    participle.Recover(
+//	        // Type-specific: only for *Expr
+//	        participle.ViaParser(func(lex *lexer.PeekingLexer) (*Expr, error) {
+//	            for !lex.Peek().EOF() && lex.Peek().Value != ";" {
+//	                lex.Next()
+//	            }
+//	            return &Expr{IsError: true}, nil
+//	        }),
+//	        // Global fallbacks
 //	        participle.SkipUntil(";", "}"),
 //	        participle.NestedDelimiters("(", ")", [2]string{"[", "]"}),
 //	    ))
@@ -152,10 +198,25 @@ func Recover(strategies ...RecoveryStrategy) ParseOption {
 	return func(p *parseContext) {
 		if p.recovery == nil {
 			p.recovery = &recoveryConfig{
-				maxErrors: 100, // Default max errors
+				maxErrors:      100, // Default max errors
+				typeStrategies: make(map[reflect.Type][]RecoveryStrategy),
 			}
 		}
-		p.recovery.strategies = append(p.recovery.strategies, strategies...)
+		if p.recovery.typeStrategies == nil {
+			p.recovery.typeStrategies = make(map[reflect.Type][]RecoveryStrategy)
+		}
+
+		for _, strategy := range strategies {
+			// Check if this is a type-aware strategy (like ViaParserStrategy)
+			if typeAware, ok := strategy.(TypeAwareStrategy); ok {
+				targetType := typeAware.TargetType()
+				p.recovery.typeStrategies[targetType] = append(
+					p.recovery.typeStrategies[targetType], strategy)
+			} else {
+				// Global fallback strategy
+				p.recovery.strategies = append(p.recovery.strategies, strategy)
+			}
+		}
 	}
 }
 
@@ -167,5 +228,33 @@ func MaxRecoveryErrors(max int) ParseOption {
 			p.recovery = &recoveryConfig{}
 		}
 		p.recovery.maxErrors = max
+	}
+}
+
+// TraceRecovery enables detailed tracing of recovery attempts to the given writer.
+// This is useful for debugging recovery strategies and understanding why
+// certain inputs fail to recover properly.
+//
+// Output includes:
+//   - When recovery is attempted and why
+//   - Which strategies are tried
+//   - What tokens are skipped
+//   - Whether recovery succeeds or fails
+//
+// Example usage:
+//
+//	ast, err := parser.ParseString("", input,
+//	    participle.Recover(participle.SkipUntil(";")),
+//	    participle.TraceRecovery(os.Stderr),
+//	)
+func TraceRecovery(w io.Writer) ParseOption {
+	return func(p *parseContext) {
+		if p.recovery == nil {
+			p.recovery = &recoveryConfig{
+				maxErrors:      100,
+				typeStrategies: make(map[reflect.Type][]RecoveryStrategy),
+			}
+		}
+		p.recovery.traceWriter = w
 	}
 }

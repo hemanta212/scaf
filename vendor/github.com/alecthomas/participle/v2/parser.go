@@ -20,6 +20,12 @@ type customDef struct {
 	parseFn reflect.Value
 }
 
+// recoveryDef associates recovery strategies with a type.
+type recoveryDef struct {
+	typ        reflect.Type
+	strategies []RecoveryStrategy
+}
+
 type parserOptions struct {
 	lex                   lexer.Definition
 	rootType              reflect.Type
@@ -30,6 +36,7 @@ type parserOptions struct {
 	mappers               []mapperByToken
 	unionDefs             []unionDef
 	customDefs            []customDef
+	recoveryDefs          []recoveryDef
 	elide                 []string
 }
 
@@ -115,6 +122,9 @@ func Build[G any](options ...Option) (parser *Parser[G], err error) {
 		return nil, err
 	}
 	if err := context.addUnionDefs(p.unionDefs); err != nil {
+		return nil, err
+	}
+	if err := context.addRecoveryDefs(p.recoveryDefs); err != nil {
 		return nil, err
 	}
 

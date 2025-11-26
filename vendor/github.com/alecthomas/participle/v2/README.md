@@ -26,6 +26,11 @@
 - [Performance](#performance)
 - [Concurrency](#concurrency)
 - [Error reporting](#error-reporting)
+- [Error recovery](#error-recovery)
+	- [Recovery strategies](#recovery-strategies)
+	- [Type-specific recovery with ViaParser](#type-specific-recovery-with-viaparser)
+	- [AST metadata fields](#ast-metadata-fields)
+	- [Additional options](#additional-options)
 - [Comments](#comments)
 - [Limitations](#limitations)
 - [EBNF](#ebnf)
@@ -459,6 +464,7 @@ Example | Description
 [Stateful](https://github.com/alecthomas/participle/tree/master/_examples/stateful) | A basic example of a stateful lexer and corresponding parser.
 [Thrift](https://github.com/alecthomas/participle/tree/master/_examples/thrift) | A full [Thrift](https://thrift.apache.org/docs/idl) parser.
 [TOML](https://github.com/alecthomas/participle/tree/master/_examples/toml) | A [TOML](https://github.com/toml-lang/toml) parser.
+[Recovery](https://github.com/alecthomas/participle/tree/master/_examples/recovery) | Demonstrates error recovery strategies for robust parsing.
 
 Included below is a full GraphQL lexer and parser:
 
@@ -602,6 +608,84 @@ There are a few areas where Participle can provide useful feedback to users of y
 [^1]: Either the concrete type or a type convertible to it, allowing user defined types to be used.
 
 These related pieces of information can be combined to provide fairly comprehensive error reporting.
+
+## Error recovery
+
+Participle supports error recovery, allowing the parser to continue after encountering errors,
+collect multiple errors, and produce a partial AST. This is useful for IDE integration, linters,
+and comprehensive error reporting. The recovery system is inspired by
+[Chumsky](https://github.com/zesterer/chumsky).
+
+Enable recovery by passing strategies to `Recover()`:
+
+```go
+ast, err := parser.ParseString("", input,
+    participle.Recover(participle.SkipPast(";")),
+)
+
+// Check for recovered errors
+var recErr *participle.RecoveryError
+if errors.As(err, &recErr) {
+    for _, e := range recErr.Errors {
+        fmt.Println(e)
+    }
+}
+```
+
+### Recovery strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `SkipUntil(tokens...)` | Skip tokens until a sync token, leaving it unconsumed |
+| `SkipPast(tokens...)` | Skip tokens until a sync token and consume it |
+| `NestedDelimiters(start, end, others...)` | Skip to balanced delimiters, respecting nesting |
+| `ViaParser[T](func)` | Type-specific recovery with custom parser function |
+| `SkipThenRetryUntil(tokens...)` | Skip one token at a time, retrying parse at each position |
+| `TryStrategies(strategies...)` | Try multiple strategies in order |
+
+**Choosing a strategy:**
+- Statement-based languages (`;` terminated): `SkipPast(";")`
+- Expressions with parentheses/brackets: `NestedDelimiters("(", ")")`
+- Need custom fallback values: `ViaParser(...)`
+- Complex languages: combine multiple strategies
+
+### Type-specific recovery with ViaParser
+
+`ViaParser` only activates when parsing its return type fails:
+
+```go
+participle.Recover(
+    // Only for *Expr failures - return a placeholder
+    participle.ViaParser(func(lex *lexer.PeekingLexer) (*Expr, error) {
+        for !lex.Peek().EOF() && lex.Peek().Value != ";" {
+            lex.Next()
+        }
+        return &Expr{IsError: true}, nil
+    }),
+    // Global fallback
+    participle.SkipPast(";"),
+)
+```
+
+### AST metadata fields
+
+Add optional fields to capture recovery information:
+
+```go
+type Statement struct {
+    Pos           lexer.Position  // Standard position
+    Recovered     bool            // True if recovered
+    RecoveredSpan lexer.Position  // Where recovery started  
+    RecoveredEnd  lexer.Position  // Where recovery ended
+    SkippedTokens []lexer.Token   // Tokens that were skipped
+    // ... grammar fields
+}
+```
+
+### Additional options
+
+- `MaxRecoveryErrors(n)` - Stop after n errors (default 100)
+- `TraceRecovery(w)` - Write recovery debug info to w
 
 ## Comments
 

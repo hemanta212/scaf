@@ -10,16 +10,30 @@ import (
 
 type generatorContext struct {
 	lexer.Definition
-	typeNodes    map[reflect.Type]node
-	symbolsToIDs map[lexer.TokenType]string
+	typeNodes      map[reflect.Type]node
+	symbolsToIDs   map[lexer.TokenType]string
+	typeRecoveries map[reflect.Type][]RecoveryStrategy
 }
 
 func newGeneratorContext(lex lexer.Definition) *generatorContext {
 	return &generatorContext{
-		Definition:   lex,
-		typeNodes:    map[reflect.Type]node{},
-		symbolsToIDs: lexer.SymbolsByRune(lex),
+		Definition:     lex,
+		typeNodes:      map[reflect.Type]node{},
+		symbolsToIDs:   lexer.SymbolsByRune(lex),
+		typeRecoveries: map[reflect.Type][]RecoveryStrategy{},
 	}
+}
+
+func (g *generatorContext) addRecoveryDefs(defs []recoveryDef) error {
+	for _, def := range defs {
+		// Normalize pointer types to match how we store type nodes
+		t := def.typ
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		g.typeRecoveries[t] = append(g.typeRecoveries[t], def.strategies...)
+	}
+	return nil
 }
 
 func (g *generatorContext) addUnionDefs(defs []unionDef) error {
@@ -237,13 +251,41 @@ func (g *generatorContext) parseCapture(slexer *structLexer) (node, error) {
 		return nil, err
 	}
 	field := slexer.Field()
+
+	// Parse recovery tag if present
+	recoveryConfig, err := parseRecoveryTag(field.RecoveryTag())
+	if err != nil {
+		return nil, fmt.Errorf("%s: invalid recover tag: %w", field.Name, err)
+	}
+
+	// Apply label from separate tag if not set in recover tag
+	if recoveryConfig != nil && recoveryConfig.label == "" {
+		if labelTag := field.LabelTag(); labelTag != "" {
+			recoveryConfig.label = labelTag
+		}
+	} else if recoveryConfig == nil && field.LabelTag() != "" {
+		// Create config just for the label (useful for error context)
+		recoveryConfig = &nodeRecoveryConfig{label: field.LabelTag()}
+	}
+
+	// Check for type-level recovery (from RecoverTypeWith)
+	fieldType := indirectType(field.Type)
+	if typeRecovery, ok := g.typeRecoveries[fieldType]; ok && len(typeRecovery) > 0 {
+		if recoveryConfig == nil {
+			recoveryConfig = &nodeRecoveryConfig{}
+		}
+		// Append type-level strategies (field-level tags take precedence)
+		recoveryConfig.strategies = append(recoveryConfig.strategies, typeRecovery...)
+	}
+
 	if token.Type == '@' {
 		_, _ = slexer.Next()
 		n, err := g.parseType(field.Type)
 		if err != nil {
 			return nil, err
 		}
-		return &capture{field, n}, nil
+		captureNode := &capture{field: field, node: n, recovery: recoveryConfig}
+		return captureNode, nil
 	}
 	ft := indirectType(field.Type)
 	if ft.Kind() == reflect.Struct && ft != tokenType && ft != tokensType && !implements(ft, captureType) && !implements(ft, textUnmarshalerType) {
@@ -253,7 +295,8 @@ func (g *generatorContext) parseCapture(slexer *structLexer) (node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &capture{field, n}, nil
+	captureNode := &capture{field: field, node: n, recovery: recoveryConfig}
+	return captureNode, nil
 }
 
 // A reference in the form <identifier> refers to a named token from the lexer.

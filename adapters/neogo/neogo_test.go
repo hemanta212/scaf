@@ -73,55 +73,64 @@ type NodeWithComplexTypes struct {
 // Test models for relationship direction tests.
 type IncomingNode struct {
 	neogo.Node `neo4j:"IncomingNode"`
-	Name       string `neo4j:"name"`
+
+	Name string `neo4j:"name"`
 }
 
 type OutgoingNode struct {
 	neogo.Node `neo4j:"OutgoingNode"`
-	Name       string               `neo4j:"name"`
-	Points     neogo.Many[PointsTo] `neo4j:"->"`
+
+	Name   string               `neo4j:"name"`
+	Points neogo.Many[PointsTo] `neo4j:"->"`
 }
 
 type PointsTo struct {
 	neogo.Relationship `neo4j:"POINTS_TO"`
-	From               *OutgoingNode `neo4j:"startNode"`
-	To                 *IncomingNode `neo4j:"endNode"`
+
+	From *OutgoingNode `neo4j:"startNode"`
+	To   *IncomingNode `neo4j:"endNode"`
 }
 
 // Test models for One[T] cardinality.
 type Owner struct {
 	neogo.Node `neo4j:"Owner"`
-	Name       string        `neo4j:"name"`
-	Pet        neogo.One[Pet] `neo4j:"->"`
+
+	Name string        `neo4j:"name"`
+	Pet  neogo.One[Pet] `neo4j:"->"`
 }
 
 type Pet struct {
 	neogo.Node `neo4j:"Pet"`
-	Name       string `neo4j:"name"`
+
+	Name string `neo4j:"name"`
 }
 
 // Test model for nodes without relationships.
 type Standalone struct {
 	neogo.Node `neo4j:"Standalone"`
-	Name       string `neo4j:"name"`
+
+	Name string `neo4j:"name"`
 }
 
 // Test models for relationship without custom properties.
 type Start struct {
 	neogo.Node `neo4j:"Start"`
-	Name       string           `neo4j:"name"`
-	Links      neogo.Many[Link] `neo4j:"->"`
+
+	Name  string           `neo4j:"name"`
+	Links neogo.Many[Link] `neo4j:"->"`
 }
 
 type End struct {
 	neogo.Node `neo4j:"End"`
-	Name       string `neo4j:"name"`
+
+	Name string `neo4j:"name"`
 }
 
 type Link struct {
 	neogo.Relationship `neo4j:"LINKS_TO"`
-	From               *Start `neo4j:"startNode"`
-	To                 *End   `neo4j:"endNode"`
+
+	From *Start `neo4j:"startNode"`
+	To   *End   `neo4j:"endNode"`
 }
 
 func TestNewAdapter(t *testing.T) {
@@ -159,6 +168,7 @@ func TestNewAdapter(t *testing.T) {
 
 func TestExtractSchema_Nodes(t *testing.T) {
 	a := adapter.NewAdapter(&Person{}, &Movie{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -179,6 +189,7 @@ func TestExtractSchema_Nodes(t *testing.T) {
 	if _, ok := personFields["name"]; !ok {
 		t.Error("Person should have 'name' field")
 	}
+
 	if _, ok := personFields["age"]; !ok {
 		t.Error("Person should have 'age' field")
 	}
@@ -198,9 +209,11 @@ func TestExtractSchema_Nodes(t *testing.T) {
 	if _, ok := movieFields["title"]; !ok {
 		t.Error("Movie should have 'title' field")
 	}
+
 	if _, ok := movieFields["released"]; !ok {
 		t.Error("Movie should have 'released' field")
 	}
+
 	if _, ok := movieFields["genres"]; !ok {
 		t.Error("Movie should have 'genres' field")
 	}
@@ -208,6 +221,7 @@ func TestExtractSchema_Nodes(t *testing.T) {
 
 func TestExtractSchema_RelationshipModels(t *testing.T) {
 	a := adapter.NewAdapter(&Person{}, &Movie{}, &ActedIn{}, &Friendship{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -228,9 +242,11 @@ func TestExtractSchema_RelationshipModels(t *testing.T) {
 	if _, ok := actedInFields["roles"]; !ok {
 		t.Error("ActedIn should have 'roles' field")
 	}
+
 	if _, ok := actedInFields["startNode"]; ok {
 		t.Error("ActedIn should not expose 'startNode' as a field")
 	}
+
 	if _, ok := actedInFields["endNode"]; ok {
 		t.Error("ActedIn should not expose 'endNode' as a field")
 	}
@@ -249,6 +265,7 @@ func TestExtractSchema_RelationshipModels(t *testing.T) {
 
 func TestExtractSchema_NodeRelationships(t *testing.T) {
 	a := adapter.NewAdapter(&Person{}, &Movie{}, &ActedIn{}, &Friendship{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -271,9 +288,11 @@ func TestExtractSchema_NodeRelationships(t *testing.T) {
 		if friends.RelType != "FRIENDS_WITH" {
 			t.Errorf("Friends.RelType = %q, want %q", friends.RelType, "FRIENDS_WITH")
 		}
+
 		if friends.Direction != analysis.DirectionOutgoing {
 			t.Errorf("Friends.Direction = %q, want %q", friends.Direction, analysis.DirectionOutgoing)
 		}
+
 		if !friends.Many {
 			t.Error("Friends should be Many")
 		}
@@ -286,9 +305,11 @@ func TestExtractSchema_NodeRelationships(t *testing.T) {
 		if actedIn.RelType != "ACTED_IN" {
 			t.Errorf("ActedIn.RelType = %q, want %q", actedIn.RelType, "ACTED_IN")
 		}
+
 		if actedIn.Direction != analysis.DirectionOutgoing {
 			t.Errorf("ActedIn.Direction = %q, want %q", actedIn.Direction, analysis.DirectionOutgoing)
 		}
+
 		if !actedIn.Many {
 			t.Error("ActedIn should be Many")
 		}
@@ -299,6 +320,7 @@ func TestExtractSchema_NodeRelationships(t *testing.T) {
 
 func TestExtractSchema_FieldTypes(t *testing.T) {
 	a := adapter.NewAdapter(&NodeWithComplexTypes{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -368,6 +390,7 @@ func TestExtractSchema_FieldTypes(t *testing.T) {
 
 func TestExtractSchema_RequiredFields(t *testing.T) {
 	a := adapter.NewAdapter(&NodeWithOptionalFields{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -401,6 +424,7 @@ func TestExtractSchema_RequiredFields(t *testing.T) {
 
 func TestExtractSchema_PrimitiveTypes(t *testing.T) {
 	a := adapter.NewAdapter(&Person{}, &Movie{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -414,9 +438,11 @@ func TestExtractSchema_PrimitiveTypes(t *testing.T) {
 		if nameField.Type == nil {
 			t.Fatal("name field has nil type")
 		}
+
 		if nameField.Type.Kind != analysis.TypeKindPrimitive {
 			t.Errorf("name type kind = %q, want %q", nameField.Type.Kind, analysis.TypeKindPrimitive)
 		}
+
 		if nameField.Type.Name != "string" {
 			t.Errorf("name type name = %q, want %q", nameField.Type.Name, "string")
 		}
@@ -429,9 +455,11 @@ func TestExtractSchema_PrimitiveTypes(t *testing.T) {
 		if ageField.Type == nil {
 			t.Fatal("age field has nil type")
 		}
+
 		if ageField.Type.Kind != analysis.TypeKindPrimitive {
 			t.Errorf("age type kind = %q, want %q", ageField.Type.Kind, analysis.TypeKindPrimitive)
 		}
+
 		if ageField.Type.Name != "int" {
 			t.Errorf("age type name = %q, want %q", ageField.Type.Name, "int")
 		}
@@ -442,6 +470,7 @@ func TestExtractSchema_PrimitiveTypes(t *testing.T) {
 
 func TestExtractSchema_TypeString(t *testing.T) {
 	a := adapter.NewAdapter(&NodeWithComplexTypes{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -479,13 +508,14 @@ func TestExtractSchema_TypeString(t *testing.T) {
 	}
 }
 
-func TestExtractSchema_ImplementsSchemaAdapter(t *testing.T) {
+func TestExtractSchema_ImplementsSchemaAdapter(_ *testing.T) {
 	// Verify that Adapter implements analysis.SchemaAdapter
 	var _ analysis.SchemaAdapter = adapter.NewAdapter()
 }
 
 func TestExtractSchema_EmptyRegistry(t *testing.T) {
 	a := adapter.NewAdapter()
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -506,6 +536,7 @@ func TestExtractSchema_EmptyRegistry(t *testing.T) {
 
 func TestExtractSchema_RelationshipTarget(t *testing.T) {
 	a := adapter.NewAdapter(&Person{}, &Movie{}, &ActedIn{}, &Friendship{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -532,6 +563,7 @@ func TestExtractSchema_RelationshipTarget(t *testing.T) {
 func TestExtractSchema_SliceFieldWithSliceElement(t *testing.T) {
 	// Movie has genres which is []string
 	a := adapter.NewAdapter(&Movie{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -565,6 +597,7 @@ func TestExtractSchema_SliceFieldWithSliceElement(t *testing.T) {
 func TestExtractSchema_RelationshipDirection(t *testing.T) {
 	// Test that relationships are extracted with correct direction
 	a := adapter.NewAdapter(&IncomingNode{}, &OutgoingNode{}, &PointsTo{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -580,6 +613,7 @@ func TestExtractSchema_RelationshipDirection(t *testing.T) {
 		if points.Direction != analysis.DirectionOutgoing {
 			t.Errorf("Points.Direction = %q, want %q", points.Direction, analysis.DirectionOutgoing)
 		}
+
 		if points.Target != "IncomingNode" {
 			t.Errorf("Points.Target = %q, want %q", points.Target, "IncomingNode")
 		}
@@ -591,6 +625,7 @@ func TestExtractSchema_RelationshipDirection(t *testing.T) {
 func TestExtractSchema_OneRelationship(t *testing.T) {
 	// Test One[T] vs Many[T] cardinality
 	a := adapter.NewAdapter(&Owner{}, &Pet{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -614,6 +649,7 @@ func TestExtractSchema_OneRelationship(t *testing.T) {
 func TestExtractSchema_NoRelationships(t *testing.T) {
 	// Test node with no relationships
 	a := adapter.NewAdapter(&Standalone{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -632,6 +668,7 @@ func TestExtractSchema_NoRelationships(t *testing.T) {
 func TestExtractSchema_RelationshipWithoutProperties(t *testing.T) {
 	// Test relationship struct that has no custom properties (only startNode/endNode)
 	a := adapter.NewAdapter(&Start{}, &End{}, &Link{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -650,8 +687,8 @@ func TestExtractSchema_RelationshipWithoutProperties(t *testing.T) {
 
 func TestExtractSchema_SelfReferentialRelationship(t *testing.T) {
 	// Test relationships where start and end node are the same type
-
 	a := adapter.NewAdapter(&Person{}, &Friendship{})
+
 	schema, err := a.ExtractSchema()
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -730,16 +767,20 @@ func TestType_String_Nil(t *testing.T) {
 
 func fieldMap(fields []*analysis.Field) map[string]*analysis.Field {
 	m := make(map[string]*analysis.Field, len(fields))
+
 	for _, f := range fields {
 		m[f.Name] = f
 	}
+
 	return m
 }
 
 func relationshipMap(rels []*analysis.Relationship) map[string]*analysis.Relationship {
 	m := make(map[string]*analysis.Relationship, len(rels))
+
 	for _, r := range rels {
 		m[r.Name] = r
 	}
+
 	return m
 }

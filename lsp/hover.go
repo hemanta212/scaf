@@ -12,6 +12,12 @@ import (
 	"github.com/rlch/scaf/analysis"
 )
 
+// markdownQueryBlock wraps a query body in a markdown code block with the appropriate language.
+func (s *Server) markdownQueryBlock(queryBody string) string {
+	lang := scaf.MarkdownLanguage(s.dialectName)
+	return "```" + lang + "\n" + strings.TrimSpace(queryBody) + "\n```"
+}
+
 // Hover handles textDocument/hover requests.
 func (s *Server) Hover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	s.logger.Debug("Hover",
@@ -80,9 +86,7 @@ func (s *Server) hoverQuery(q *scaf.Query) string {
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf("**Query:** `%s`\n\n", q.Name))
-	b.WriteString("```cypher\n")
-	b.WriteString(strings.TrimSpace(q.Body))
-	b.WriteString("\n```")
+	b.WriteString(s.markdownQueryBlock(q.Body))
 
 	return b.String()
 }
@@ -107,9 +111,7 @@ func (s *Server) hoverQueryRef(q *analysis.QuerySymbol) string {
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString("```cypher\n")
-	b.WriteString(strings.TrimSpace(q.Body))
-	b.WriteString("\n```")
+	b.WriteString(s.markdownQueryBlock(q.Body))
 
 	return b.String()
 }

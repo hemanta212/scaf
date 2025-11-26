@@ -112,6 +112,52 @@ func RegisteredDialects() []string {
 	return names
 }
 
+// QueryAnalyzerFactory creates a QueryAnalyzer for a dialect.
+type QueryAnalyzerFactory func() QueryAnalyzer
+
+var analyzers = make(map[string]QueryAnalyzerFactory)
+
+// RegisterAnalyzer registers a query analyzer factory by dialect name.
+// Dialects should call this in their init() function.
+func RegisterAnalyzer(dialectName string, factory QueryAnalyzerFactory) {
+	analyzers[dialectName] = factory
+}
+
+// GetAnalyzer returns a QueryAnalyzer for the given dialect name.
+// Returns nil if no analyzer is registered for that dialect.
+func GetAnalyzer(dialectName string) QueryAnalyzer { //nolint:ireturn
+	factory, ok := analyzers[dialectName]
+	if !ok {
+		return nil
+	}
+
+	return factory()
+}
+
+// RegisteredAnalyzers returns the names of all registered analyzers.
+func RegisteredAnalyzers() []string {
+	names := make([]string, 0, len(analyzers))
+	for name := range analyzers {
+		names = append(names, name)
+	}
+
+	return names
+}
+
+// MarkdownLanguage returns the markdown language identifier for a dialect.
+// Used for syntax highlighting in IDE hover/completion documentation.
+func MarkdownLanguage(dialectName string) string {
+	// Common dialect name to markdown language mapping
+	switch dialectName {
+	case "cypher", "neo4j":
+		return "cypher"
+	case "postgres", "postgresql", "mysql", "sqlite", "sql":
+		return "sql"
+	default:
+		return dialectName
+	}
+}
+
 // QueryAnalyzer provides static analysis of queries for IDE features.
 // Dialects can optionally implement this to provide better completions.
 type QueryAnalyzer interface {

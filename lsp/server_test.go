@@ -8,6 +8,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rlch/scaf/lsp"
+
+	// Import dialects to register their analyzers via init().
+	_ "github.com/rlch/scaf/dialects/cypher"
 )
 
 // mockClient implements protocol.Client for testing.
@@ -55,7 +58,7 @@ func newTestServer(t *testing.T) (*lsp.Server, *mockClient) {
 
 	logger := zap.NewNop()
 	client := &mockClient{}
-	server := lsp.NewServer(client, logger)
+	server := lsp.NewServer(client, logger, "cypher")
 
 	return server, client
 }

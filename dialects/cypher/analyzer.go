@@ -8,6 +8,15 @@ import (
 	cyphergrammar "github.com/rlch/scaf/dialects/cypher/grammar"
 )
 
+func init() {
+	// Register the Cypher analyzer with the analyzer registry.
+	// This allows the LSP and other tools to use the analyzer without
+	// direct imports, enabling dialect-agnostic completion/hover.
+	scaf.RegisterAnalyzer("cypher", func() scaf.QueryAnalyzer {
+		return NewAnalyzer()
+	})
+}
+
 // Analyzer implements scaf.QueryAnalyzer for Cypher queries.
 type Analyzer struct{}
 

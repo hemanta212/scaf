@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io"
 	"os"
 
@@ -12,16 +13,27 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/rlch/scaf/lsp"
+
+	// Import dialects to register their analyzers via init().
+	_ "github.com/rlch/scaf/dialects/cypher"
+)
+
+var (
+	dialectFlag = flag.String("dialect", "cypher", "Query dialect (cypher, sql)")
+	debugFlag   = flag.Bool("debug", false, "Enable debug logging")
 )
 
 func main() {
+	flag.Parse()
+
 	// Set up logging to stderr (stdout is for LSP communication)
 	config := zap.NewDevelopmentConfig()
 	config.OutputPaths = []string{"stderr"}
 	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 
-	// For debugging, you can lower the level:
-	// config.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	if *debugFlag {
+		config.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	}
 
 	logger, err := config.Build()
 	if err != nil {
@@ -32,17 +44,17 @@ func main() {
 		_ = logger.Sync()
 	}()
 
-	logger.Info("Starting scaf-lsp server")
+	logger.Info("Starting scaf-lsp server", zap.String("dialect", *dialectFlag))
 
 	ctx := context.Background()
 
-	err = run(ctx, logger, os.Stdin, os.Stdout)
+	err = run(ctx, logger, os.Stdin, os.Stdout, *dialectFlag)
 	if err != nil {
 		logger.Fatal("Server error", zap.Error(err))
 	}
 }
 
-func run(ctx context.Context, logger *zap.Logger, in io.Reader, out io.Writer) error {
+func run(ctx context.Context, logger *zap.Logger, in io.Reader, out io.Writer, dialect string) error {
 	// Create a JSON-RPC stream connection over stdio
 	stream := jsonrpc2.NewStream(&readWriteCloser{in, out})
 	conn := jsonrpc2.NewConn(stream)
@@ -51,7 +63,7 @@ func run(ctx context.Context, logger *zap.Logger, in io.Reader, out io.Writer) e
 	client := protocol.ClientDispatcher(conn, logger)
 
 	// Create our LSP server
-	server := lsp.NewServer(client, logger)
+	server := lsp.NewServer(client, logger, dialect)
 
 	// Register the server handler with the connection
 	conn.Go(ctx, protocol.ServerHandler(server, nil))

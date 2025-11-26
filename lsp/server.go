@@ -8,6 +8,7 @@ import (
 	"go.lsp.dev/protocol"
 	"go.uber.org/zap"
 
+	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
 )
 
@@ -25,6 +26,10 @@ type Server struct {
 
 	// FileLoader for cross-file analysis (imports)
 	fileLoader *LSPFileLoader
+
+	// Query analysis for dialect-specific completions
+	dialectName   string              // e.g., "cypher", "sql"
+	queryAnalyzer scaf.QueryAnalyzer  // dialect-specific query analyzer
 
 	// Server state
 	initialized   bool
@@ -45,14 +50,32 @@ type Document struct {
 }
 
 // NewServer creates a new LSP server.
-func NewServer(client protocol.Client, logger *zap.Logger) *Server {
+// dialectName specifies the query dialect (e.g., "cypher", "sql") for completion/hover.
+// If empty, defaults to "cypher".
+func NewServer(client protocol.Client, logger *zap.Logger, dialectName string) *Server {
 	fileLoader := NewLSPFileLoader(logger, "")
+
+	// Default to cypher if not specified
+	if dialectName == "" {
+		dialectName = "cypher"
+	}
+
+	// Get the query analyzer for this dialect
+	queryAnalyzer := scaf.GetAnalyzer(dialectName)
+	if queryAnalyzer == nil {
+		logger.Warn("No query analyzer registered for dialect",
+			zap.String("dialect", dialectName),
+			zap.Strings("available", scaf.RegisteredAnalyzers()))
+	}
+
 	return &Server{
-		client:     client,
-		logger:     logger,
-		documents:  make(map[protocol.DocumentURI]*Document),
-		analyzer:   analysis.NewAnalyzer(fileLoader),
-		fileLoader: fileLoader,
+		client:        client,
+		logger:        logger,
+		documents:     make(map[protocol.DocumentURI]*Document),
+		analyzer:      analysis.NewAnalyzer(fileLoader),
+		fileLoader:    fileLoader,
+		dialectName:   dialectName,
+		queryAnalyzer: queryAnalyzer,
 	}
 }
 

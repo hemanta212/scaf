@@ -11,7 +11,6 @@ import (
 
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
-	"github.com/rlch/scaf/dialects/cypher"
 )
 
 // Completion handles textDocument/completion requests.
@@ -282,7 +281,7 @@ func (s *Server) completeQueryNames(doc *Document, _ *CompletionContext) []proto
 
 			item.Documentation = &protocol.MarkupContent{
 				Kind:  protocol.Markdown,
-				Value: "```cypher\n" + preview + "\n```",
+				Value: s.markdownCodeBlock(preview),
 			}
 		}
 
@@ -332,10 +331,13 @@ func (s *Server) completeParameters(doc *Document, cc *CompletionContext) []prot
 		return nil
 	}
 
-	// Use the Cypher analyzer to get parameters
-	analyzer := cypher.NewAnalyzer()
+	// If no query analyzer is available, fall back to regex-extracted params
+	if s.queryAnalyzer == nil {
+		return s.completeParametersFromSymbols(q.Params)
+	}
 
-	metadata, err := analyzer.AnalyzeQuery(q.Body)
+	// Use the dialect-specific analyzer to get parameters
+	metadata, err := s.queryAnalyzer.AnalyzeQuery(q.Body)
 	if err != nil {
 		s.logger.Debug("Failed to analyze query for completion", zap.Error(err))
 		// Fall back to regex-extracted params
@@ -383,10 +385,13 @@ func (s *Server) completeReturnFields(doc *Document, cc *CompletionContext) []pr
 		return nil
 	}
 
-	// Use the Cypher analyzer to get return fields
-	analyzer := cypher.NewAnalyzer()
+	// If no query analyzer is available, we can't provide return field completion
+	if s.queryAnalyzer == nil {
+		return nil
+	}
 
-	metadata, err := analyzer.AnalyzeQuery(q.Body)
+	// Use the dialect-specific analyzer to get return fields
+	metadata, err := s.queryAnalyzer.AnalyzeQuery(q.Body)
 	if err != nil {
 		s.logger.Debug("Failed to analyze query for return fields", zap.Error(err))
 
@@ -502,7 +507,7 @@ func (s *Server) completeSetupFunctions(doc *Document, cc *CompletionContext) []
 
 			item.Documentation = &protocol.MarkupContent{
 				Kind:  protocol.Markdown,
-				Value: "```cypher\n" + preview + "\n```",
+				Value: s.markdownCodeBlock(preview),
 			}
 		}
 
@@ -673,4 +678,10 @@ func checkInTestWithinGroup(group *scaf.Group, pos lexer.Position) bool {
 	}
 
 	return false
+}
+
+// markdownCodeBlock wraps code in a markdown code block with the appropriate language.
+func (s *Server) markdownCodeBlock(code string) string {
+	lang := scaf.MarkdownLanguage(s.dialectName)
+	return "```" + lang + "\n" + code + "\n```"
 }

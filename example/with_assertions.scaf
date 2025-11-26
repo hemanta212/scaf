@@ -1,0 +1,97 @@
+// Scaf example - assert blocks with expr-lang expressions
+
+query GetUser `
+MATCH (u:User {id: $userId})
+RETURN u.name, u.email, u.age, u.verified
+`
+
+query CountUsers `
+MATCH (u:User)
+RETURN count(u) as cnt
+`
+
+query CreatePost `
+CREATE (p:Post {title: $title, authorId: $authorId})
+RETURN p.title, p.authorId
+`
+
+setup `
+MATCH (n) DETACH DELETE n
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30, verified: true})
+CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 17, verified: false})
+`
+
+teardown `
+MATCH (n) DETACH DELETE n
+`
+
+GetUser {
+	group "standalone assertions" {
+		test "user is adult" {
+			$userId: 1
+
+			u.name: "Alice"
+
+			// Single expression
+			assert { u.age >= 18 }
+		}
+
+		test "multiple conditions" {
+			$userId: 1
+
+			// Multiple semicolon-separated expressions
+			assert {
+				u.age > 18;
+				u.verified == true;
+				len(u.name) > 0
+			}
+		}
+
+		test "complex expression" {
+			$userId: 1
+
+			// Both work: operator syntax (email contains "@") or function syntax (hasPrefix/hasSuffix)
+			assert { len(u.email) > 5 && u.email contains "@" }
+		}
+	}
+
+	group "query assertions" {
+		test "inline query" {
+			$userId: 1
+
+			u.name: "Alice"
+
+			// Run a separate query and check results
+			assert `MATCH (u:User) RETURN count(u) as total` { total >= 2 }
+		}
+
+		test "named query" {
+			$userId: 1
+
+			// Reference a defined query
+			assert CountUsers() { cnt == 2 }
+		}
+
+		test "named query with params" {
+			$userId: 1
+
+			// Query with parameters and multiple conditions
+			assert CreatePost($title: "Hello", $authorId: 1) {
+				p.title == "Hello";
+				p.authorId == 1
+			}
+		}
+	}
+}
+
+CountUsers {
+	test "expression assertion" {
+		assert { cnt > 0 && cnt < 100 }
+	}
+
+	test "combined output and assertion" {
+		cnt: 2
+
+		assert { cnt == 2 }
+	}
+}

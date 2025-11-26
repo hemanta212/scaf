@@ -1,0 +1,70 @@
+// Example demonstrating module imports and named setups
+
+import fixtures "./shared/fixtures"
+
+query GetUser `
+MATCH (u:User {id: $userId})
+RETURN u.name, u.email, u.age, u.verified
+`
+
+query GetUserPosts `
+MATCH (p:Post {authorId: $userId})
+RETURN p.title, p.views
+`
+
+// Global setup using imported fixture
+setup fixtures.SetupCleanDB()
+
+teardown `
+MATCH (n) DETACH DELETE n
+`
+
+GetUser {
+	// Scope setup using imported fixture
+	setup fixtures.SetupUsers()
+
+	group "basic lookups" {
+		test "finds Alice by id" {
+			$userId: 1
+
+			u.name: "Alice"
+			u.email: "alice@example.com"
+			u.age: 30
+		}
+
+		test "finds Bob by id" {
+			$userId: 2
+
+			u.name: "Bob"
+			u.age: 25
+		}
+	}
+
+	group "with assertions" {
+		test "user is verified adult" {
+			$userId: 1
+
+			u.name: "Alice"
+
+			assert {
+				u.age >= 18;
+				u.verified == true
+			}
+		}
+	}
+}
+
+GetUserPosts {
+	// Setup using imported fixtures with parameters
+	setup fixtures.SetupUsers()
+
+	test "user with post" {
+		// Additional test-level setup using imported fixture
+		setup fixtures.SetupPosts($postId: 101, $title: "Hello World", $authorId: 1)
+
+		$userId: 1
+
+		p.title: "Hello World"
+		p.views: 0
+	}
+}

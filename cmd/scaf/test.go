@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/module"
 	"github.com/rlch/scaf/runner"
 	"github.com/urfave/cli/v3"
 
-	// Register dialects
+	// Register dialects.
 	_ "github.com/rlch/scaf/dialects/cypher"
 )
 
@@ -66,11 +67,12 @@ func testCommand() *cli.Command {
 	}
 }
 
-// parsedSuite holds a parsed suite with its source path.
+// parsedSuite holds a parsed suite with its source path and resolved modules.
 type parsedSuite struct {
-	suite *scaf.Suite
-	path  string
-	data  []byte
+	suite    *scaf.Suite
+	path     string
+	data     []byte
+	resolved *module.ResolvedContext
 }
 
 func runTest(ctx context.Context, cmd *cli.Command) error {
@@ -116,24 +118,35 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("no connection URI specified (use --uri or .scaf.yaml)")
 	}
 
-	// Parse all suites upfront (needed for TUI tree)
+	// Parse all suites upfront and resolve modules (needed for TUI tree and named setups)
 	var suites []parsedSuite
 
+	loader := module.NewLoader()
+	resolver := module.NewResolver(loader)
+
 	for _, file := range files {
+		absPath, err := filepath.Abs(file)
+		if err != nil {
+			return fmt.Errorf("resolving path %s: %w", file, err)
+		}
+
+		// Resolve module dependencies (this also parses the file)
+		resolved, err := resolver.Resolve(absPath)
+		if err != nil {
+			return fmt.Errorf("resolving %s: %w", file, err)
+		}
+
+		// Read raw data for display purposes
 		data, err := os.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", file, err)
 		}
 
-		suite, err := scaf.Parse(data)
-		if err != nil {
-			return fmt.Errorf("parsing %s: %w", file, err)
-		}
-
 		suites = append(suites, parsedSuite{
-			suite: suite,
-			path:  file,
-			data:  data,
+			suite:    resolved.Root.Suite,
+			path:     file,
+			data:     data,
+			resolved: resolved,
 		})
 	}
 
@@ -172,19 +185,20 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 		formatHandler = tuiHandler
 	}
 
-	// Create runner
-	r := runner.New(
-		runner.WithDialect(dialect),
-		runner.WithHandler(formatHandler),
-		runner.WithFailFast(cmd.Bool("fail-fast")),
-		runner.WithFilter(cmd.String("run")),
-	)
-
 	// Run all test files
 	var totalResult *runner.Result
 
 	for _, ps := range suites {
-		result, err := r.Run(ctx, ps.suite, ps.path)
+		// Create runner with module context for this suite
+		suiteRunner := runner.New(
+			runner.WithDialect(dialect),
+			runner.WithHandler(formatHandler),
+			runner.WithFailFast(cmd.Bool("fail-fast")),
+			runner.WithFilter(cmd.String("run")),
+			runner.WithModules(ps.resolved),
+		)
+
+		result, err := suiteRunner.Run(ctx, ps.suite, ps.path)
 		if err != nil {
 			return fmt.Errorf("running %s: %w", ps.path, err)
 		}

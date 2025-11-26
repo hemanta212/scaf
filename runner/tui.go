@@ -75,19 +75,18 @@ func (t *TUIFormatter) Format(event Event, _ *Result) error {
 	return nil
 }
 
-// Summary waits for completion and renders final output.
+// Summary waits for user to quit and renders final output.
 func (t *TUIFormatter) Summary(result *Result) error {
 	t.mu.Lock()
 	t.finished = true
 	t.mu.Unlock()
 
-	// Send done signal
+	// Send done signal - this shows the "press ESC to exit" message
 	t.program.Send(doneMsg{result: result})
-	time.Sleep(50 * time.Millisecond)
 
-	// Quit and wait for program to exit cleanly
-	t.program.Quit()
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the program to exit (user pressed ESC/q)
+	// The Run() goroutine will exit when user quits
+	t.program.Wait()
 
 	// Print the final static output. The TUI used the alternate screen,
 	// so exiting it returns us to the main screen with clean scrollback.
@@ -236,6 +235,13 @@ type tuiModel struct {
 	// Final result
 	finalResult *Result
 	isDone      bool
+
+	// Scrolling
+	scrollOffset int
+	totalLines   int
+
+	// User quit
+	userQuit bool
 }
 
 type counters struct {
@@ -304,6 +310,43 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.QuitMsg:
 		return m, tea.Quit
 
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			// Always allow ctrl+c to quit
+			m.userQuit = true
+			return m, tea.Quit
+		case "esc", "q":
+			if m.isDone {
+				m.userQuit = true
+				return m, tea.Quit
+			}
+		case "j", "down":
+			// Scroll down
+			maxScroll := m.totalLines - m.viewportHeight()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.scrollOffset < maxScroll {
+				m.scrollOffset++
+			}
+		case "k", "up":
+			// Scroll up
+			if m.scrollOffset > 0 {
+				m.scrollOffset--
+			}
+		case "g", "home":
+			// Jump to top
+			m.scrollOffset = 0
+		case "G", "end":
+			// Jump to bottom
+			maxScroll := m.totalLines - m.viewportHeight()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			m.scrollOffset = maxScroll
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -332,6 +375,17 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// viewportHeight returns the number of lines available for content.
+func (m *tuiModel) viewportHeight() int {
+	// Reserve lines for header, spacing, and footer
+	reserved := 5 // header + blank + summary + footer hint + blank
+	h := m.height - reserved
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 func (m *tuiModel) handleEvent(event Event) {
@@ -384,9 +438,6 @@ func (m *tuiModel) FinalView() string {
 
 	// Header
 	lines = append(lines, m.renderHeader())
-
-	// Progress bar
-	lines = append(lines, m.renderProgress())
 	lines = append(lines, "") // blank line
 
 	// Test tree
@@ -395,34 +446,75 @@ func (m *tuiModel) FinalView() string {
 		lines = append(lines, treeLines...)
 	}
 
-	// Summary
+	// Summary with progress
 	lines = append(lines, "")
-	lines = append(lines, m.renderSummary())
+	lines = append(lines, m.renderSummaryWithProgress())
 
 	return strings.Join(lines, "\n")
 }
 
 func (m *tuiModel) View() string {
-	var lines []string
+	var headerLines []string
+	var contentLines []string
+	var footerLines []string
 
-	// Header
-	lines = append(lines, m.renderHeader())
+	// Header (fixed at top)
+	headerLines = append(headerLines, m.renderHeader())
+	headerLines = append(headerLines, "") // blank line
 
-	// Progress bar
-	lines = append(lines, m.renderProgress())
-	lines = append(lines, "") // blank line
-
-	// Test tree
+	// Test tree (scrollable content)
 	for _, st := range m.suites {
 		treeLines := strings.Split(strings.TrimSuffix(m.renderTree(st), "\n"), "\n")
-		lines = append(lines, treeLines...)
+		contentLines = append(contentLines, treeLines...)
 	}
 
-	// Summary (only when done)
+	// Track total lines for scroll calculation
+	m.totalLines = len(contentLines)
+
+	// Footer: summary with progress bar (always shown)
+	footerLines = append(footerLines, "")
+	footerLines = append(footerLines, m.renderSummaryWithProgress())
 	if m.isDone {
-		lines = append(lines, "")
-		lines = append(lines, m.renderSummary())
+		footerLines = append(footerLines, m.styles.Dim.Render("  Press ESC or q to exit"))
 	}
+
+	// Apply scrolling to content
+	viewportH := m.viewportHeight()
+	startIdx := m.scrollOffset
+	endIdx := startIdx + viewportH
+
+	if startIdx > len(contentLines) {
+		startIdx = len(contentLines)
+	}
+	if endIdx > len(contentLines) {
+		endIdx = len(contentLines)
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	visibleContent := contentLines[startIdx:endIdx]
+
+	// Show scroll indicators if needed
+	if m.scrollOffset > 0 {
+		headerLines = append(headerLines, m.styles.Dim.Render("  ↑ more above"))
+	}
+
+	// Combine all lines
+	var lines []string
+	lines = append(lines, headerLines...)
+	lines = append(lines, visibleContent...)
+
+	// Pad to fill viewport if content is shorter
+	for len(visibleContent) < viewportH && len(contentLines) <= viewportH {
+		lines = append(lines, "")
+	}
+
+	if endIdx < len(contentLines) {
+		lines = append(lines, m.styles.Dim.Render("  ↓ more below"))
+	}
+
+	lines = append(lines, footerLines...)
 
 	// Add clear-to-EOL to each line to prevent rendering artifacts
 	for i := range lines {
@@ -465,38 +557,6 @@ func (m *tuiModel) countRunning() int {
 	}
 
 	return count
-}
-
-func (m *tuiModel) renderProgress() string {
-	done := m.counters.passed + m.counters.failed + m.counters.skipped + m.counters.errors
-	total := m.counters.total
-
-	if total == 0 {
-		total = 1
-	}
-
-	pct := float64(done) / float64(total)
-
-	// Elapsed time
-	elapsed := time.Since(m.startTime)
-	if !m.endTime.IsZero() {
-		elapsed = m.endTime.Sub(m.startTime)
-	}
-
-	elapsedStr := m.styles.Dim.Render(fmt.Sprintf("[%s]", formatDuration(elapsed)))
-
-	// Progress bar
-	barWidth := 30
-	filled := int(pct * float64(barWidth))
-	filledChar, emptyChar := ProgressChars()
-
-	bar := m.styles.ProgressFilled.Render(strings.Repeat(filledChar, filled)) +
-		m.styles.ProgressEmpty.Render(strings.Repeat(emptyChar, barWidth-filled))
-
-	// Counter
-	counter := m.styles.Muted.Render(fmt.Sprintf("%d/%d", done, total))
-
-	return fmt.Sprintf("%s %s %s", elapsedStr, bar, counter)
 }
 
 func (m *tuiModel) renderTree(st SuiteTree) string {
@@ -691,6 +751,78 @@ func (m *tuiModel) renderSummary() string {
 
 	return "  " + strings.Join(parts, sep) + " " + total
 }
+
+func (m *tuiModel) renderSummaryWithProgress() string {
+	done := m.counters.passed + m.counters.failed + m.counters.skipped + m.counters.errors
+	total := m.counters.total
+
+	// Always show all stats to keep width constant
+	sep := m.styles.Dim.Render(" │ ")
+
+	passedStyle := m.styles.Dim
+	if m.counters.passed > 0 {
+		passedStyle = m.styles.Pass
+	}
+
+	failedStyle := m.styles.Dim
+	if m.counters.failed > 0 {
+		failedStyle = m.styles.Fail
+	}
+
+	skippedStyle := m.styles.Dim
+	if m.counters.skipped > 0 {
+		skippedStyle = m.styles.Skip
+	}
+
+	errorsStyle := m.styles.Dim
+	if m.counters.errors > 0 {
+		errorsStyle = m.styles.Error
+	}
+
+	summaryText := passedStyle.Render(fmt.Sprintf("%d passed", m.counters.passed)) + sep +
+		failedStyle.Render(fmt.Sprintf("%d failed", m.counters.failed)) + sep +
+		errorsStyle.Render(fmt.Sprintf("%d errors", m.counters.errors)) + " " +
+		m.styles.Muted.Render(fmt.Sprintf("(%d total)", total))
+
+	// Elapsed time
+	elapsed := time.Since(m.startTime)
+	if !m.endTime.IsZero() {
+		elapsed = m.endTime.Sub(m.startTime)
+	}
+	elapsedStr := m.styles.Dim.Render(fmt.Sprintf("[%s]", formatDuration(elapsed)))
+
+	// Fixed width progress bar
+	barWidth := 20
+
+	// Build progress bar
+	pct := 0.0
+	if total > 0 {
+		pct = float64(done) / float64(total)
+	}
+	if pct > 1.0 {
+		pct = 1.0
+	}
+
+	filled := int(pct * float64(barWidth))
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	empty := barWidth - filled
+
+	filledChar, emptyChar := ProgressChars()
+	bar := m.styles.ProgressFilled.Render(strings.Repeat(filledChar, filled)) +
+		m.styles.ProgressEmpty.Render(strings.Repeat(emptyChar, empty))
+
+	// Skip skipped count to save space (less common)
+	_ = skippedStyle
+
+	return "  " + summaryText + " " + bar + " " + elapsedStr
+}
+
+
 
 // Helper functions
 

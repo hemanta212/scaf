@@ -1,30 +1,61 @@
+// Comprehensive scaf example - all DSL features
+
+// ============================================================================
+// Imports - reference setups and fixtures from other files
+// ============================================================================
+
+// Import shared fixtures from the local shared directory
+import fixtures "./shared/fixtures"
+
+// ============================================================================
+// Query Definitions
+// ============================================================================
+
 query GetUser `
 MATCH (u:User {id: $userId})
-RETURN u.name, u.email, u.age
+RETURN u.name, u.email, u.age, u.verified
 `
 
 query CreatePost `
-CREATE (p:Post {title: $title, authorId: $authorId})
-RETURN p.title, p.authorId
+CREATE (p:Post {title: $title, authorId: $authorId, views: 0})
+RETURN p.title, p.authorId, p.views
 `
+
+query CountNodes `
+MATCH (n)
+RETURN count(n) as total
+`
+
+// ============================================================================
+// Global Setup & Teardown
+// ============================================================================
 
 setup `
 MATCH (n) DETACH DELETE n
-CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30})
-CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 25})
-CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", age: null})
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30, verified: true})
+CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 25, verified: false})
+CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", age: null, verified: true})
 `
 
 teardown `
 MATCH (n) DETACH DELETE n
 `
 
+// ============================================================================
+// Test Scopes
+// ============================================================================
+
 GetUser {
+	// Scope-level setup
 	setup `
-	CREATE (p:Post {id: 101, authorId: 1, title: "Hello World"})
+	CREATE (p:Post {id: 101, authorId: 1, title: "Alice's Post"})
 	`
 
-	group "existing users" {
+	teardown `
+	MATCH (p:Post) DELETE p
+	`
+
+	group "basic lookups" {
 		test "finds Alice by id" {
 			$userId: 1
 
@@ -37,13 +68,10 @@ GetUser {
 			$userId: 2
 
 			u.name: "Bob"
-			u.email: "bob@example.com"
 			u.age: 25
 		}
-	}
 
-	group "edge cases" {
-		test "user with null age" {
+		test "handles null fields" {
 			$userId: 3
 
 			u.name: "Charlie"
@@ -58,34 +86,106 @@ GetUser {
 		}
 	}
 
-	group "expected failures" {
-		test "wrong name fails" {
+	group "with assertions" {
+		test "user is verified adult" {
 			$userId: 1
 
-			u.name: "NotAlice"
+			u.name: "Alice"
+
+			assert {
+				u.age >= 18;
+				u.verified == true
+			}
 		}
 
-		test "expecting non-null when null fails" {
-			$userId: 3
+		test "email format validation" {
+			$userId: 1
 
-			u.age: 99
+			// String operators: contains, startsWith, endsWith
+			// String functions: hasPrefix(), hasSuffix()
+			assert {
+				u.email contains "@";
+				len(u.email) > 5
+			}
+		}
+
+		test "combined output check and assertion" {
+			$userId: 2
+
+			u.name: "Bob"
+
+			assert { u.age > 20 && u.age < 30 }
+		}
+	}
+
+	group "query assertions" {
+		test "verify node count" {
+			$userId: 1
+
+			u.name: "Alice"
+
+			assert `MATCH (n) RETURN count(n) as c` { c > 0 }
+		}
+
+		test "verify with named query" {
+			$userId: 1
+
+			assert CountNodes() { total >= 3 }
+		}
+
+		test "create and verify post" {
+			$userId: 1
+
+			assert CreatePost($title: "New Post", $authorId: 1) {
+				p.title == "New Post";
+				p.authorId == 1;
+				p.views == 0
+			}
+		}
+	}
+
+	group "nested groups" {
+		group "edge cases" {
+			test "null age" {
+				$userId: 3
+
+				u.age: null
+			}
 		}
 	}
 }
 
 CreatePost {
-	test "creates a post" {
-		$title: "My New Post"
+	test "creates post" {
+		$title: "My Post"
 		$authorId: 1
 
-		p.title: "My New Post"
+		p.title: "My Post"
 		p.authorId: 1
+		p.views: 0
 	}
 
-	test "post creation rolls back" {
+	test "verify post in transaction" {
 		$title: "Temp Post"
 		$authorId: 2
 
 		p.title: "Temp Post"
+
+		assert `MATCH (p:Post {title: "Temp Post"}) RETURN count(p) as c` { c == 1 }
+	}
+}
+
+CountNodes {
+	test "counts all nodes" {
+		assert { total >= 3 }
+	}
+
+	test "count with test setup" {
+		setup `
+		CREATE (:TempNode)
+		CREATE (:TempNode)
+		`
+
+		assert { total >= 5 }
 	}
 }

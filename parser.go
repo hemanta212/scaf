@@ -2,19 +2,11 @@ package scaf
 
 import (
 	"github.com/alecthomas/participle/v2"
-	"github.com/alecthomas/participle/v2/lexer"
 )
 
-var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
-	{Name: "Comment", Pattern: `//[^\n]*`},
-	{Name: "RawString", Pattern: "`[^`]*`"},
-	{Name: "String", Pattern: `"[^"]*"`},
-	{Name: "Float", Pattern: `[-+]?\d+\.\d+`},
-	{Name: "Int", Pattern: `[-+]?\d+`},
-	{Name: "Ident", Pattern: `\$?[a-zA-Z_][a-zA-Z0-9_]*`},
-	{Name: "Punct", Pattern: `[-!()+/*,><>={}:.\[\];]`},
-	{Name: "Whitespace", Pattern: `[ \t\n\r]+`},
-})
+// dslLexer is the custom lexer for the scaf DSL.
+// Implements lexer.Definition interface for full control over tokenization.
+var dslLexer = newDSLLexer()
 
 var parser = participle.MustBuild[Suite](
 	participle.Lexer(dslLexer),
@@ -25,4 +17,9 @@ var parser = participle.MustBuild[Suite](
 // Parse parses a scaf DSL file and returns the resulting Suite AST.
 func Parse(data []byte) (*Suite, error) {
 	return parser.ParseBytes("", data)
+}
+
+// ExportedLexer returns the lexer definition for testing purposes.
+func ExportedLexer() *dslDefinition {
+	return dslLexer
 }

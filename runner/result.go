@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -152,9 +153,7 @@ func (r *Result) Merge(other *Result) {
 	r.Skipped += other.Skipped
 	r.Errors += other.Errors
 
-	for path, tr := range other.Tests {
-		r.Tests[path] = tr
-	}
+	maps.Copy(r.Tests, other.Tests)
 
 	r.Order = append(r.Order, other.Order...)
 

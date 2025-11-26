@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/module"
 )
 
 type mockDialect struct {
@@ -218,5 +219,368 @@ func TestRunner_ScopeAndGroupSetup(t *testing.T) {
 
 	if d.executed[1] != groupSetup {
 		t.Errorf("second = %q, want %q", d.executed[1], groupSetup)
+	}
+}
+
+func TestRunner_AssertPassing(t *testing.T) {
+	d := &mockDialect{
+		results: []map[string]any{{"age": int64(30), "name": "Alice"}},
+	}
+	r := New(WithDialect(d))
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{
+					Name: "user is adult",
+					Asserts: []*scaf.Assert{{
+						Conditions: []*scaf.Expr{{
+							Tokens: []*scaf.ExprToken{
+								{Ident: ptr("age")},
+								{Op: ptr(">=")},
+								{Number: ptr("18")},
+							},
+						}},
+					}},
+				},
+			}},
+		}},
+	}
+
+	result, err := r.Run(context.Background(), suite, "test.scaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
+	}
+}
+
+func TestRunner_AssertFailing(t *testing.T) {
+	d := &mockDialect{
+		results: []map[string]any{{"age": int64(15), "name": "Bob"}},
+	}
+	r := New(WithDialect(d))
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{
+					Name: "user is adult",
+					Asserts: []*scaf.Assert{{
+						Conditions: []*scaf.Expr{{
+							Tokens: []*scaf.ExprToken{
+								{Ident: ptr("age")},
+								{Op: ptr(">=")},
+								{Number: ptr("18")},
+							},
+						}},
+					}},
+				},
+			}},
+		}},
+	}
+
+	result, err := r.Run(context.Background(), suite, "test.scaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Failed != 1 {
+		t.Errorf("Failed = %d, want 1", result.Failed)
+	}
+}
+
+func TestRunner_AssertMultipleConditions(t *testing.T) {
+	d := &mockDialect{
+		results: []map[string]any{{"age": int64(30), "verified": true}},
+	}
+	r := New(WithDialect(d))
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{
+					Name: "multiple conditions",
+					Asserts: []*scaf.Assert{{
+						Conditions: []*scaf.Expr{
+							// age >= 18
+							{Tokens: []*scaf.ExprToken{
+								{Ident: ptr("age")},
+								{Op: ptr(">=")},
+								{Number: ptr("18")},
+							}},
+							// verified == true
+							{Tokens: []*scaf.ExprToken{
+								{Ident: ptr("verified")},
+								{Op: ptr("==")},
+								{Ident: ptr("true")},
+							}},
+						},
+					}},
+				},
+			}},
+		}},
+	}
+
+	result, err := r.Run(context.Background(), suite, "test.scaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
+	}
+}
+
+func TestRunner_AssertWithInlineQuery(t *testing.T) {
+	r := New(WithDialect(&queryAwareDialect{
+		results: map[string][]map[string]any{
+			"MAIN":  {{"name": "Alice"}},
+			"COUNT": {{"cnt": int64(5)}},
+		},
+	}))
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MAIN"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{
+					Name: "with inline query assert",
+					Asserts: []*scaf.Assert{{
+						Query: &scaf.AssertQuery{
+							Inline: ptr("COUNT"),
+						},
+						Conditions: []*scaf.Expr{{
+							Tokens: []*scaf.ExprToken{
+								{Ident: ptr("cnt")},
+								{Op: ptr(">")},
+								{Number: ptr("0")},
+							},
+						}},
+					}},
+				},
+			}},
+		}},
+	}
+
+	result, err := r.Run(context.Background(), suite, "test.scaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
+	}
+}
+
+func TestRunner_AssertWithNamedQuery(t *testing.T) {
+	r := New(WithDialect(&queryAwareDialect{
+		results: map[string][]map[string]any{
+			"MAIN":    {{"name": "Alice"}},
+			"COUNTER": {{"total": int64(10)}},
+		},
+	}))
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{
+			{Name: "GetUser", Body: "MAIN"},
+			{Name: "CountAll", Body: "COUNTER"},
+		},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{
+					Name: "with named query assert",
+					Asserts: []*scaf.Assert{{
+						Query: &scaf.AssertQuery{
+							QueryName: ptr("CountAll"),
+						},
+						Conditions: []*scaf.Expr{{
+							Tokens: []*scaf.ExprToken{
+								{Ident: ptr("total")},
+								{Op: ptr("==")},
+								{Number: ptr("10")},
+							},
+						}},
+					}},
+				},
+			}},
+		}},
+	}
+
+	result, err := r.Run(context.Background(), suite, "test.scaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
+	}
+}
+
+// queryAwareDialect returns different results based on the query body.
+type queryAwareDialect struct {
+	results map[string][]map[string]any
+}
+
+func (d *queryAwareDialect) Name() string { return "query-aware" }
+
+func (d *queryAwareDialect) Execute(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
+	if res, ok := d.results[query]; ok {
+		return res, nil
+	}
+
+	return nil, nil
+}
+
+func (d *queryAwareDialect) Close() error { return nil }
+
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func TestRunner_NamedSetupWithModules(t *testing.T) {
+	// Create a mock dialect that tracks executed queries
+	d := &mockDialect{}
+
+	// Create a module with a setup query
+	fixturesSuite := &scaf.Suite{
+		Queries: []*scaf.Query{
+			{Name: "SetupUsers", Body: "CREATE (:User {name: $name})"},
+		},
+	}
+
+	// Create the root module
+	rootSuite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"}},
+		Imports: []*scaf.Import{{Alias: ptr("fixtures"), Path: "./fixtures.scaf"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Setup: &scaf.SetupClause{
+				Named: &scaf.NamedSetup{
+					Module: ptr("fixtures"),
+					Name:   "SetupUsers",
+					Params: []*scaf.SetupParam{
+						{Name: "$name", Value: &scaf.Value{Str: ptr("Alice")}},
+					},
+				},
+			},
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{Name: "test"},
+			}},
+		}},
+	}
+
+	// Build the module context manually
+	rootMod := module.NewModule("/root.scaf", rootSuite)
+	fixturesMod := module.NewModule("/fixtures.scaf", fixturesSuite)
+
+	ctx := module.NewResolvedContext(rootMod)
+	ctx.Imports["fixtures"] = fixturesMod
+	ctx.AllModules[fixturesMod.Path] = fixturesMod
+
+	r := New(WithDialect(d), WithModules(ctx))
+
+	result, err := r.Run(context.Background(), rootSuite, "/root.scaf")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	// Verify setup was executed
+	if len(d.executed) < 2 {
+		t.Fatalf("Expected at least 2 queries (setup + test), got %d: %v", len(d.executed), d.executed)
+	}
+
+	// First query should be the setup
+	if d.executed[0] != "CREATE (:User {name: $name})" {
+		t.Errorf("First query = %q, want setup query", d.executed[0])
+	}
+
+	// Test should pass
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
+	}
+}
+
+func TestRunner_NamedSetupWithoutModules(t *testing.T) {
+	d := &mockDialect{}
+	r := New(WithDialect(d)) // No modules configured
+
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Setup: &scaf.SetupClause{
+				Named: &scaf.NamedSetup{
+					Name: "SomeSetup",
+				},
+			},
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{Name: "test"},
+			}},
+		}},
+	}
+
+	_, err := r.Run(context.Background(), suite, "test.scaf")
+
+	// Should error because no modules configured
+	if err == nil {
+		t.Error("Expected error for named setup without modules")
+	}
+}
+
+func TestRunner_LocalNamedSetup(t *testing.T) {
+	d := &mockDialect{}
+
+	// Create suite with local setup query
+	suite := &scaf.Suite{
+		Queries: []*scaf.Query{
+			{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"},
+			{Name: "SetupTestDB", Body: "CREATE (:TestNode)"},
+		},
+		Scopes: []*scaf.QueryScope{{
+			QueryName: "GetUser",
+			Setup: &scaf.SetupClause{
+				Named: &scaf.NamedSetup{
+					Name: "SetupTestDB", // No module prefix = local
+				},
+			},
+			Items: []*scaf.TestOrGroup{{
+				Test: &scaf.Test{Name: "test"},
+			}},
+		}},
+	}
+
+	// Build module context for local module
+	rootMod := module.NewModule("/root.scaf", suite)
+	ctx := module.NewResolvedContext(rootMod)
+
+	r := New(WithDialect(d), WithModules(ctx))
+
+	result, err := r.Run(context.Background(), suite, "/root.scaf")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	// Verify setup was executed
+	if len(d.executed) < 2 {
+		t.Fatalf("Expected at least 2 queries, got %d: %v", len(d.executed), d.executed)
+	}
+
+	if d.executed[0] != "CREATE (:TestNode)" {
+		t.Errorf("First query = %q, want setup query", d.executed[0])
+	}
+
+	if result.Passed != 1 {
+		t.Errorf("Passed = %d, want 1", result.Passed)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/module"
 )
 
 // Runner executes scaf test suites.
@@ -18,6 +19,7 @@ type Runner struct {
 	handler  Handler
 	failFast bool
 	filter   *regexp.Regexp
+	modules  *module.ResolvedContext
 }
 
 // Option configures a Runner.
@@ -54,6 +56,13 @@ func WithFilter(pattern string) Option {
 	}
 }
 
+// WithModules sets the resolved module context for named setup resolution.
+func WithModules(ctx *module.ResolvedContext) Option {
+	return func(r *Runner) {
+		r.modules = ctx
+	}
+}
+
 // New creates a Runner with the given options.
 func New(opts ...Option) *Runner {
 	r := &Runner{}
@@ -67,6 +76,27 @@ func New(opts ...Option) *Runner {
 // executor abstracts query execution - either direct dialect or transaction.
 type executor interface {
 	Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
+}
+
+// RunFile loads, resolves, and runs a scaf file with full module resolution.
+// This is a convenience method that handles parsing and import resolution.
+func (r *Runner) RunFile(ctx context.Context, path string) (*Result, error) {
+	if r.dialect == nil {
+		return nil, ErrNoDialect
+	}
+
+	loader := module.NewLoader()
+	resolver := module.NewResolver(loader)
+
+	resolved, err := resolver.Resolve(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve modules: %w", err)
+	}
+
+	// Set the module context for this run
+	r.modules = resolved
+
+	return r.Run(ctx, resolved.Root.Suite, path)
 }
 
 // Run executes a parsed Suite and returns the results.
@@ -140,7 +170,7 @@ func (r *Runner) runQueryScope(
 ) error {
 	queryBody, ok := queries[scope.QueryName]
 	if !ok {
-		return fmt.Errorf("unknown query: %s", scope.QueryName)
+		return fmt.Errorf("%w: %s", ErrUnknownQuery, scope.QueryName)
 	}
 
 	// Execute scope setup
@@ -158,9 +188,9 @@ func (r *Runner) runQueryScope(
 
 		switch {
 		case item.Test != nil:
-			err = r.runTest(ctx, item.Test, queryBody, path, suitePath, handler, result)
+			err = r.runTest(ctx, item.Test, queryBody, queries, path, suitePath, handler, result)
 		case item.Group != nil:
-			err = r.runGroup(ctx, item.Group, queryBody, path, suitePath, handler, result)
+			err = r.runGroup(ctx, item.Group, queryBody, queries, path, suitePath, handler, result)
 		}
 
 		if errors.Is(err, ErrMaxFailures) {
@@ -187,6 +217,7 @@ func (r *Runner) runGroup(
 	ctx context.Context,
 	group *scaf.Group,
 	queryBody string,
+	queries map[string]string,
 	parentPath []string,
 	suitePath string,
 	handler Handler,
@@ -209,9 +240,9 @@ func (r *Runner) runGroup(
 
 		switch {
 		case item.Test != nil:
-			err = r.runTest(ctx, item.Test, queryBody, path, suitePath, handler, result)
+			err = r.runTest(ctx, item.Test, queryBody, queries, path, suitePath, handler, result)
 		case item.Group != nil:
-			err = r.runGroup(ctx, item.Group, queryBody, path, suitePath, handler, result)
+			err = r.runGroup(ctx, item.Group, queryBody, queries, path, suitePath, handler, result)
 		}
 
 		if errors.Is(err, ErrMaxFailures) {
@@ -238,6 +269,7 @@ func (r *Runner) runTest(
 	ctx context.Context,
 	test *scaf.Test,
 	queryBody string,
+	queries map[string]string,
 	parentPath []string,
 	suitePath string,
 	handler Handler,
@@ -264,11 +296,11 @@ func (r *Runner) runTest(
 	// Try to run test in a transaction for isolation
 	txDialect, canTx := r.dialect.(scaf.Transactional)
 	if canTx {
-		return r.runTestInTransaction(ctx, txDialect, test, queryBody, path, suitePath, start, handler, result)
+		return r.runTestInTransaction(ctx, txDialect, test, queryBody, queries, path, suitePath, start, handler, result)
 	}
 
 	// Fallback: run without transaction isolation
-	return r.runTestDirect(ctx, r.dialect, test, queryBody, path, suitePath, start, handler, result)
+	return r.runTestDirect(ctx, r.dialect, test, queryBody, queries, path, suitePath, start, handler, result)
 }
 
 func (r *Runner) runTestInTransaction(
@@ -276,6 +308,7 @@ func (r *Runner) runTestInTransaction(
 	txDialect scaf.Transactional,
 	test *scaf.Test,
 	queryBody string,
+	queries map[string]string,
 	path []string,
 	suitePath string,
 	start time.Time,
@@ -292,7 +325,7 @@ func (r *Runner) runTestInTransaction(
 		_ = tx.Rollback(ctx)
 	}()
 
-	return r.runTestDirect(ctx, tx, test, queryBody, path, suitePath, start, handler, result)
+	return r.runTestDirect(ctx, tx, test, queryBody, queries, path, suitePath, start, handler, result)
 }
 
 func (r *Runner) runTestDirect(
@@ -300,6 +333,7 @@ func (r *Runner) runTestDirect(
 	exec executor,
 	test *scaf.Test,
 	queryBody string,
+	queries map[string]string,
 	path []string,
 	suitePath string,
 	start time.Time,
@@ -318,10 +352,11 @@ func (r *Runner) runTestDirect(
 	expectations := make(map[string]any)
 
 	for _, stmt := range test.Statements {
-		if len(stmt.Key) > 0 && stmt.Key[0] == '$' {
-			params[stmt.Key[1:]] = stmt.Value.ToGo()
+		key := stmt.Key()
+		if len(key) > 0 && key[0] == '$' {
+			params[key[1:]] = stmt.Value.ToGo()
 		} else {
-			expectations[stmt.Key] = stmt.Value.ToGo()
+			expectations[key] = stmt.Value.ToGo()
 		}
 	}
 
@@ -360,6 +395,13 @@ func (r *Runner) runTestDirect(
 				Expected: expected,
 				Actual:   got,
 			}, result)
+		}
+	}
+
+	// Evaluate assert blocks
+	for _, assert := range test.Asserts {
+		if err := r.evaluateAssert(ctx, exec, assert, actual, queries, path, suitePath, start, handler, result); err != nil {
+			return err
 		}
 	}
 
@@ -414,7 +456,6 @@ func (r *Runner) executeQuery(ctx context.Context, exec executor, query string, 
 }
 
 // executeSetup executes a setup clause - either inline or named.
-// Named setups with module references are not yet implemented.
 func (r *Runner) executeSetup(ctx context.Context, exec executor, setup *scaf.SetupClause) error {
 	if setup == nil {
 		return nil
@@ -425,12 +466,45 @@ func (r *Runner) executeSetup(ctx context.Context, exec executor, setup *scaf.Se
 	}
 
 	if setup.Named != nil {
-		// TODO: Implement named setup resolution
-		// For now, we'd need to look up the setup in the current suite or imported modules
-		return fmt.Errorf("named setup references not yet implemented: %s", setup.Named.Name)
+		return r.executeNamedSetup(ctx, exec, setup.Named)
 	}
 
 	return nil
+}
+
+// executeNamedSetup resolves and executes a named setup reference.
+func (r *Runner) executeNamedSetup(ctx context.Context, exec executor, named *scaf.NamedSetup) error {
+	// Get module alias (empty string for local reference)
+	moduleAlias := ""
+	if named.Module != nil {
+		moduleAlias = *named.Module
+	}
+
+	// If no module context, we can't resolve named setups
+	if r.modules == nil {
+		return fmt.Errorf("%w: %s", ErrNoModuleContext, named.Name)
+	}
+
+	// Resolve the setup
+	setup, err := r.modules.ResolveSetup(moduleAlias, named.Name)
+	if err != nil {
+		return fmt.Errorf("failed to resolve setup: %w", err)
+	}
+
+	// Build params from the setup call
+	params := make(map[string]any)
+	for _, p := range named.Params {
+		key := p.Name
+		// Strip $ prefix if present
+		if len(key) > 0 && key[0] == '$' {
+			key = key[1:]
+		}
+
+		params[key] = p.Value.ToGo()
+	}
+
+	// Execute the setup query with the provided params
+	return r.executeQuery(ctx, exec, setup.Query, params)
 }
 
 func (r *Runner) emitError(
@@ -462,4 +536,108 @@ func (r *Runner) matchesFilter(path []string) bool {
 	pathStr := strings.Join(path, "/")
 
 	return r.filter.MatchString(pathStr)
+}
+
+// evaluateAssert evaluates an assert block's conditions.
+// If the assert has a query, it runs that query first and evaluates conditions against its results.
+// Otherwise, it evaluates conditions against the main query results.
+func (r *Runner) evaluateAssert(
+	ctx context.Context,
+	exec executor,
+	assert *scaf.Assert,
+	mainResult map[string]any,
+	queries map[string]string,
+	path []string,
+	suitePath string,
+	start time.Time,
+	handler Handler,
+	result *Result,
+) error {
+	// Determine which result to evaluate against
+	env := mainResult
+
+	// If assert has a query, run it first
+	if assert.Query != nil {
+		assertResult, err := r.runAssertQuery(ctx, exec, assert.Query, queries)
+		if err != nil {
+			return r.emitError(ctx, path, suitePath, start, fmt.Errorf("assert query: %w", err), handler, result)
+		}
+		env = assertResult
+	}
+
+	// Evaluate each condition
+	for _, condition := range assert.Conditions {
+		exprStr := condition.String()
+
+		evalResult := EvalExpr(exprStr, env)
+		if evalResult.Error != nil {
+			return r.emitError(ctx, path, suitePath, start, evalResult.Error, handler, result)
+		}
+
+		if !evalResult.Passed {
+			elapsed := time.Since(start)
+
+			return handler.Event(ctx, Event{
+				Time:     time.Now(),
+				Action:   ActionFail,
+				Suite:    suitePath,
+				Path:     path,
+				Elapsed:  elapsed,
+				Field:    exprStr,
+				Expected: true,
+				Actual:   false,
+			}, result)
+		}
+	}
+
+	return nil
+}
+
+// runAssertQuery executes the query specified in an assert block.
+func (r *Runner) runAssertQuery(
+	ctx context.Context,
+	exec executor,
+	query *scaf.AssertQuery,
+	queries map[string]string,
+) (map[string]any, error) {
+	var queryBody string
+	params := make(map[string]any)
+
+	switch {
+	case query.Inline != nil:
+		// Inline query
+		queryBody = *query.Inline
+	case query.QueryName != nil:
+		// Named query reference
+		var ok bool
+
+		queryBody, ok = queries[*query.QueryName]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownQuery, *query.QueryName)
+		}
+
+		// Build params from assert query params
+		for _, p := range query.Params {
+			key := p.Name
+			if len(key) > 0 && key[0] == '$' {
+				key = key[1:]
+			}
+
+			params[key] = p.Value.ToGo()
+		}
+	default:
+		return nil, ErrAssertNoQuery
+	}
+
+	rows, err := exec.Execute(ctx, queryBody, params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return first row or empty map
+	if len(rows) > 0 {
+		return rows[0], nil
+	}
+
+	return make(map[string]any), nil
 }

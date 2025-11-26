@@ -46,7 +46,7 @@ query B ` + "`B`" + `
 			name: "query with global setup",
 			suite: &scaf.Suite{
 				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
-				Setup: inlineSetup("CREATE (:User)"),
+				Setup:   inlineSetup("CREATE (:User)"),
 			},
 			expected: `query Q ` + "`Q`" + `
 
@@ -110,10 +110,10 @@ Q {
 								Test: &scaf.Test{
 									Name: "test",
 									Statements: []*scaf.Statement{
-										{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
-										{Key: "$name", Value: &scaf.Value{Str: ptr("alice")}},
-										{Key: "u.name", Value: &scaf.Value{Str: ptr("Alice")}},
-										{Key: "u.age", Value: &scaf.Value{Number: ptr(30.0)}},
+										scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
+										scaf.NewStatement("$name", &scaf.Value{Str: ptr("alice")}),
+										scaf.NewStatement("u.name", &scaf.Value{Str: ptr("Alice")}),
+										scaf.NewStatement("u.age", &scaf.Value{Number: ptr(30.0)}),
 									},
 								},
 							},
@@ -147,7 +147,7 @@ Q {
 									Name:  "t",
 									Setup: inlineSetup("TEST SETUP"),
 									Statements: []*scaf.Statement{
-										{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
+										scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
 									},
 								},
 							},
@@ -178,12 +178,20 @@ Q {
 								Test: &scaf.Test{
 									Name: "t",
 									Statements: []*scaf.Statement{
-										{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
+										scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
 									},
-									Assertion: &scaf.Assertion{
-										Query: "MATCH (n) RETURN count(n) as c",
-										Expectations: []*scaf.Statement{
-											{Key: "c", Value: &scaf.Value{Number: ptr(1.0)}},
+									Asserts: []*scaf.Assert{
+										{
+											Query: &scaf.AssertQuery{
+												Inline: ptr("MATCH (n) RETURN count(n) as c"),
+											},
+											Conditions: []*scaf.Expr{
+												{Tokens: []*scaf.ExprToken{
+													{Ident: ptr("c")},
+													{Op: ptr("==")},
+													{Number: ptr("1")},
+												}},
+											},
 										},
 									},
 								},
@@ -198,9 +206,7 @@ Q {
 	test "t" {
 		$id: 1
 
-		assert ` + "`MATCH (n) RETURN count(n) as c`" + ` {
-			c: 1
-		}
+		assert ` + "`MATCH (n) RETURN count(n) as c`" + ` { c == 1 }
 	}
 }
 `,
@@ -347,8 +353,12 @@ B {
 							{
 								Test: &scaf.Test{
 									Name: "t",
-									Assertion: &scaf.Assertion{
-										Query: "MATCH (n) RETURN n",
+									Asserts: []*scaf.Assert{
+										{
+											Query: &scaf.AssertQuery{
+												Inline: ptr("MATCH (n) RETURN n"),
+											},
+										},
 									},
 								},
 							},
@@ -360,8 +370,7 @@ B {
 
 Q {
 	test "t" {
-		assert ` + "`MATCH (n) RETURN n`" + ` {
-		}
+		assert ` + "`MATCH (n) RETURN n`" + ` {}
 	}
 }
 `,
@@ -472,7 +481,7 @@ func TestFormatValues(t *testing.T) {
 								Test: &scaf.Test{
 									Name: "t",
 									Statements: []*scaf.Statement{
-										{Key: "v", Value: tt.value},
+										scaf.NewStatement("v", tt.value),
 									},
 								},
 							},
@@ -630,14 +639,22 @@ func TestFormatPreservesSemantics(t *testing.T) {
 										Name:  "finds user",
 										Setup: inlineSetup("SET u.verified = true"),
 										Statements: []*scaf.Statement{
-											{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
-											{Key: "u.name", Value: &scaf.Value{Str: ptr("Alice")}},
-											{Key: "u.active", Value: &scaf.Value{Boolean: boolPtr(true)}},
+											scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
+											scaf.NewStatement("u.name", &scaf.Value{Str: ptr("Alice")}),
+											scaf.NewStatement("u.active", &scaf.Value{Boolean: boolPtr(true)}),
 										},
-										Assertion: &scaf.Assertion{
-											Query: "MATCH (s:Session) RETURN count(s) as c",
-											Expectations: []*scaf.Statement{
-												{Key: "c", Value: &scaf.Value{Number: ptr(1.0)}},
+										Asserts: []*scaf.Assert{
+											{
+												Query: &scaf.AssertQuery{
+													Inline: ptr("MATCH (s:Session) RETURN count(s) as c"),
+												},
+												Conditions: []*scaf.Expr{
+													{Tokens: []*scaf.ExprToken{
+														{Ident: ptr("c")},
+														{Op: ptr("==")},
+														{Number: ptr("1")},
+													}},
+												},
 											},
 										},
 									},
@@ -678,8 +695,8 @@ func TestFormatOnlyOutputs(t *testing.T) {
 						Test: &scaf.Test{
 							Name: "outputs only",
 							Statements: []*scaf.Statement{
-								{Key: "name", Value: &scaf.Value{Str: ptr("Alice")}},
-								{Key: "age", Value: &scaf.Value{Number: ptr(30.0)}},
+								scaf.NewStatement("name", &scaf.Value{Str: ptr("Alice")}),
+								scaf.NewStatement("age", &scaf.Value{Number: ptr(30.0)}),
 							},
 						},
 					},
@@ -718,8 +735,8 @@ func TestFormatOnlyInputs(t *testing.T) {
 						Test: &scaf.Test{
 							Name: "inputs only",
 							Statements: []*scaf.Statement{
-								{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
-								{Key: "$name", Value: &scaf.Value{Str: ptr("alice")}},
+								scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
+								scaf.NewStatement("$name", &scaf.Value{Str: ptr("alice")}),
 							},
 						},
 					},
@@ -761,7 +778,7 @@ func TestFormatMultipleTestsInGroup(t *testing.T) {
 									Test: &scaf.Test{
 										Name: "first",
 										Statements: []*scaf.Statement{
-											{Key: "$x", Value: &scaf.Value{Number: ptr(1.0)}},
+											scaf.NewStatement("$x", &scaf.Value{Number: ptr(1.0)}),
 										},
 									},
 								},
@@ -769,7 +786,7 @@ func TestFormatMultipleTestsInGroup(t *testing.T) {
 									Test: &scaf.Test{
 										Name: "second",
 										Statements: []*scaf.Statement{
-											{Key: "$y", Value: &scaf.Value{Number: ptr(2.0)}},
+											scaf.NewStatement("$y", &scaf.Value{Number: ptr(2.0)}),
 										},
 									},
 								},
@@ -777,7 +794,7 @@ func TestFormatMultipleTestsInGroup(t *testing.T) {
 									Test: &scaf.Test{
 										Name: "third",
 										Statements: []*scaf.Statement{
-											{Key: "$z", Value: &scaf.Value{Number: ptr(3.0)}},
+											scaf.NewStatement("$z", &scaf.Value{Number: ptr(3.0)}),
 										},
 									},
 								},
@@ -914,8 +931,8 @@ func TestFormatLargeNumbers(t *testing.T) {
 						Test: &scaf.Test{
 							Name: "t",
 							Statements: []*scaf.Statement{
-								{Key: "big", Value: &scaf.Value{Number: ptr(1000000.0)}},
-								{Key: "precise", Value: &scaf.Value{Number: ptr(123.456789)}},
+								scaf.NewStatement("big", &scaf.Value{Number: ptr(1000000.0)}),
+								scaf.NewStatement("precise", &scaf.Value{Number: ptr(123.456789)}),
 							},
 						},
 					},

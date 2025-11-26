@@ -48,8 +48,8 @@ func TestParse(t *testing.T) {
 								Test: &scaf.Test{
 									Name: "finds user",
 									Statements: []*scaf.Statement{
-										{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}},
-										{Key: "u.name", Value: &scaf.Value{Str: ptr("alice")}},
+										scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)}),
+										scaf.NewStatement("u.name", &scaf.Value{Str: ptr("alice")}),
 									},
 								},
 							},
@@ -144,13 +144,13 @@ func TestParse(t *testing.T) {
 										{
 											Test: &scaf.Test{
 												Name:       "a",
-												Statements: []*scaf.Statement{{Key: "$x", Value: &scaf.Value{Number: ptr(1.0)}}},
+												Statements: []*scaf.Statement{scaf.NewStatement("$x", &scaf.Value{Number: ptr(1.0)})},
 											},
 										},
 										{
 											Test: &scaf.Test{
 												Name:       "b",
-												Statements: []*scaf.Statement{{Key: "$y", Value: &scaf.Value{Number: ptr(2.0)}}},
+												Statements: []*scaf.Statement{scaf.NewStatement("$y", &scaf.Value{Number: ptr(2.0)})},
 											},
 										},
 									},
@@ -204,7 +204,7 @@ func TestParse(t *testing.T) {
 				Q {
 					test "t" {
 						assert ` + "`MATCH (n) RETURN count(n) as c`" + ` {
-							c: 1
+							c == 1
 						}
 					}
 				}
@@ -218,9 +218,19 @@ func TestParse(t *testing.T) {
 							{
 								Test: &scaf.Test{
 									Name: "t",
-									Assertion: &scaf.Assertion{
-										Query:        "MATCH (n) RETURN count(n) as c",
-										Expectations: []*scaf.Statement{{Key: "c", Value: &scaf.Value{Number: ptr(1.0)}}},
+									Asserts: []*scaf.Assert{
+										{
+											Query: &scaf.AssertQuery{
+												Inline: ptr("MATCH (n) RETURN count(n) as c"),
+											},
+											Conditions: []*scaf.Expr{
+												{Tokens: []*scaf.ExprToken{
+													{Ident: ptr("c")},
+													{Op: ptr("==")},
+													{Number: ptr("1")},
+												}},
+											},
+										},
 									},
 								},
 							},
@@ -633,7 +643,7 @@ func TestParseComments(t *testing.T) {
 			{
 				QueryName: "Q",
 				Items: []*scaf.TestOrGroup{
-					{Test: &scaf.Test{Name: "t", Statements: []*scaf.Statement{{Key: "$id", Value: &scaf.Value{Number: ptr(1.0)}}}}},
+					{Test: &scaf.Test{Name: "t", Statements: []*scaf.Statement{scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)})}}},
 				},
 			},
 		},
@@ -690,3 +700,198 @@ func TestValueString(t *testing.T) {
 		})
 	}
 }
+
+func TestParseExprAssert(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected []string // expected expression strings
+	}{
+		{
+			name: "simple comparison",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert { u.age > 18 }
+					}
+				}
+			`,
+			expected: []string{"u.age > 18"},
+		},
+		{
+			name: "expression with function call",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert { u.createdAt - now() < duration("24h") }
+					}
+				}
+			`,
+			expected: []string{`u.createdAt - now() < duration("24h")`},
+		},
+		{
+			name: "complex expression",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert { len(u.posts) > 0 && u.verified == true }
+					}
+				}
+			`,
+			expected: []string{"len(u.posts) > 0 && u.verified == true"},
+		},
+		{
+			name: "multiple expressions",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert { x > 0; y < 10; z == 5 }
+					}
+				}
+			`,
+			expected: []string{"x > 0", "y < 10", "z == 5"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := scaf.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse() error: %v", err)
+			}
+
+			test := got.Scopes[0].Items[0].Test
+			if len(test.Asserts) == 0 {
+				t.Fatal("Expected at least one assert")
+			}
+
+			assert := test.Asserts[0]
+			if assert.Query != nil {
+				t.Fatal("Expected standalone assert (no query)")
+			}
+
+			if len(assert.Conditions) != len(tt.expected) {
+				t.Fatalf("Conditions count = %d, want %d", len(assert.Conditions), len(tt.expected))
+			}
+
+			for i, cond := range assert.Conditions {
+				gotExpr := cond.String()
+				if gotExpr != tt.expected[i] {
+					t.Errorf("Condition[%d] = %q, want %q", i, gotExpr, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseQueryAssert(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		input          string
+		expectedInline *string
+		expectedQuery  *string
+		expectedParams int
+		expectedConds  int
+	}{
+		{
+			name: "inline query with conditions",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert ` + "`MATCH (n) RETURN count(n) as cnt`" + ` {
+							cnt > 0;
+							cnt < 100
+						}
+					}
+				}
+			`,
+			expectedInline: ptr("MATCH (n) RETURN count(n) as cnt"),
+			expectedConds:  2,
+		},
+		{
+			name: "named query without params",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert CheckCount() {
+							c == 1
+						}
+					}
+				}
+			`,
+			expectedQuery:  ptr("CheckCount"),
+			expectedParams: 0,
+			expectedConds:  1,
+		},
+		{
+			name: "named query with params",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert CreatePost($title: "test", $authorId: 1) {
+							p.title == "test"
+						}
+					}
+				}
+			`,
+			expectedQuery:  ptr("CreatePost"),
+			expectedParams: 2,
+			expectedConds:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := scaf.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse() error: %v", err)
+			}
+
+			test := got.Scopes[0].Items[0].Test
+			if len(test.Asserts) == 0 {
+				t.Fatal("Expected at least one assert")
+			}
+
+			assert := test.Asserts[0]
+			if assert.Query == nil {
+				t.Fatal("Expected QueryAssert")
+			}
+
+			qa := assert.Query
+			if tt.expectedInline != nil {
+				if qa.Inline == nil || *qa.Inline != *tt.expectedInline {
+					t.Errorf("Inline = %v, want %v", qa.Inline, *tt.expectedInline)
+				}
+			}
+			if tt.expectedQuery != nil {
+				if qa.QueryName == nil || *qa.QueryName != *tt.expectedQuery {
+					t.Errorf("QueryName = %v, want %v", qa.QueryName, *tt.expectedQuery)
+				}
+			}
+			if len(qa.Params) != tt.expectedParams {
+				t.Errorf("Params count = %d, want %d", len(qa.Params), tt.expectedParams)
+			}
+			if len(assert.Conditions) != tt.expectedConds {
+				t.Errorf("Conditions count = %d, want %d", len(assert.Conditions), tt.expectedConds)
+			}
+		})
+	}
+}
+
+// TODO: TestParseComputedField - ComputedFields feature removed temporarily
+// Will be re-added with proper syntax disambiguation (e.g., "mock u { field: expr }")

@@ -49,14 +49,14 @@ type SetupClause struct {
 //	SetupLessonPlanDB()
 //	module.SetupName($param: value)
 type NamedSetup struct {
-	Module *string       `parser:"(@Ident '.')?"`
+	Module *string       `parser:"(@Ident Dot)?"`
 	Name   string        `parser:"@Ident '('"`
-	Params []*SetupParam `parser:"@@? (',' @@)* ')'"`
+	Params []*SetupParam `parser:"(@@ (Comma @@)*)? ')'"`
 }
 
 // SetupParam is a parameter passed to a named setup.
 type SetupParam struct {
-	Name  string `parser:"@Ident ':'"`
+	Name  string `parser:"@Ident Colon"`
 	Value *Value `parser:"@@"`
 }
 
@@ -88,27 +88,173 @@ type Test struct {
 	Name       string       `parser:"'test' @String '{'"`
 	Setup      *SetupClause `parser:"('setup' @@)?"`
 	Statements []*Statement `parser:"@@*"`
-	Assertion  *Assertion   `parser:"('assert' @@)?"`
+	Asserts    []*Assert    `parser:"@@*"`
 	Close      string       `parser:"'}'"`
 }
 
-// Statement represents a key-value pair for inputs ($var), expected outputs, or computed fields.
+// Assert represents an assertion block with optional query.
+// Expressions are captured as tokens and reconstructed as strings for expr.Compile().
+// Examples:
+//
+//	assert { u.age > 18 }                                    // standalone expr
+//	assert { x > 0; y < 10; z == 5 }                         // multiple exprs
+//	assert CreatePost($title: "x") { p.title == "x" }        // named query with conditions
+//	assert `MATCH (n) RETURN count(n) as cnt` { cnt > 0 }    // inline query with conditions
+type Assert struct {
+	Query      *AssertQuery `parser:"'assert' @@? '{'"`
+	Conditions []*Expr      `parser:"(@@ Semi?)* '}'"`
+}
+
+// AssertQuery specifies the query to run before evaluating conditions.
+// Either an inline raw string query or a named query reference with params.
+type AssertQuery struct {
+	// Inline query (raw string)
+	Inline *string `parser:"@RawString"`
+	// Or named query reference with required parentheses
+	QueryName *string       `parser:"| @Ident '('"`
+	Params    []*SetupParam `parser:"(@@ (Comma @@)*)? ')'"`
+}
+
+// Expr captures tokens for expr-lang evaluation.
+// Tokens are reconstructed into a string and parsed by expr.Compile() at runtime.
+type Expr struct {
+	Tokens []*ExprToken `parser:"@@+"`
+}
+
+// String reconstructs the expression as a string for expr-lang.
+func (e *Expr) String() string {
+	if e == nil || len(e.Tokens) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, tok := range e.Tokens {
+		if i > 0 {
+			prev := e.Tokens[i-1]
+			// Add space between tokens except:
+			// - around dots (u.name)
+			// - after open brackets (foo(x), arr[0])
+			// - before close brackets (foo(x), arr[0])
+			// - between identifier and open bracket (function calls: len(x))
+			// - after comma (we add space after comma below)
+			needsSpace := !prev.IsDot() && !prev.IsOpenBracket() && !prev.Comma &&
+				!tok.IsDot() && !tok.IsCloseBracket() &&
+				!(prev.IsIdent() && tok.IsOpenBracket())
+			if needsSpace {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(tok.String())
+		// Add space after comma
+		if tok.Comma {
+			b.WriteByte(' ')
+		}
+	}
+	return b.String()
+}
+
+// ExprToken captures individual tokens that can appear in expressions.
+// Matches expr-lang's token kinds: Identifier, Number, String, Operator, Bracket.
+// Note: { } ; are NOT captured as they're expression delimiters.
+type ExprToken struct {
+	Str     *string `parser:"@String"`
+	Number  *string `parser:"| @Number"`
+	Ident   *string `parser:"| @Ident"`
+	Op      *string `parser:"| @Op"`
+	Dot     bool    `parser:"| @Dot"`
+	Colon   bool    `parser:"| @Colon"`
+	Comma   bool    `parser:"| @Comma"`
+	LParen  bool    `parser:"| @'('"`
+	RParen  bool    `parser:"| @')'"`
+	LBrack  bool    `parser:"| @'['"`
+	RBrack  bool    `parser:"| @']'"`
+}
+
+// String returns the string representation of a token.
+func (t *ExprToken) String() string {
+	switch {
+	case t.Str != nil:
+		return fmt.Sprintf("%q", *t.Str)
+	case t.Number != nil:
+		return *t.Number
+	case t.Ident != nil:
+		return *t.Ident
+	case t.Op != nil:
+		return *t.Op
+	case t.Dot:
+		return "."
+	case t.Colon:
+		return ":"
+	case t.Comma:
+		return ","
+	case t.LParen:
+		return "("
+	case t.RParen:
+		return ")"
+	case t.LBrack:
+		return "["
+	case t.RBrack:
+		return "]"
+	default:
+		return ""
+	}
+}
+
+// IsDot returns true if this token is a dot.
+func (t *ExprToken) IsDot() bool {
+	return t.Dot
+}
+
+// IsOpenBracket returns true if this token is an opening bracket.
+func (t *ExprToken) IsOpenBracket() bool {
+	return t.LParen || t.LBrack
+}
+
+// IsCloseBracket returns true if this token is a closing bracket.
+func (t *ExprToken) IsCloseBracket() bool {
+	return t.RParen || t.RBrack
+}
+
+// IsIdent returns true if this token is an identifier.
+func (t *ExprToken) IsIdent() bool {
+	return t.Ident != nil
+}
+
+// DottedIdent represents a dot-separated identifier like "u.name" or "$userId".
+type DottedIdent struct {
+	Parts []string `parser:"@Ident (Dot @Ident)*"`
+}
+
+// String returns the dot-joined identifier.
+func (d *DottedIdent) String() string {
+	return strings.Join(d.Parts, ".")
+}
+
+// Statement represents a key-value pair for inputs ($var) or expected outputs.
 // Examples:
 //
 //	$userId: 1                                    // input parameter
 //	u.name: "Alice"                               // expected output (equality)
-//	u: { cronLastExecutedAt: u.createdAt + duration("24h") }  // computed field for mocks
 type Statement struct {
-	Key   string `parser:"@Ident (@'.' @Ident)*"`
-	Value *Value `parser:"':' @@"`
+	KeyParts *DottedIdent `parser:"@@"`
+	Value    *Value       `parser:"Colon @@"`
 }
 
-// Assertion defines a post-execution query and its expected results.
-// This is the legacy assertion format using equality checks.
-// TODO: Add support for expr-based assertions (assert <expr>;)
-type Assertion struct {
-	Query        string       `parser:"@RawString '{'"`
-	Expectations []*Statement `parser:"@@* '}'"`
+// Key returns the statement key as a dot-joined string.
+func (s *Statement) Key() string {
+	if s.KeyParts == nil {
+		return ""
+	}
+	return s.KeyParts.String()
+}
+
+// NewStatement creates a Statement from a dot-separated key string and value.
+// This is a convenience constructor for testing and programmatic AST construction.
+func NewStatement(key string, value *Value) *Statement {
+	parts := strings.Split(key, ".")
+	return &Statement{
+		KeyParts: &DottedIdent{Parts: parts},
+		Value:    value,
+	}
 }
 
 // Boolean is a bool type that implements participle's Capture interface.
@@ -125,7 +271,7 @@ func (b *Boolean) Capture(values []string) error {
 type Value struct {
 	Null    bool     `parser:"@'null'"`
 	Str     *string  `parser:"| @String"`
-	Number  *float64 `parser:"| @Float | @Int"`
+	Number  *float64 `parser:"| @Number"`
 	Boolean *Boolean `parser:"| @('true' | 'false')"`
 	Map     *Map     `parser:"| @@"`
 	List    *List    `parser:"| @@"`
@@ -133,18 +279,18 @@ type Value struct {
 
 // Map represents a key-value map literal.
 type Map struct {
-	Entries []*MapEntry `parser:"'{' @@? (',' @@)* '}'"`
+	Entries []*MapEntry `parser:"'{' (@@ (Comma @@)*)? '}'"`
 }
 
 // MapEntry represents a single entry in a map literal.
 type MapEntry struct {
-	Key   string `parser:"@Ident ':'"`
+	Key   string `parser:"@Ident Colon"`
 	Value *Value `parser:"@@"`
 }
 
 // List represents an array/list literal.
 type List struct {
-	Values []*Value `parser:"'[' @@? (',' @@)* ']'"`
+	Values []*Value `parser:"'[' (@@ (Comma @@)*)? ']'"`
 }
 
 // ToGo converts a Value to a native Go type.

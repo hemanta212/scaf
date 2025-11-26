@@ -16,6 +16,18 @@ var (
 	// ErrConnectionFailed is returned when database connection fails.
 	ErrConnectionFailed = errors.New("runner: database connection failed")
 
+	// ErrUnknownQuery is returned when a referenced query is not found.
+	ErrUnknownQuery = errors.New("runner: unknown query")
+
+	// ErrExprNotBool is returned when an expression does not return a boolean.
+	ErrExprNotBool = errors.New("runner: expression did not return bool")
+
+	// ErrNoModuleContext is returned when named setup requires module resolution.
+	ErrNoModuleContext = errors.New("runner: named setup requires module resolution")
+
+	// ErrAssertNoQuery is returned when an assert has no inline or named query.
+	ErrAssertNoQuery = errors.New("runner: assert query has no inline or named query")
+
 	// Test errors for use in unit tests.
 	errTestSetupFailed = errors.New("test: setup failed")
 	errTestStop        = errors.New("test: stop")

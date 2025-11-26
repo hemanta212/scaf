@@ -41,9 +41,14 @@ func (f *formatter) blankLine() {
 }
 
 func (f *formatter) formatSuite(s *Suite) {
+	// Imports
+	for _, imp := range s.Imports {
+		f.formatImport(imp)
+	}
+
 	// Queries
 	for i, q := range s.Queries {
-		if i > 0 {
+		if i > 0 || len(s.Imports) > 0 {
 			f.blankLine()
 		}
 
@@ -52,7 +57,7 @@ func (f *formatter) formatSuite(s *Suite) {
 
 	// Global setup
 	if s.Setup != nil {
-		if len(s.Queries) > 0 {
+		if len(s.Queries) > 0 || len(s.Imports) > 0 {
 			f.blankLine()
 		}
 
@@ -66,11 +71,19 @@ func (f *formatter) formatSuite(s *Suite) {
 
 	// Scopes
 	for i, scope := range s.Scopes {
-		if i > 0 || len(s.Queries) > 0 || s.Setup != nil || s.Teardown != nil {
+		if i > 0 || len(s.Queries) > 0 || len(s.Imports) > 0 || s.Setup != nil || s.Teardown != nil {
 			f.blankLine()
 		}
 
 		f.formatScope(scope)
+	}
+}
+
+func (f *formatter) formatImport(imp *Import) {
+	if imp.Alias != nil {
+		f.writeLine("import " + *imp.Alias + " " + f.quotedString(imp.Path))
+	} else {
+		f.writeLine("import " + f.quotedString(imp.Path))
 	}
 }
 
@@ -89,15 +102,15 @@ func (f *formatter) formatSetupClause(s *SetupClause) {
 func (f *formatter) formatNamedSetup(ns *NamedSetup) {
 	var b strings.Builder
 	b.WriteString("setup ")
-	
+
 	if ns.Module != nil {
 		b.WriteString(*ns.Module)
 		b.WriteString(".")
 	}
-	
+
 	b.WriteString(ns.Name)
 	b.WriteString("(")
-	
+
 	for i, p := range ns.Params {
 		if i > 0 {
 			b.WriteString(", ")
@@ -106,7 +119,7 @@ func (f *formatter) formatNamedSetup(ns *NamedSetup) {
 		b.WriteString(": ")
 		b.WriteString(f.formatValue(p.Value))
 	}
-	
+
 	b.WriteString(")")
 	f.writeLine(b.String())
 }
@@ -183,7 +196,7 @@ func (f *formatter) formatTest(t *Test) {
 	var inputs, outputs []*Statement
 
 	for _, stmt := range t.Statements {
-		if strings.HasPrefix(stmt.Key, "$") {
+		if strings.HasPrefix(stmt.Key(), "$") {
 			inputs = append(inputs, stmt)
 		} else {
 			outputs = append(outputs, stmt)
@@ -208,13 +221,13 @@ func (f *formatter) formatTest(t *Test) {
 		f.formatStatement(stmt)
 	}
 
-	// Assertion
-	if t.Assertion != nil {
-		if len(t.Statements) > 0 || t.Setup != nil {
+	// Assertions
+	for i, a := range t.Asserts {
+		if i == 0 && (len(t.Statements) > 0 || t.Setup != nil) {
 			f.blankLine()
 		}
 
-		f.formatAssertion(t.Assertion)
+		f.formatAssert(a)
 	}
 
 	f.indent--
@@ -222,15 +235,47 @@ func (f *formatter) formatTest(t *Test) {
 }
 
 func (f *formatter) formatStatement(s *Statement) {
-	f.writeLine(s.Key + ": " + f.formatValue(s.Value))
+	f.writeLine(s.Key() + ": " + f.formatValue(s.Value))
 }
 
-func (f *formatter) formatAssertion(a *Assertion) {
-	f.writeLine("assert " + f.rawString(a.Query) + " {")
+func (f *formatter) formatAssert(a *Assert) {
+	var queryPart string
+	if a.Query != nil {
+		if a.Query.Inline != nil {
+			queryPart = f.rawString(*a.Query.Inline) + " "
+		} else if a.Query.QueryName != nil {
+			queryPart = *a.Query.QueryName
+			if len(a.Query.Params) > 0 {
+				var params []string
+				for _, p := range a.Query.Params {
+					params = append(params, p.Name+": "+f.formatValue(p.Value))
+				}
+				queryPart += "(" + strings.Join(params, ", ") + ") "
+			} else {
+				queryPart += "() "
+			}
+		}
+	}
+
+	if len(a.Conditions) == 0 {
+		f.writeLine("assert " + queryPart + "{}")
+		return
+	}
+
+	if len(a.Conditions) == 1 {
+		f.writeLine("assert " + queryPart + "{ " + a.Conditions[0].String() + " }")
+		return
+	}
+
+	f.writeLine("assert " + queryPart + "{")
 	f.indent++
 
-	for _, exp := range a.Expectations {
-		f.formatStatement(exp)
+	for i, cond := range a.Conditions {
+		if i < len(a.Conditions)-1 {
+			f.writeLine(cond.String() + ";")
+		} else {
+			f.writeLine(cond.String())
+		}
 	}
 
 	f.indent--

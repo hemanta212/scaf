@@ -1,6 +1,7 @@
 package golang
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/rlch/scaf/language"
@@ -36,17 +37,14 @@ func TestGoLanguageGenerate(t *testing.T) {
 
 	lang := New()
 
-	// With nil suite, should return empty files
+	// Without binding, should return ErrNoBinding
 	ctx := &language.GenerateContext{
 		Suite: nil,
 	}
 
-	files, err := lang.Generate(ctx)
-	require.NoError(t, err)
-
-	// Returns nil files when no suite
-	assert.Nil(t, files["scaf.go"])
-	assert.Nil(t, files["scaf_test.go"])
+	_, err := lang.Generate(ctx)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNoBinding))
 }
 
 func TestGoLanguageGenerateWithContext(t *testing.T) {
@@ -54,18 +52,16 @@ func TestGoLanguageGenerateWithContext(t *testing.T) {
 
 	lang := New()
 
-	// With nil suite via Go-specific context
+	// Without binding, should return ErrNoBinding
 	ctx := &Context{
 		GenerateContext: language.GenerateContext{
 			Suite: nil,
 		},
 		PackageName: "testpkg",
+		Binding:     nil,
 	}
 
-	files, err := lang.GenerateWithContext(ctx)
-	require.NoError(t, err)
-
-	// Returns nil files when no suite
-	assert.Nil(t, files["scaf.go"])
-	assert.Nil(t, files["scaf_test.go"])
+	_, err := lang.GenerateWithContext(ctx)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNoBinding))
 }

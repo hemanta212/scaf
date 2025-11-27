@@ -9,8 +9,6 @@ require (
 
 require (
 	github.com/alecthomas/participle/v2 v2.1.4 // indirect
-	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4 // indirect
 	github.com/oklog/ulid/v2 v2.1.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
@@ -20,3 +18,5 @@ require (
 replace github.com/rlch/neogo => ../../neogo
 
 replace github.com/rlch/scaf => ..
+
+replace github.com/alecthomas/participle/v2 => ../../participle

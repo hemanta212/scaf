@@ -140,6 +140,9 @@ func (l *LSPFileLoader) LoadAndAnalyze(path string) (*analysis.AnalyzedFile, err
 	l.mu.RLock()
 	if analyzed, ok := l.analyzed[path]; ok {
 		l.mu.RUnlock()
+		l.logger.Debug("LoadAndAnalyze: returning cached analysis",
+			zap.String("path", path),
+			zap.Int("queryCount", len(analyzed.Symbols.Queries)))
 		return analyzed, nil
 	}
 	l.mu.RUnlock()
@@ -150,10 +153,19 @@ func (l *LSPFileLoader) LoadAndAnalyze(path string) (*analysis.AnalyzedFile, err
 		return nil, err
 	}
 
+	l.logger.Debug("LoadAndAnalyze: loaded file",
+		zap.String("path", path),
+		zap.Int("contentLen", len(content)))
+
 	// Create a temporary analyzer (without loader to avoid infinite recursion for now)
 	// TODO: Support recursive imports with cycle detection
 	analyzer := analysis.NewAnalyzer(nil)
 	result := analyzer.Analyze(path, content)
+
+	l.logger.Debug("LoadAndAnalyze: analyzed file",
+		zap.String("path", path),
+		zap.Int("queryCount", len(result.Symbols.Queries)),
+		zap.Bool("hasParseError", result.ParseError != nil))
 
 	// Cache the analysis
 	l.mu.Lock()

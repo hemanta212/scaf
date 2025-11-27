@@ -330,6 +330,70 @@ func TestBindingRegistered(t *testing.T) {
 	assert.Equal(t, "neogo", b.Name())
 }
 
+func TestBindingGenerateBody_ResultStruct(t *testing.T) {
+	t.Parallel()
+
+	b := NewBinding()
+
+	ctx := &golang.BodyContext{
+		Query: "MATCH (u:User {id: $userId}) RETURN u.name AS name, u.email AS email",
+		Signature: &golang.BindingSignature{
+			Name: "GetUser",
+			Params: []golang.BindingParam{
+				{Name: "ctx", Type: "context.Context"},
+				{Name: "db", Type: "neogo.Driver"},
+				{Name: "userId", Type: "string"},
+			},
+			Returns: []golang.BindingReturn{
+				{Name: "name", ColumnName: "name", Type: "string"},
+				{Name: "email", ColumnName: "email", Type: "string"},
+			},
+			ResultStruct: "getUserResult",
+			ReturnsError: true,
+		},
+		QueryParams: []golang.BindingParam{
+			{Name: "userId", Type: "string"},
+		},
+	}
+
+	body, err := b.GenerateBody(ctx)
+	require.NoError(t, err)
+
+	expected := "result := &getUserResult{}\n" +
+		"err := db.Exec().\n" +
+		"\tCypher(`MATCH (u:User {id: $userId}) RETURN u.name AS name, u.email AS email`).\n" +
+		"\tRunWithParams(ctx, map[string]any{\"userId\": userId}, \"name\", &result.Name, \"email\", &result.Email)\n" +
+		"if err != nil {\n" +
+		"\treturn nil, err\n" +
+		"}\n" +
+		"return result, nil"
+
+	assert.Equal(t, expected, body)
+}
+
+func TestToExportedFieldName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"name", "Name"},
+		{"email", "Email"},
+		{"user_id", "UserID"},
+		{"created_at", "CreatedAt"},
+		{"id", "ID"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, toExportedFieldName(tt.input))
+		})
+	}
+}
+
 func TestZeroValue(t *testing.T) {
 	t.Parallel()
 

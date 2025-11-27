@@ -5,6 +5,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/analysis"
 	cyphergrammar "github.com/rlch/scaf/dialects/cypher/grammar"
 )
 
@@ -301,5 +302,126 @@ func isAggregateExpression(exprCtx cyphergrammar.IExpressionContext) bool {
 	return check(exprCtx)
 }
 
-// Ensure Analyzer implements scaf.QueryAnalyzer.
+// AnalyzeQueryWithSchema parses a Cypher query and extracts metadata with cardinality inference.
+// If schema is provided, it checks if the query filters on unique fields to determine ReturnsOne.
+func (a *Analyzer) AnalyzeQueryWithSchema(query string, schema *analysis.TypeSchema) (*scaf.QueryMetadata, error) {
+	// First, get the base metadata
+	result, err := a.AnalyzeQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no schema, default to ReturnsOne = false (slice)
+	if schema == nil {
+		return result, nil
+	}
+
+	// Parse the query to check for unique field filters
+	tree, err := parseCypherQuery(query)
+	if err != nil {
+		return result, nil // Return base result on parse error
+	}
+
+	// Check if query filters on unique fields
+	result.ReturnsOne = checkUniqueFilter(tree, schema)
+
+	return result, nil
+}
+
+// checkUniqueFilter walks the parse tree to find MATCH clauses with property filters
+// and checks if any filter is on a unique field.
+func checkUniqueFilter(tree antlr.ParseTree, schema *analysis.TypeSchema) bool {
+	var found bool
+
+	var walk func(node antlr.Tree)
+	walk = func(node antlr.Tree) {
+		// Look for node patterns with properties like (u:User {id: $userId})
+		if nodeCtx, ok := node.(*cyphergrammar.NodePatternContext); ok {
+			if checkNodePatternForUnique(nodeCtx, schema) {
+				found = true
+				return
+			}
+		}
+
+		// Recursively walk children
+		if ruleCtx, ok := node.(antlr.RuleContext); ok {
+			for i := 0; i < ruleCtx.GetChildCount(); i++ {
+				if child := ruleCtx.GetChild(i); child != nil {
+					walk(child)
+					if found {
+						return
+					}
+				}
+			}
+		}
+	}
+
+	walk(tree)
+	return found
+}
+
+// checkNodePatternForUnique checks if a node pattern filters on a unique field.
+// Pattern like (u:User {id: $userId}) - checks if "id" is unique on "User".
+func checkNodePatternForUnique(nodeCtx *cyphergrammar.NodePatternContext, schema *analysis.TypeSchema) bool {
+	// Get the label(s) from the node pattern
+	labels := nodeCtx.NodeLabels()
+	if labels == nil {
+		return false
+	}
+
+	// Get all label names - NodeLabels has AllName() returning []INameContext
+	var labelNames []string
+	for _, nameCtx := range labels.AllName() {
+		if nameCtx != nil {
+			labelNames = append(labelNames, nameCtx.GetText())
+		}
+	}
+
+	if len(labelNames) == 0 {
+		return false
+	}
+
+	// Get the properties from the node pattern
+	props := nodeCtx.Properties()
+	if props == nil {
+		return false
+	}
+
+	mapLit := props.MapLit()
+	if mapLit == nil {
+		return false
+	}
+
+	// Get property names being filtered - MapLit has AllMapPair() returning []IMapPairContext
+	var propNames []string
+	for _, pairCtx := range mapLit.AllMapPair() {
+		if pair, ok := pairCtx.(*cyphergrammar.MapPairContext); ok {
+			if nameCtx := pair.Name(); nameCtx != nil {
+				propNames = append(propNames, nameCtx.GetText())
+			}
+		}
+	}
+
+	// Check if any property is unique on any of the labels
+	for _, label := range labelNames {
+		model, ok := schema.Models[label]
+		if !ok {
+			continue
+		}
+
+		for _, propName := range propNames {
+			for _, field := range model.Fields {
+				if field.Name == propName && field.Unique {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// Ensure Analyzer implements scaf.QueryAnalyzer and analysis.SchemaAwareAnalyzer.
 var _ scaf.QueryAnalyzer = (*Analyzer)(nil)
+var _ analysis.SchemaAwareAnalyzer = (*Analyzer)(nil)
+

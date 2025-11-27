@@ -23,7 +23,7 @@ var (
 
 // Runner executes scaf test suites.
 type Runner struct {
-	dialect  scaf.LegacyDialect
+	database scaf.Database
 	handler  Handler
 	failFast bool
 	filter   *regexp.Regexp
@@ -34,12 +34,17 @@ type Runner struct {
 // Option configures a Runner.
 type Option func(*Runner)
 
-// WithDialect sets the database dialect.
-// Deprecated: Will be replaced with WithDatabase.
-func WithDialect(d scaf.LegacyDialect) Option {
+// WithDatabase sets the database for query execution.
+func WithDatabase(db scaf.Database) Option {
 	return func(r *Runner) {
-		r.dialect = d
+		r.database = db
 	}
+}
+
+// WithDialect sets the database dialect.
+// Deprecated: Use WithDatabase instead.
+func WithDialect(d scaf.Database) Option {
+	return WithDatabase(d)
 }
 
 // WithHandler sets the event handler.
@@ -98,8 +103,8 @@ type executor interface {
 // RunFile loads, resolves, and runs a scaf file with full module resolution.
 // This is a convenience method that handles parsing and import resolution.
 func (r *Runner) RunFile(ctx context.Context, path string) (*Result, error) {
-	if r.dialect == nil {
-		return nil, ErrNoDialect
+	if r.database == nil {
+		return nil, ErrNoDatabase
 	}
 
 	loader := module.NewLoader()
@@ -118,8 +123,8 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*Result, error) {
 
 // Run executes a parsed Suite and returns the results.
 func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (*Result, error) {
-	if r.dialect == nil {
-		return nil, ErrNoDialect
+	if r.database == nil {
+		return nil, ErrNoDatabase
 	}
 
 	result := NewResult()
@@ -143,7 +148,7 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 
 	// Execute suite setup
 	if suite.Setup != nil {
-		err := r.executeSetup(ctx, r.dialect, suite.Setup)
+		err := r.executeSetup(ctx, r.database, suite.Setup)
 		if err != nil {
 			return result, fmt.Errorf("suite setup: %w", err)
 		}
@@ -159,7 +164,7 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 		if err != nil {
 			// Run suite teardown even on error
 			if suite.Teardown != nil {
-				_ = r.executeQuery(ctx, r.dialect, *suite.Teardown, nil)
+				_ = r.executeQuery(ctx, r.database, *suite.Teardown, nil)
 			}
 
 			return result, err
@@ -168,7 +173,7 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 
 	// Execute suite teardown
 	if suite.Teardown != nil {
-		err := r.executeQuery(ctx, r.dialect, *suite.Teardown, nil)
+		err := r.executeQuery(ctx, r.database, *suite.Teardown, nil)
 		if err != nil {
 			return result, fmt.Errorf("suite teardown: %w", err)
 		}
@@ -194,7 +199,7 @@ func (r *Runner) runQueryScope(
 
 	// Execute scope setup
 	if scope.Setup != nil {
-		err := r.executeSetup(ctx, r.dialect, scope.Setup)
+		err := r.executeSetup(ctx, r.database, scope.Setup)
 		if err != nil {
 			return fmt.Errorf("scope %s setup: %w", scope.QueryName, err)
 		}
@@ -216,7 +221,7 @@ func (r *Runner) runQueryScope(
 		if errors.Is(err, ErrMaxFailures) {
 			// Run scope teardown before returning
 			if scope.Teardown != nil {
-				_ = r.executeQuery(ctx, r.dialect, *scope.Teardown, nil)
+				_ = r.executeQuery(ctx, r.database, *scope.Teardown, nil)
 			}
 
 			return err
@@ -225,7 +230,7 @@ func (r *Runner) runQueryScope(
 
 	// Execute scope teardown
 	if scope.Teardown != nil {
-		err := r.executeQuery(ctx, r.dialect, *scope.Teardown, nil)
+		err := r.executeQuery(ctx, r.database, *scope.Teardown, nil)
 		if err != nil {
 			return fmt.Errorf("scope %s teardown: %w", scope.QueryName, err)
 		}
@@ -250,7 +255,7 @@ func (r *Runner) runGroup(
 
 	// Execute group setup
 	if group.Setup != nil {
-		err := r.executeSetup(ctx, r.dialect, group.Setup)
+		err := r.executeSetup(ctx, r.database, group.Setup)
 		if err != nil {
 			return fmt.Errorf("group %s setup: %w", group.Name, err)
 		}
@@ -270,7 +275,7 @@ func (r *Runner) runGroup(
 		if errors.Is(err, ErrMaxFailures) {
 			// Run group teardown before returning
 			if group.Teardown != nil {
-				_ = r.executeQuery(ctx, r.dialect, *group.Teardown, nil)
+				_ = r.executeQuery(ctx, r.database, *group.Teardown, nil)
 			}
 
 			return err
@@ -279,7 +284,7 @@ func (r *Runner) runGroup(
 
 	// Execute group teardown
 	if group.Teardown != nil {
-		err := r.executeQuery(ctx, r.dialect, *group.Teardown, nil)
+		err := r.executeQuery(ctx, r.database, *group.Teardown, nil)
 		if err != nil {
 			return fmt.Errorf("group %s teardown: %w", group.Name, err)
 		}
@@ -322,18 +327,18 @@ func (r *Runner) runTest(
 	}
 
 	// Try to run test in a transaction for isolation
-	txDialect, canTx := r.dialect.(scaf.Transactional)
+	txDB, canTx := r.database.(scaf.TransactionalDatabase)
 	if canTx {
-		return r.runTestInTransaction(ctx, txDialect, test, queryBody, queries, path, suitePath, start, handler, result)
+		return r.runTestInTransaction(ctx, txDB, test, queryBody, queries, path, suitePath, start, handler, result)
 	}
 
 	// Fallback: run without transaction isolation
-	return r.runTestDirect(ctx, r.dialect, test, queryBody, queries, path, suitePath, start, handler, result)
+	return r.runTestDirect(ctx, r.database, test, queryBody, queries, path, suitePath, start, handler, result)
 }
 
 func (r *Runner) runTestInTransaction(
 	ctx context.Context,
-	txDialect scaf.Transactional,
+	txDB scaf.TransactionalDatabase,
 	test *scaf.Test,
 	queryBody string,
 	queries map[string]string,
@@ -343,7 +348,7 @@ func (r *Runner) runTestInTransaction(
 	handler Handler,
 	result *Result,
 ) error {
-	tx, err := txDialect.Begin(ctx)
+	tx, err := txDB.Begin(ctx)
 	if err != nil {
 		return r.emitError(ctx, path, suitePath, start, fmt.Errorf("begin transaction: %w", err), handler, result)
 	}

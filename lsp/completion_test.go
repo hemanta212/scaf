@@ -610,6 +610,100 @@ func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644) //nolint:gosec // Test helper
 }
 
+func TestServer_Completion_SetupFunctions_AfterDot_Invalid(t *testing.T) {
+	t.Parallel()
+
+	// Test case: typing "setup fixtures." (incomplete, causes parse error)
+	// Should still offer setup function completions from the fixtures module
+
+	// Create temporary directory structure for cross-file test
+	tmpDir := t.TempDir()
+
+	// Create fixtures.scaf with queries
+	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+query SetupDB ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
+`
+	fixturesPath := tmpDir + "/fixtures.scaf"
+	if err := writeFile(fixturesPath, fixturesContent); err != nil {
+		t.Fatalf("Failed to create fixtures file: %v", err)
+	}
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	// Initialize with workspace root
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{
+		RootURI: protocol.DocumentURI("file://" + tmpDir),
+	})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open an INVALID file with "setup fixtures." (incomplete)
+	mainContent := `import fixtures "./fixtures"
+
+query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+
+GetUser {
+	setup fixtures.
+	test "finds user" {
+		$id: 1
+	}
+}
+`
+	mainPath := tmpDir + "/main.scaf"
+	mainURI := protocol.DocumentURI("file://" + mainPath)
+
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     mainURI,
+			Version: 1,
+			Text:    mainContent,
+		},
+	})
+
+	// Request completion after "setup fixtures." (line 5, character 16)
+	// Line 5 is: "\tsetup fixtures."
+	// Character 16 is after the dot (1 tab + "setup fixtures." = 1 + 15 = 16)
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: mainURI},
+			Position:     protocol.Position{Line: 5, Character: 16},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerCharacter: ".",
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	// Debug: print all items
+	t.Logf("Got %d completion items for setup functions after dot (invalid file)", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v, detail=%s)", item.Label, item.Kind, item.Detail)
+	}
+
+	// Should offer queries from fixtures module
+	queryLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindFunction {
+			queryLabels[item.Label] = true
+		}
+	}
+
+	if !queryLabels["CreateUser"] {
+		t.Errorf("Expected CreateUser query completion, got: %v", queryLabels)
+	}
+
+	if !queryLabels["SetupDB"] {
+		t.Errorf("Expected SetupDB query completion, got: %v", queryLabels)
+	}
+}
+
 func TestServer_Completion_SetupImportAlias_InScope(t *testing.T) {
 	t.Parallel()
 

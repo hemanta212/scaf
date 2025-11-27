@@ -437,3 +437,100 @@ func TestTypeToGoString(t *testing.T) {
 	assert.Equal(t, "*int", TypeToGoString(analysis.PointerTo(analysis.TypeInt)))
 	assert.Equal(t, "time.Time", TypeToGoString(analysis.NamedType("time", "Time")))
 }
+
+func TestResultStructGeneration(t *testing.T) {
+	t.Parallel()
+
+	// Query with multiple returns should generate a result struct name
+	input := `
+query getUser ` + "`" + `
+MATCH (u:User {id: $id})
+RETURN u.name AS name, u.email AS email
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, nil)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+
+	// Should generate result struct name for multiple returns
+	assert.Equal(t, "getUserResult", sig.ResultStruct, "should generate result struct name")
+
+	// Returns should still be populated for column mapping
+	require.Len(t, sig.Returns, 2)
+	assert.Equal(t, "name", sig.Returns[0].Name)
+	assert.Equal(t, "email", sig.Returns[1].Name)
+}
+
+func TestResultStructNotGeneratedForSingleReturn(t *testing.T) {
+	t.Parallel()
+
+	// Query with single return should NOT generate a result struct
+	input := `
+query getName ` + "`" + `
+MATCH (u:User)
+RETURN u.name AS name
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, nil)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+
+	// No result struct for single return
+	assert.Empty(t, sig.ResultStruct, "should not generate result struct for single return")
+	require.Len(t, sig.Returns, 1)
+}
+
+func TestToResultStructName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"GetUser", "getUserResult"},
+		{"FindAllPosts", "findAllPostsResult"},
+		{"CountUsers", "countUsersResult"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, toResultStructName(tt.input))
+		})
+	}
+}
+
+func TestToExportedFieldName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"name", "Name"},
+		{"email", "Email"},
+		{"user_id", "UserID"},
+		{"created_at", "CreatedAt"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, toExportedFieldName(tt.input))
+		})
+	}
+}

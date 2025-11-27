@@ -10,8 +10,12 @@ var (
 	// ErrSetupFailed is returned when a setup block fails.
 	ErrSetupFailed = errors.New("runner: setup failed")
 
-	// ErrNoDialect is returned when no dialect is configured.
-	ErrNoDialect = errors.New("runner: no dialect configured")
+	// ErrNoDatabase is returned when no database is configured.
+	ErrNoDatabase = errors.New("runner: no database configured")
+
+	// ErrNoDialect is an alias for ErrNoDatabase for backwards compatibility.
+	// Deprecated: Use ErrNoDatabase instead.
+	ErrNoDialect = ErrNoDatabase
 
 	// ErrConnectionFailed is returned when database connection fails.
 	ErrConnectionFailed = errors.New("runner: database connection failed")

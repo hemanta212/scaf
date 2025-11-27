@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/module"
 	"github.com/rlch/scaf/runner"
 )
 
-// paramTrackingDialect tracks executed queries and their parameters.
-type paramTrackingDialect struct {
+// paramTrackingDatabase tracks executed queries and their parameters.
+type paramTrackingDatabase struct {
 	results  []map[string]any
 	executed []struct {
 		query  string
@@ -20,9 +21,11 @@ type paramTrackingDialect struct {
 	}
 }
 
-func (d *paramTrackingDialect) Name() string { return "param-tracking" }
+func (d *paramTrackingDatabase) Name() string { return "param-tracking" }
 
-func (d *paramTrackingDialect) Execute(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
+func (d *paramTrackingDatabase) Dialect() scaf.Dialect { return nil }
+
+func (d *paramTrackingDatabase) Execute(_ context.Context, query string, params map[string]any) ([]map[string]any, error) {
 	// Clone params to avoid mutation issues
 	clonedParams := make(map[string]any)
 	maps.Copy(clonedParams, params)
@@ -35,7 +38,7 @@ func (d *paramTrackingDialect) Execute(_ context.Context, query string, params m
 	return d.results, nil
 }
 
-func (d *paramTrackingDialect) Close() error { return nil }
+func (d *paramTrackingDatabase) Close() error { return nil }
 
 func TestRunner_FileBasedModuleResolution(t *testing.T) {
 	t.Parallel()
@@ -84,9 +87,9 @@ GetTest {
 	}
 
 	// Run with tracking dialect
-	d := &paramTrackingDialect{results: []map[string]any{{"t.name": "hello"}}}
+	d := &paramTrackingDatabase{results: []map[string]any{{"t.name": "hello"}}}
 	r := runner.New(
-		runner.WithDialect(d),
+		runner.WithDatabase(d),
 		runner.WithModules(resolved),
 	)
 
@@ -173,9 +176,9 @@ GetData {
 	}
 
 	// Run with tracking dialect
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
 	r := runner.New(
-		runner.WithDialect(d),
+		runner.WithDatabase(d),
 		runner.WithModules(resolved),
 	)
 
@@ -258,9 +261,9 @@ GetData {
 	}
 
 	// Run with tracking dialect
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
 	r := runner.New(
-		runner.WithDialect(d),
+		runner.WithDatabase(d),
 		runner.WithModules(resolved),
 	)
 
@@ -328,8 +331,8 @@ GetData {
 	}
 
 	// Use RunFile which handles resolution automatically
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
-	r := runner.New(runner.WithDialect(d))
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
+	r := runner.New(runner.WithDatabase(d))
 
 	result, err := r.RunFile(context.Background(), mainPath)
 	if err != nil {
@@ -395,8 +398,8 @@ GetData {
 	}
 
 	// Use RunFile
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
-	r := runner.New(runner.WithDialect(d))
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
+	r := runner.New(runner.WithDatabase(d))
 
 	result, err := r.RunFile(context.Background(), mainPath)
 	if err != nil {
@@ -463,8 +466,8 @@ GetData {
 	}
 
 	// Use RunFile
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
-	r := runner.New(runner.WithDialect(d))
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
+	r := runner.New(runner.WithDatabase(d))
 
 	result, err := r.RunFile(context.Background(), mainPath)
 	if err != nil {
@@ -540,9 +543,9 @@ GetData {
 	}
 
 	// Run - should fail because nonexistent module
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
 	r := runner.New(
-		runner.WithDialect(d),
+		runner.WithDatabase(d),
 		runner.WithModules(resolved),
 	)
 
@@ -599,9 +602,9 @@ GetData {
 	}
 
 	// Run - should fail because setup doesn't exist
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
 	r := runner.New(
-		runner.WithDialect(d),
+		runner.WithDatabase(d),
 		runner.WithModules(resolved),
 	)
 
@@ -652,8 +655,8 @@ GetData {
 	}
 
 	// Use RunFile
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
-	r := runner.New(runner.WithDialect(d))
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
+	r := runner.New(runner.WithDatabase(d))
 
 	result, err := r.RunFile(context.Background(), mainPath)
 	if err != nil {
@@ -717,8 +720,8 @@ GetData {
 	}
 
 	// Use RunFile
-	d := &paramTrackingDialect{results: []map[string]any{{}}}
-	r := runner.New(runner.WithDialect(d))
+	d := &paramTrackingDatabase{results: []map[string]any{{}}}
+	r := runner.New(runner.WithDatabase(d))
 
 	result, err := r.RunFile(context.Background(), mainPath)
 	if err != nil {

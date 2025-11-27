@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rlch/scaf"
+	_ "github.com/rlch/scaf/databases/neo4j"
 	"github.com/rlch/scaf/module"
 	"github.com/rlch/scaf/runner"
 	"github.com/urfave/cli/v3"
@@ -17,7 +18,7 @@ import (
 
 var (
 	ErrNoScafFiles     = errors.New("no .scaf files found")
-	ErrNoDialect       = errors.New("no dialect specified (use --dialect or .scaf.yaml)")
+	ErrNoDatabase      = errors.New("no database specified (use neo4j config in .scaf.yaml)")
 	ErrNoConnectionURI = errors.New("no connection URI specified (use --uri or .scaf.yaml)")
 )
 
@@ -28,9 +29,9 @@ func testCommand() *cli.Command {
 		ArgsUsage: "[files or directories...]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "dialect",
+				Name:    "database",
 				Aliases: []string{"d"},
-				Usage:   "dialect to use (overrides config)",
+				Usage:   "database to use (overrides config)",
 			},
 			&cli.StringFlag{
 				Name:    "uri",
@@ -104,38 +105,41 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 	configDir := filepath.Dir(files[0])
 	loadedCfg, configErr := scaf.LoadConfig(configDir)
 
-	// Determine dialect name (flag > config)
-	dialectName := cmd.String("dialect")
-	if dialectName == "" && configErr == nil {
-		dialectName = loadedCfg.DialectName()
+	// Determine database name (flag > config)
+	databaseName := cmd.String("database")
+	if databaseName == "" && configErr == nil {
+		databaseName = loadedCfg.DatabaseName()
 	}
 
-	if dialectName == "" {
-		return ErrNoDialect
+	if databaseName == "" {
+		return ErrNoDatabase
 	}
 
-	// Build connection config (flags override config)
-	var cfg scaf.DialectConfig
+	// Build database config based on database type
+	var dbCfg any
 
-	if configErr == nil {
-		cfg = loadedCfg.ToLegacyDialectConfig()
-	}
-
-	// Override with flags if provided
-	if uri := cmd.String("uri"); uri != "" {
-		cfg.URI = uri
-	}
-
-	if username := cmd.String("username"); username != "" {
-		cfg.Username = username
-	}
-
-	if password := cmd.String("password"); password != "" {
-		cfg.Password = password
-	}
-
-	if cfg.URI == "" {
-		return ErrNoConnectionURI
+	switch databaseName {
+	case scaf.DatabaseNeo4j:
+		neo4jCfg := &scaf.Neo4jConfig{}
+		if configErr == nil && loadedCfg.Neo4j != nil {
+			neo4jCfg = loadedCfg.Neo4j
+		}
+		// Override with flags if provided
+		if uri := cmd.String("uri"); uri != "" {
+			neo4jCfg.URI = uri
+		}
+		if username := cmd.String("username"); username != "" {
+			neo4jCfg.Username = username
+		}
+		if password := cmd.String("password"); password != "" {
+			neo4jCfg.Password = password
+		}
+		if neo4jCfg.URI == "" {
+			return ErrNoConnectionURI
+		}
+		dbCfg = neo4jCfg
+	default:
+		return fmt.Errorf("unsupported database: %s", databaseName)
 	}
 
 	// Parse all suites upfront and resolve modules (needed for TUI tree and named setups)
@@ -170,13 +174,12 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 		})
 	}
 
-	// Create dialect
-	dialect, err := scaf.NewDialect(dialectName, cfg)
+	// Create database
+	database, err := scaf.NewDatabase(databaseName, dbCfg)
 	if err != nil {
-		return fmt.Errorf("failed to create dialect: %w", err)
+		return fmt.Errorf("failed to create database: %w", err)
 	}
-
-	defer func() { _ = dialect.Close() }()
+	defer func() { _ = database.Close() }()
 
 	// Create formatter/handler
 	verbose := cmd.Bool("verbose")
@@ -215,7 +218,7 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 	for _, ps := range suites {
 		// Create runner with module context for this suite
 		suiteRunner := runner.New(
-			runner.WithDialect(dialect),
+			runner.WithDatabase(database),
 			runner.WithHandler(formatHandler),
 			runner.WithFailFast(cmd.Bool("fail-fast")),
 			runner.WithFilter(cmd.String("run")),

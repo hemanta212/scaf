@@ -328,11 +328,17 @@ func init() {
 	getUserImpl = getUserMock
 }
 
-func getUserMock(userId any) (any, any) {
+func getUserMock(userId any) []*getUserResult {
 	if userId == 1 {
-		return "Alice", 30
+		return []*getUserResult{{
+			Name: "Alice",
+			Age: 30,
+		}}
 	} else if userId == 2 {
-		return "Bob", 25
+		return []*getUserResult{{
+			Name: "Bob",
+			Age: 25,
+		}}
 	}
 	panic("no matching test case")
 }
@@ -390,9 +396,9 @@ func init() {
 	findUsersImpl = findUsersMock
 }
 
-func findUsersMock(ids any) any {
+func findUsersMock(ids any) []any {
 	if reflect.DeepEqual(ids, []any{1, 2, 3}) {
-		return "Multiple"
+		return []any{"Multiple"}
 	}
 	panic("no matching test case")
 }
@@ -508,16 +514,16 @@ func init() {
 	getPostImpl = getPostMock
 }
 
-func getUserMock(userId any) any {
+func getUserMock(userId any) []any {
 	if userId == 1 {
-		return "Alice"
+		return []any{"Alice"}
 	}
 	panic("no matching test case")
 }
 
-func getPostMock(postId any) any {
+func getPostMock(postId any) []any {
 	if postId == 100 {
-		return "Hello World"
+		return []any{"Hello World"}
 	}
 	panic("no matching test case")
 }
@@ -575,11 +581,11 @@ func init() {
 	checkActiveImpl = checkActiveMock
 }
 
-func checkActiveMock(userId any) any {
+func checkActiveMock(userId any) []any {
 	if userId == 1 {
-		return true
+		return []any{true}
 	} else if userId == 2 {
-		return false
+		return []any{false}
 	}
 	panic("no matching test case")
 }
@@ -686,9 +692,12 @@ func init() {
 	getUserImpl = getUserMock
 }
 
-func getUserMock(userId any) (any, any) {
+func getUserMock(userId any) []*getUserResult {
 	if userId == 1 {
-		return "Alice", nil
+		return []*getUserResult{{
+			Name: "Alice",
+			Age: nil,
+		}}
 	}
 	panic("no matching test case")
 }

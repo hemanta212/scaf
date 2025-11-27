@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/language"
 	"github.com/rlch/scaf/language/go"
 	"github.com/urfave/cli/v3"
@@ -53,8 +54,13 @@ func generateCommand() *cli.Command {
 				Aliases: []string{"p"},
 				Usage:   "Go package name (default: directory name)",
 			},
-		},
-		Action: runGenerate,
+			&cli.StringFlag{
+				Name:    "schema",
+				Aliases: []string{"s"},
+				Usage:   "path to schema HCL file (e.g., .scaf-schema.hcl)",
+			},
+			},
+			Action: runGenerate,
 	}
 }
 
@@ -135,6 +141,21 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		packageName = cfg.Generate.Package
 	}
 
+	schemaPath := cmd.String("schema")
+	if schemaPath == "" && cfg != nil && cfg.Generate.Schema != "" {
+		schemaPath = cfg.Generate.Schema
+	}
+
+	// Load schema if specified
+	var schema *analysis.TypeSchema
+	if schemaPath != "" {
+		var err error
+		schema, err = analysis.LoadSchema(schemaPath, configDir)
+		if err != nil {
+			return fmt.Errorf("loading schema: %w", err)
+		}
+	}
+
 	// Get language
 	lang := language.Get(langName)
 	if lang == nil {
@@ -157,10 +178,18 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 
 	analyzer := scaf.GetAnalyzer(dialectName)
 
+	opts := &generateOptions{
+		goLang:      goLang,
+		analyzer:    analyzer,
+		binding:     binding,
+		schema:      schema,
+		outputDir:   outputDir,
+		packageName: packageName,
+	}
+
 	// Process each file
 	for _, inputFile := range files {
-		err := generateFile(inputFile, goLang, analyzer, binding, outputDir, packageName)
-		if err != nil {
+		if err := generateFile(inputFile, opts); err != nil {
 			return err
 		}
 	}
@@ -168,14 +197,17 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func generateFile(
-	inputFile string,
-	goLang *golang.GoLanguage,
-	analyzer scaf.QueryAnalyzer,
-	binding golang.Binding,
-	outputDir string,
-	packageName string,
-) error {
+// generateOptions holds configuration for file generation.
+type generateOptions struct {
+	goLang      *golang.GoLanguage
+	analyzer    scaf.QueryAnalyzer
+	binding     golang.Binding
+	schema      *analysis.TypeSchema
+	outputDir   string
+	packageName string
+}
+
+func generateFile(inputFile string, opts *generateOptions) error {
 	// Read and parse the scaf file
 	data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
 	if err != nil {
@@ -188,34 +220,35 @@ func generateFile(
 	}
 
 	// Determine output directory (default: same as input file)
-	fileOutputDir := outputDir
-	if fileOutputDir == "" {
-		fileOutputDir = filepath.Dir(inputFile)
+	outputDir := opts.outputDir
+	if outputDir == "" {
+		outputDir = filepath.Dir(inputFile)
 	}
 
 	// Determine package name (default: directory name)
-	filePackageName := packageName
-	if filePackageName == "" {
-		filePackageName = filepath.Base(fileOutputDir)
+	packageName := opts.packageName
+	if packageName == "" {
+		packageName = filepath.Base(outputDir)
 		// Clean up package name (remove invalid characters)
-		filePackageName = strings.ReplaceAll(filePackageName, "-", "")
-		filePackageName = strings.ReplaceAll(filePackageName, ".", "")
-		if filePackageName == "" {
-			filePackageName = "main"
+		packageName = strings.ReplaceAll(packageName, "-", "")
+		packageName = strings.ReplaceAll(packageName, ".", "")
+		if packageName == "" {
+			packageName = "main"
 		}
 	}
 
 	goCtx := &golang.Context{
 		GenerateContext: language.GenerateContext{
 			Suite:         suite,
-			QueryAnalyzer: analyzer,
-			OutputDir:     fileOutputDir,
+			QueryAnalyzer: opts.analyzer,
+			Schema:        opts.schema,
+			OutputDir:     outputDir,
 		},
-		PackageName: filePackageName,
-		Binding:     binding,
+		PackageName: packageName,
+		Binding:     opts.binding,
 	}
 
-	files, err := goLang.GenerateWithContext(goCtx)
+	files, err := opts.goLang.GenerateWithContext(goCtx)
 	if err != nil {
 		return fmt.Errorf("generating code for %s: %w", inputFile, err)
 	}
@@ -226,7 +259,7 @@ func generateFile(
 			continue
 		}
 
-		outPath := filepath.Join(fileOutputDir, filename)
+		outPath := filepath.Join(outputDir, filename)
 
 		err := os.WriteFile(outPath, content, 0o644) //nolint:gosec // G306: output file permissions are fine
 		if err != nil {

@@ -1,0 +1,56 @@
+# github.com/alecthomas/participle/v2 v2.1.4 => ../../participle
+## explicit; go 1.18
+github.com/alecthomas/participle/v2
+github.com/alecthomas/participle/v2/lexer
+# github.com/neo4j/neo4j-go-driver/v5 v5.28.4
+## explicit; go 1.18
+github.com/neo4j/neo4j-go-driver/v5/neo4j
+github.com/neo4j/neo4j-go-driver/v5/neo4j/auth
+github.com/neo4j/neo4j-go-driver/v5/neo4j/config
+github.com/neo4j/neo4j-go-driver/v5/neo4j/db
+github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/auth
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/bolt
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/boltagent
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/collections
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/connector
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/errorutil
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/gql
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/homedb
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/metadata
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/notifications
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/packstream
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/pool
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/racing
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/retry
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/router
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/telemetry
+github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/time
+github.com/neo4j/neo4j-go-driver/v5/neo4j/log
+github.com/neo4j/neo4j-go-driver/v5/neo4j/notifications
+# github.com/oklog/ulid/v2 v2.1.0
+## explicit; go 1.15
+github.com/oklog/ulid/v2
+# github.com/rlch/neogo v0.0.0 => ../../neogo
+## explicit; go 1.24.0
+github.com/rlch/neogo
+github.com/rlch/neogo/internal
+github.com/rlch/neogo/internal/codec
+# github.com/rlch/scaf v0.0.0 => ..
+## explicit; go 1.25.1
+github.com/rlch/scaf
+github.com/rlch/scaf/adapters/neogo
+github.com/rlch/scaf/analysis
+github.com/rlch/scaf/language
+github.com/rlch/scaf/language/go
+github.com/rlch/scaf/module
+# golang.org/x/sync v0.16.0
+## explicit; go 1.23.0
+golang.org/x/sync/semaphore
+# gopkg.in/yaml.v3 v3.0.1
+## explicit
+gopkg.in/yaml.v3
+# github.com/rlch/neogo => ../../neogo
+# github.com/rlch/scaf => ..
+# github.com/alecthomas/participle/v2 => ../../participle

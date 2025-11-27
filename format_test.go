@@ -4,25 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/rlch/scaf"
 )
-
-// ignorePos ignores lexer.Position, Tokens, comment fields, Close fields, and recovery metadata in comparisons.
-var ignorePos = cmp.Options{
-	cmpopts.IgnoreTypes(lexer.Position{}, lexer.Token{}, []lexer.Token{}),
-	cmpopts.IgnoreFields(scaf.Suite{}, "LeadingComments", "TrailingComment"),
-	cmpopts.IgnoreFields(scaf.Import{}, "LeadingComments", "TrailingComment"),
-	cmpopts.IgnoreFields(scaf.Query{}, "LeadingComments", "TrailingComment"),
-	cmpopts.IgnoreFields(scaf.QueryScope{}, "LeadingComments", "TrailingComment", "Close", "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-	cmpopts.IgnoreFields(scaf.Group{}, "LeadingComments", "TrailingComment", "Close", "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-	cmpopts.IgnoreFields(scaf.Test{}, "LeadingComments", "TrailingComment", "Close", "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-	cmpopts.IgnoreFields(scaf.Assert{}, "Close", "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-	cmpopts.IgnoreFields(scaf.SetupClause{}, "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-	cmpopts.IgnoreFields(scaf.NamedSetup{}, "Recovered", "RecoveredSpan", "RecoveredEnd", "SkippedTokens"),
-}
 
 // inlineSetup creates a SetupClause with an inline query.
 func inlineSetup(body string) *scaf.SetupClause {
@@ -693,7 +677,7 @@ func TestFormatPreservesSemantics(t *testing.T) {
 	}
 
 	// Compare ASTs (ignoring position info since it won't match)
-	if diff := cmp.Diff(suite, parsed, ignorePos); diff != "" {
+	if diff := cmp.Diff(suite, parsed, cmpIgnoreAST); diff != "" {
 		t.Errorf("AST mismatch after format+parse (-original +parsed):\n%s", diff)
 	}
 }

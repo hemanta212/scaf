@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/dialects/cypher"
 )
 
@@ -426,5 +427,94 @@ RETURN u.name AS userName, count(f) AS followerCount
 
 	if !returnNames["followerCount"] {
 		t.Error("expected 'followerCount' in returns")
+	}
+}
+
+func TestAnalyzer_AnalyzeQueryWithSchema_ReturnsOne(t *testing.T) {
+	t.Parallel()
+
+	// Schema with User model where id is unique
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeString, Unique: true},
+					{Name: "email", Type: analysis.TypeString, Unique: true},
+					{Name: "name", Type: analysis.TypeString},
+					{Name: "age", Type: analysis.TypeInt},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		query       string
+		wantOne     bool
+	}{
+		{
+			name:    "filter on unique id field",
+			query:   "MATCH (u:User {id: $userId}) RETURN u.name",
+			wantOne: true,
+		},
+		{
+			name:    "filter on unique email field",
+			query:   "MATCH (u:User {email: $email}) RETURN u.name",
+			wantOne: true,
+		},
+		{
+			name:    "filter on non-unique field",
+			query:   "MATCH (u:User {name: $name}) RETURN u.id",
+			wantOne: false,
+		},
+		{
+			name:    "no filter - returns all",
+			query:   "MATCH (u:User) RETURN u.name",
+			wantOne: false,
+		},
+		{
+			name:    "filter in WHERE clause (not in node pattern)",
+			query:   "MATCH (u:User) WHERE u.id = $id RETURN u.name",
+			wantOne: false, // Our implementation only checks node pattern properties
+		},
+		{
+			name:    "unknown model",
+			query:   "MATCH (p:Product {id: $id}) RETURN p.name",
+			wantOne: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			analyzer := cypher.NewAnalyzer()
+
+			metadata, err := analyzer.AnalyzeQueryWithSchema(tt.query, schema)
+			if err != nil {
+				t.Fatalf("AnalyzeQueryWithSchema() error: %v", err)
+			}
+
+			if metadata.ReturnsOne != tt.wantOne {
+				t.Errorf("ReturnsOne = %v, want %v", metadata.ReturnsOne, tt.wantOne)
+			}
+		})
+	}
+}
+
+func TestAnalyzer_AnalyzeQueryWithSchema_NilSchema(t *testing.T) {
+	t.Parallel()
+
+	analyzer := cypher.NewAnalyzer()
+
+	// With nil schema, should default to ReturnsOne = false
+	metadata, err := analyzer.AnalyzeQueryWithSchema("MATCH (u:User {id: $id}) RETURN u.name", nil)
+	if err != nil {
+		t.Fatalf("AnalyzeQueryWithSchema() error: %v", err)
+	}
+
+	if metadata.ReturnsOne != false {
+		t.Error("ReturnsOne should be false when schema is nil")
 	}
 }

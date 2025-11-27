@@ -9,22 +9,24 @@ import (
 	"github.com/rlch/scaf/module"
 )
 
-type mockDialect struct {
+type mockDatabase struct {
 	name     string
 	results  []map[string]any
 	err      error
 	executed []string
 }
 
-func (m *mockDialect) Name() string { return m.name }
+func (m *mockDatabase) Name() string { return m.name }
 
-func (m *mockDialect) Execute(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
+func (m *mockDatabase) Dialect() scaf.Dialect { return nil }
+
+func (m *mockDatabase) Execute(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
 	m.executed = append(m.executed, query)
 
 	return m.results, m.err
 }
 
-func (m *mockDialect) Close() error { return nil }
+func (m *mockDatabase) Close() error { return nil }
 
 func TestRunner_NoDialect(t *testing.T) {
 	r := New()
@@ -37,7 +39,7 @@ func TestRunner_NoDialect(t *testing.T) {
 }
 
 func TestRunner_EmptySuite(t *testing.T) {
-	r := New(WithDialect(&mockDialect{}))
+	r := New(WithDatabase(&mockDatabase{}))
 
 	result, err := r.Run(context.Background(), &scaf.Suite{}, "test.scaf")
 	if err != nil {
@@ -50,8 +52,8 @@ func TestRunner_EmptySuite(t *testing.T) {
 }
 
 func TestRunner_GlobalSetup(t *testing.T) {
-	d := &mockDialect{}
-	r := New(WithDialect(d))
+	d := &mockDatabase{}
+	r := New(WithDatabase(d))
 
 	setup := "CREATE (n:Node)"
 
@@ -66,8 +68,8 @@ func TestRunner_GlobalSetup(t *testing.T) {
 }
 
 func TestRunner_SetupError(t *testing.T) {
-	d := &mockDialect{err: errTestSetupFailed}
-	r := New(WithDialect(d))
+	d := &mockDatabase{err: errTestSetupFailed}
+	r := New(WithDatabase(d))
 
 	setup := "INVALID"
 
@@ -79,9 +81,9 @@ func TestRunner_SetupError(t *testing.T) {
 }
 
 func TestRunner_SimpleTest(t *testing.T) {
-	d := &mockDialect{}
+	d := &mockDatabase{}
 	h := &mockHandler{}
-	r := New(WithDialect(d), WithHandler(h))
+	r := New(WithDatabase(d), WithHandler(h))
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
@@ -118,7 +120,7 @@ func TestRunner_SimpleTest(t *testing.T) {
 }
 
 func TestRunner_NestedGroups(t *testing.T) {
-	r := New(WithDialect(&mockDialect{}))
+	r := New(WithDatabase(&mockDatabase{}))
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "Query", Body: "Q"}},
@@ -160,8 +162,8 @@ func TestRunner_NestedGroups(t *testing.T) {
 }
 
 func TestRunner_FailFast(t *testing.T) {
-	d := &mockDialect{err: errTestFail}
-	r := New(WithDialect(d), WithFailFast(true))
+	d := &mockDatabase{err: errTestFail}
+	r := New(WithDatabase(d), WithFailFast(true))
 
 	setup := "SETUP"
 	suite := &scaf.Suite{
@@ -184,8 +186,8 @@ func TestRunner_FailFast(t *testing.T) {
 }
 
 func TestRunner_ScopeAndGroupSetup(t *testing.T) {
-	d := &mockDialect{}
-	r := New(WithDialect(d))
+	d := &mockDatabase{}
+	r := New(WithDatabase(d))
 
 	scopeSetup := "SCOPE"
 	groupSetup := "GROUP"
@@ -223,10 +225,10 @@ func TestRunner_ScopeAndGroupSetup(t *testing.T) {
 }
 
 func TestRunner_AssertPassing(t *testing.T) {
-	d := &mockDialect{
+	d := &mockDatabase{
 		results: []map[string]any{{"age": int64(30), "name": "Alice"}},
 	}
-	r := New(WithDialect(d))
+	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
@@ -260,10 +262,10 @@ func TestRunner_AssertPassing(t *testing.T) {
 }
 
 func TestRunner_AssertFailing(t *testing.T) {
-	d := &mockDialect{
+	d := &mockDatabase{
 		results: []map[string]any{{"age": int64(15), "name": "Bob"}},
 	}
-	r := New(WithDialect(d))
+	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
@@ -297,10 +299,10 @@ func TestRunner_AssertFailing(t *testing.T) {
 }
 
 func TestRunner_AssertMultipleConditions(t *testing.T) {
-	d := &mockDialect{
+	d := &mockDatabase{
 		results: []map[string]any{{"age": int64(30), "verified": true}},
 	}
-	r := New(WithDialect(d))
+	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
@@ -341,7 +343,7 @@ func TestRunner_AssertMultipleConditions(t *testing.T) {
 }
 
 func TestRunner_AssertWithInlineQuery(t *testing.T) {
-	r := New(WithDialect(&queryAwareDialect{
+	r := New(WithDatabase(&queryAwareDatabase{
 		results: map[string][]map[string]any{
 			"MAIN":  {{"name": "Alice"}},
 			"COUNT": {{"cnt": int64(5)}},
@@ -383,7 +385,7 @@ func TestRunner_AssertWithInlineQuery(t *testing.T) {
 }
 
 func TestRunner_AssertWithNamedQuery(t *testing.T) {
-	r := New(WithDialect(&queryAwareDialect{
+	r := New(WithDatabase(&queryAwareDatabase{
 		results: map[string][]map[string]any{
 			"MAIN":    {{"name": "Alice"}},
 			"COUNTER": {{"total": int64(10)}},
@@ -427,14 +429,16 @@ func TestRunner_AssertWithNamedQuery(t *testing.T) {
 	}
 }
 
-// queryAwareDialect returns different results based on the query body.
-type queryAwareDialect struct {
+// queryAwareDatabase returns different results based on the query body.
+type queryAwareDatabase struct {
 	results map[string][]map[string]any
 }
 
-func (d *queryAwareDialect) Name() string { return "query-aware" }
+func (d *queryAwareDatabase) Name() string { return "query-aware" }
 
-func (d *queryAwareDialect) Execute(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
+func (d *queryAwareDatabase) Dialect() scaf.Dialect { return nil }
+
+func (d *queryAwareDatabase) Execute(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
 	if res, ok := d.results[query]; ok {
 		return res, nil
 	}
@@ -442,15 +446,15 @@ func (d *queryAwareDialect) Execute(_ context.Context, query string, _ map[strin
 	return nil, nil
 }
 
-func (d *queryAwareDialect) Close() error { return nil }
+func (d *queryAwareDatabase) Close() error { return nil }
 
 func ptr[T any](v T) *T {
 	return &v
 }
 
 func TestRunner_NamedSetupWithModules(t *testing.T) {
-	// Create a mock dialect that tracks executed queries
-	d := &mockDialect{}
+	// Create a mock database that tracks executed queries
+	d := &mockDatabase{}
 
 	// Create a module with a setup query
 	fixturesSuite := &scaf.Suite{
@@ -488,7 +492,7 @@ func TestRunner_NamedSetupWithModules(t *testing.T) {
 	ctx.Imports["fixtures"] = fixturesMod
 	ctx.AllModules[fixturesMod.Path] = fixturesMod
 
-	r := New(WithDialect(d), WithModules(ctx))
+	r := New(WithDatabase(d), WithModules(ctx))
 
 	result, err := r.Run(context.Background(), rootSuite, "/root.scaf")
 	if err != nil {
@@ -512,8 +516,8 @@ func TestRunner_NamedSetupWithModules(t *testing.T) {
 }
 
 func TestRunner_NamedSetupWithoutModules(t *testing.T) {
-	d := &mockDialect{}
-	r := New(WithDialect(d)) // No modules configured
+	d := &mockDatabase{}
+	r := New(WithDatabase(d)) // No modules configured
 
 	suite := &scaf.Suite{
 		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
@@ -539,7 +543,7 @@ func TestRunner_NamedSetupWithoutModules(t *testing.T) {
 }
 
 func TestRunner_LocalNamedSetup(t *testing.T) {
-	d := &mockDialect{}
+	d := &mockDatabase{}
 
 	// Create suite with local setup query
 	suite := &scaf.Suite{
@@ -564,7 +568,7 @@ func TestRunner_LocalNamedSetup(t *testing.T) {
 	rootMod := module.NewModule("/root.scaf", suite)
 	ctx := module.NewResolvedContext(rootMod)
 
-	r := New(WithDialect(d), WithModules(ctx))
+	r := New(WithDatabase(d), WithModules(ctx))
 
 	result, err := r.Run(context.Background(), suite, "/root.scaf")
 	if err != nil {

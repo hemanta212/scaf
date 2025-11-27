@@ -9,7 +9,7 @@ import (
 
 // Config represents the .scaf.yaml configuration file.
 type Config struct {
-	// Database-specific configurations (new style)
+	// Database-specific configurations.
 	// Only one should be set. The presence of a database config determines
 	// which database to use and implies the dialect.
 	Neo4j    *Neo4jConfig    `yaml:"neo4j,omitempty"`
@@ -17,20 +17,6 @@ type Config struct {
 
 	// Generate config for code generation
 	Generate GenerateConfig `yaml:"generate,omitempty"`
-
-	// ==========================================================================
-	// DEPRECATED: Legacy fields for backwards compatibility
-	// ==========================================================================
-
-	// Dialect is deprecated. Use database-specific config instead.
-	// e.g., use "neo4j:" instead of "dialect: cypher"
-	Dialect string `yaml:"dialect,omitempty"`
-
-	// Connection is deprecated. Use database-specific config instead.
-	Connection DialectConfig `yaml:"connection,omitempty"`
-
-	// Files is deprecated. Use cascading configs instead.
-	Files map[string]string `yaml:"files,omitempty"`
 }
 
 // Neo4jConfig holds Neo4j connection settings.
@@ -66,46 +52,8 @@ func (c *Config) DatabaseName() string {
 }
 
 // DialectName returns the dialect name based on configuration.
-// New style configs (neo4j:, postgres:) take precedence over legacy dialect field.
 func (c *Config) DialectName() string {
-	if dbName := c.DatabaseName(); dbName != "" {
-		return DialectForDatabase(dbName)
-	}
-
-	return c.Dialect
-}
-
-// ToLegacyDialectConfig converts the config to a legacy DialectConfig.
-// This is for backwards compatibility during migration.
-func (c *Config) ToLegacyDialectConfig() DialectConfig {
-	switch {
-	case c.Neo4j != nil:
-		cfg := DialectConfig{
-			URI:      c.Neo4j.URI,
-			Username: c.Neo4j.Username,
-			Password: c.Neo4j.Password,
-		}
-		if c.Neo4j.Database != "" {
-			cfg.Options = map[string]any{"database": c.Neo4j.Database}
-		}
-
-		return cfg
-	case c.Postgres != nil:
-		// Convert to URI if not already set
-		uri := c.Postgres.URI
-		if uri == "" && c.Postgres.Host != "" {
-			// Build connection string (simplified)
-			uri = "postgres://" + c.Postgres.Host
-		}
-
-		return DialectConfig{
-			URI:      uri,
-			Username: c.Postgres.User,
-			Password: c.Postgres.Password,
-		}
-	default:
-		return c.Connection
-	}
+	return DialectForDatabase(c.DatabaseName())
 }
 
 // GenerateConfig holds settings for the generate command.
@@ -121,6 +69,10 @@ type GenerateConfig struct {
 
 	// Package name for generated code (Go-specific)
 	Package string `yaml:"package,omitempty"`
+
+	// Schema is the path to the schema YAML file (e.g., ".scaf-schema.yaml").
+	// The schema provides type information for accurate code generation.
+	Schema string `yaml:"schema,omitempty"`
 }
 
 // DefaultConfigNames are the filenames we search for.
@@ -177,16 +129,4 @@ func LoadConfigFile(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-// DialectFor returns the dialect name for a given file path.
-// It checks file-specific patterns first, then falls back to the default.
-func (c *Config) DialectFor(filePath string) string {
-	for pattern, dialect := range c.Files {
-		if matched, _ := filepath.Match(pattern, filePath); matched {
-			return dialect
-		}
-	}
-
-	return c.Dialect
 }

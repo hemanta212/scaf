@@ -144,6 +144,7 @@ type recoveryResult struct {
 	err           error
 	skippedTokens []lexer.Token
 	strategyName  string
+	progressed    bool // Whether the lexer position advanced during recovery
 }
 
 // EnhancedRecoveryStrategy is an optional interface for strategies that provide

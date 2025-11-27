@@ -13,18 +13,49 @@ import (
 
 //nolint:gochecknoinits // Dialect self-registration pattern
 func init() {
-	scaf.RegisterDialect("cypher", New)
+	// Register the new pure dialect
+	scaf.RegisterDialectInstance(NewDialect())
+
+	// Register legacy dialect factory for backwards compatibility
+	scaf.RegisterDialect("cypher", NewLegacy)
 }
 
-// Dialect implements scaf.Dialect for Cypher queries against Neo4j.
-type Dialect struct {
+// CypherDialect implements scaf.Dialect for Cypher query analysis.
+// This is the new pure dialect that only handles query analysis.
+type CypherDialect struct{}
+
+// NewDialect creates a new Cypher dialect for query analysis.
+func NewDialect() *CypherDialect {
+	return &CypherDialect{}
+}
+
+// Name returns the dialect identifier.
+func (d *CypherDialect) Name() string {
+	return scaf.DialectCypher
+}
+
+// Analyze extracts metadata from a Cypher query.
+func (d *CypherDialect) Analyze(query string) (*scaf.QueryMetadata, error) {
+	return NewAnalyzer().AnalyzeQuery(query)
+}
+
+var _ scaf.Dialect = (*CypherDialect)(nil)
+
+// =============================================================================
+// Legacy Dialect (Database functionality - will move to databases/neo4j)
+// =============================================================================
+
+// LegacyDialect implements scaf.LegacyDialect for Cypher queries against Neo4j.
+// Deprecated: This will be replaced by the neo4j Database implementation.
+type LegacyDialect struct {
 	driver  neo4j.DriverWithContext
 	session neo4j.SessionWithContext
 	db      string
 }
 
-// New creates a new Cypher dialect from the given configuration.
-func New(cfg scaf.DialectConfig) (scaf.Dialect, error) { //nolint:ireturn // Factory returns interface per Dialect pattern
+// NewLegacy creates a new legacy Cypher dialect from the given configuration.
+// Deprecated: Use databases/neo4j.New instead.
+func NewLegacy(cfg scaf.DialectConfig) (scaf.LegacyDialect, error) { //nolint:ireturn // Factory returns interface per Dialect pattern
 	auth := neo4j.NoAuth()
 	if cfg.Username != "" {
 		auth = neo4j.BasicAuth(cfg.Username, cfg.Password, "")
@@ -35,7 +66,7 @@ func New(cfg scaf.DialectConfig) (scaf.Dialect, error) { //nolint:ireturn // Fac
 		return nil, fmt.Errorf("cypher: failed to create driver: %w", err)
 	}
 
-	d := &Dialect{
+	d := &LegacyDialect{
 		driver: driver,
 	}
 
@@ -68,8 +99,8 @@ func New(cfg scaf.DialectConfig) (scaf.Dialect, error) { //nolint:ireturn // Fac
 }
 
 // Name returns the dialect identifier.
-func (d *Dialect) Name() string {
-	return "cypher"
+func (d *LegacyDialect) Name() string {
+	return scaf.DialectCypher
 }
 
 // Execute runs a Cypher query and returns the results.
@@ -77,7 +108,7 @@ func (d *Dialect) Name() string {
 // as "alias.property" keys (e.g., "u.name" for RETURN u).
 // Multi-statement queries (separated by newlines) are executed sequentially,
 // returning results from the last statement.
-func (d *Dialect) Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
+func (d *LegacyDialect) Execute(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
 	statements := splitStatements(query)
 
 	var rows []map[string]any
@@ -234,7 +265,7 @@ func flattenValue(result map[string]any, key string, value any) {
 }
 
 // Close releases the database connection.
-func (d *Dialect) Close() error {
+func (d *LegacyDialect) Close() error {
 	ctx := context.Background()
 
 	if d.session != nil {
@@ -255,7 +286,7 @@ func (d *Dialect) Close() error {
 }
 
 // Begin starts a new transaction for isolated test execution.
-func (d *Dialect) Begin(ctx context.Context) (scaf.Transaction, error) { //nolint:ireturn // Interface return per Transactional contract
+func (d *LegacyDialect) Begin(ctx context.Context) (scaf.Transaction, error) { //nolint:ireturn // Interface return per Transactional contract
 	tx, err := d.session.BeginTransaction(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("cypher: failed to begin transaction: %w", err)
@@ -305,9 +336,9 @@ func (t *Transaction) Rollback(ctx context.Context) error {
 	return t.tx.Rollback(ctx)
 }
 
-// Ensure Dialect implements scaf.Dialect and scaf.Transactional.
+// Ensure LegacyDialect implements scaf.LegacyDialect and scaf.Transactional.
 var (
-	_ scaf.Dialect       = (*Dialect)(nil)
-	_ scaf.Transactional = (*Dialect)(nil)
+	_ scaf.LegacyDialect = (*LegacyDialect)(nil)
+	_ scaf.Transactional = (*LegacyDialect)(nil)
 	_ scaf.Transaction   = (*Transaction)(nil)
 )

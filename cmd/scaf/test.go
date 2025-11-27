@@ -100,29 +100,38 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 		return ErrNoScafFiles
 	}
 
-	// Load config or use flags
+	// Load config
+	configDir := filepath.Dir(files[0])
+	loadedCfg, configErr := scaf.LoadConfig(configDir)
+
+	// Determine dialect name (flag > config)
 	dialectName := cmd.String("dialect")
-	cfg := scaf.DialectConfig{
-		URI:      cmd.String("uri"),
-		Username: cmd.String("username"),
-		Password: cmd.String("password"),
-	}
-
-	// Try to load config file if dialect not specified
-	if dialectName == "" {
-		configDir := filepath.Dir(files[0])
-
-		loadedCfg, err := scaf.LoadConfig(configDir)
-		if err == nil {
-			dialectName = loadedCfg.Dialect
-			if cfg.URI == "" {
-				cfg = loadedCfg.Connection
-			}
-		}
+	if dialectName == "" && configErr == nil {
+		dialectName = loadedCfg.DialectName()
 	}
 
 	if dialectName == "" {
 		return ErrNoDialect
+	}
+
+	// Build connection config (flags override config)
+	var cfg scaf.DialectConfig
+
+	if configErr == nil {
+		cfg = loadedCfg.ToLegacyDialectConfig()
+	}
+
+	// Override with flags if provided
+	if uri := cmd.String("uri"); uri != "" {
+		cfg.URI = uri
+	}
+
+	if username := cmd.String("username"); username != "" {
+		cfg.Username = username
+	}
+
+	if password := cmd.String("password"); password != "" {
+		cfg.Password = password
 	}
 
 	if cfg.URI == "" {

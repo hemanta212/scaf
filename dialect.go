@@ -9,8 +9,48 @@ import (
 // ErrNoTransactionSupport is returned when a dialect does not support transactions.
 var ErrNoTransactionSupport = errors.New("dialect does not support transactions")
 
-// Dialect defines the interface for database backends.
+// Dialect represents a query language (cypher, sql).
+// It provides static analysis of queries without requiring a database connection.
 type Dialect interface {
+	// Name returns the dialect identifier (e.g., "cypher", "sql").
+	Name() string
+
+	// Analyze extracts metadata from a query string.
+	Analyze(query string) (*QueryMetadata, error)
+}
+
+var newDialects = make(map[string]Dialect)
+
+// RegisterDialectInstance registers a dialect instance by name.
+// This is the new registration method for pure dialect implementations.
+func RegisterDialectInstance(d Dialect) {
+	newDialects[d.Name()] = d
+}
+
+// GetDialect returns a dialect by name.
+// Returns nil if no dialect is registered with that name.
+func GetDialect(name string) Dialect { //nolint:ireturn
+	return newDialects[name]
+}
+
+// RegisteredDialectInstances returns the names of all registered dialect instances.
+func RegisteredDialectInstances() []string {
+	names := make([]string, 0, len(newDialects))
+	for name := range newDialects {
+		names = append(names, name)
+	}
+
+	return names
+}
+
+// =============================================================================
+// DEPRECATED: Legacy Dialect interface for backwards compatibility
+// These types will be removed after migration to Database interface.
+// =============================================================================
+
+// LegacyDialect defines the old interface for database backends.
+// Deprecated: Use Database interface instead.
+type LegacyDialect interface {
 	// Name returns the dialect identifier (e.g., "neo4j", "postgres").
 	Name() string
 
@@ -35,18 +75,20 @@ type Transaction interface {
 }
 
 // Transactional is an optional interface for dialects that support transactions.
-// The runner uses this for test isolation (rollback after each test).
+// Deprecated: Use TransactionalDatabase instead.
 type Transactional interface {
-	Dialect
+	LegacyDialect
 
 	// Begin starts a new transaction.
 	Begin(ctx context.Context) (Transaction, error)
 }
 
-// DialectFactory creates a Dialect from connection configuration.
-type DialectFactory func(cfg DialectConfig) (Dialect, error)
+// DialectFactory creates a LegacyDialect from connection configuration.
+// Deprecated: Use DatabaseFactory instead.
+type DialectFactory func(cfg DialectConfig) (LegacyDialect, error)
 
 // DialectConfig holds connection settings for a dialect.
+// Deprecated: Use database-specific config types instead.
 type DialectConfig struct {
 	// Connection URI (e.g., "bolt://localhost:7687", "postgres://localhost/db")
 	URI string `yaml:"uri"`
@@ -59,16 +101,18 @@ type DialectConfig struct {
 	Options map[string]any `yaml:"options,omitempty"`
 }
 
-var dialects = make(map[string]DialectFactory)
+var legacyDialects = make(map[string]DialectFactory)
 
-// RegisterDialect registers a dialect factory by name.
+// RegisterDialect registers a legacy dialect factory by name.
+// Deprecated: Use RegisterDatabase instead.
 func RegisterDialect(name string, factory DialectFactory) {
-	dialects[name] = factory
+	legacyDialects[name] = factory
 }
 
-// NewDialect creates a dialect instance by name.
-func NewDialect(name string, cfg DialectConfig) (Dialect, error) { //nolint:ireturn
-	factory, ok := dialects[name]
+// NewDialect creates a legacy dialect instance by name.
+// Deprecated: Use NewDatabase instead.
+func NewDialect(name string, cfg DialectConfig) (LegacyDialect, error) { //nolint:ireturn
+	factory, ok := legacyDialects[name]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownDialect, name)
 	}
@@ -81,14 +125,14 @@ func NewDialect(name string, cfg DialectConfig) (Dialect, error) { //nolint:iret
 	return &dialectWrapper{d}, nil
 }
 
-// dialectWrapper wraps a Dialect to return concrete type.
+// dialectWrapper wraps a LegacyDialect to return concrete type.
 type dialectWrapper struct {
-	Dialect
+	LegacyDialect
 }
 
 // Begin delegates to the underlying dialect if it supports transactions.
 func (w *dialectWrapper) Begin(ctx context.Context) (Transaction, error) { //nolint:ireturn
-	if tx, ok := w.Dialect.(Transactional); ok {
+	if tx, ok := w.LegacyDialect.(Transactional); ok {
 		return tx.Begin(ctx)
 	}
 
@@ -97,19 +141,31 @@ func (w *dialectWrapper) Begin(ctx context.Context) (Transaction, error) { //nol
 
 // Transactional returns true if the underlying dialect supports transactions.
 func (w *dialectWrapper) Transactional() bool {
-	_, ok := w.Dialect.(Transactional)
+	_, ok := w.LegacyDialect.(Transactional)
 
 	return ok
 }
 
-// RegisteredDialects returns the names of all registered dialects.
+// RegisteredDialects returns the names of all registered legacy dialects.
+// Deprecated: Use RegisteredDatabases instead.
 func RegisteredDialects() []string {
-	names := make([]string, 0, len(dialects))
-	for name := range dialects {
+	names := make([]string, 0, len(legacyDialects))
+	for name := range legacyDialects {
 		names = append(names, name)
 	}
 
 	return names
+}
+
+// =============================================================================
+// Query Analyzer (being merged into Dialect)
+// =============================================================================
+
+// QueryAnalyzer provides static analysis of queries for IDE features.
+// Deprecated: Use Dialect.Analyze() instead.
+type QueryAnalyzer interface {
+	// AnalyzeQuery extracts metadata from a query string.
+	AnalyzeQuery(query string) (*QueryMetadata, error)
 }
 
 // QueryAnalyzerFactory creates a QueryAnalyzer for a dialect.
@@ -125,13 +181,29 @@ func RegisterAnalyzer(dialectName string, factory QueryAnalyzerFactory) {
 
 // GetAnalyzer returns a QueryAnalyzer for the given dialect name.
 // Returns nil if no analyzer is registered for that dialect.
+// Deprecated: Use GetDialect(name).Analyze() instead.
 func GetAnalyzer(dialectName string) QueryAnalyzer { //nolint:ireturn
+	// First check new dialect instances
+	if d := GetDialect(dialectName); d != nil {
+		return &dialectAnalyzerAdapter{d}
+	}
+
+	// Fall back to legacy analyzers
 	factory, ok := analyzers[dialectName]
 	if !ok {
 		return nil
 	}
 
 	return factory()
+}
+
+// dialectAnalyzerAdapter adapts a Dialect to the QueryAnalyzer interface.
+type dialectAnalyzerAdapter struct {
+	dialect Dialect
+}
+
+func (a *dialectAnalyzerAdapter) AnalyzeQuery(query string) (*QueryMetadata, error) {
+	return a.dialect.Analyze(query)
 }
 
 // RegisteredAnalyzers returns the names of all registered analyzers.
@@ -149,20 +221,13 @@ func RegisteredAnalyzers() []string {
 func MarkdownLanguage(dialectName string) string {
 	// Common dialect name to markdown language mapping
 	switch dialectName {
-	case "cypher", "neo4j":
-		return "cypher"
-	case "postgres", "postgresql", "mysql", "sqlite", "sql":
-		return "sql"
+	case DialectCypher, DatabaseNeo4j:
+		return DialectCypher
+	case DatabasePostgres, "postgresql", DatabaseMySQL, DatabaseSQLite, DialectSQL:
+		return DialectSQL
 	default:
 		return dialectName
 	}
-}
-
-// QueryAnalyzer provides static analysis of queries for IDE features.
-// Dialects can optionally implement this to provide better completions.
-type QueryAnalyzer interface {
-	// AnalyzeQuery extracts metadata from a query string.
-	AnalyzeQuery(query string) (*QueryMetadata, error)
 }
 
 // QueryMetadata holds extracted information about a query.

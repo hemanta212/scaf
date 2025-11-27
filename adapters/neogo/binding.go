@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/language/go"
 )
 
@@ -18,7 +19,7 @@ func NewBinding() *Binding {
 
 // Name returns the binding identifier.
 func (b *Binding) Name() string {
-	return "neogo"
+	return scaf.AdapterNeogo
 }
 
 // Imports returns the import paths needed by generated code.

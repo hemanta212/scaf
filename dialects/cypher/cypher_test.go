@@ -22,9 +22,12 @@ func TestDialect_Name(t *testing.T) {
 }
 
 func TestDialect_ImplementsInterface(_ *testing.T) {
-	var _ scaf.Dialect = (*Dialect)(nil)
+	// New pure dialect
+	var _ scaf.Dialect = (*CypherDialect)(nil)
 
-	var _ scaf.Transactional = (*Dialect)(nil)
+	// Legacy dialect (for backwards compatibility)
+	var _ scaf.LegacyDialect = (*LegacyDialect)(nil)
+	var _ scaf.Transactional = (*LegacyDialect)(nil)
 }
 
 func TestDialect_Registration(t *testing.T) {
@@ -217,7 +220,7 @@ func TestDialect_Transaction_Integration(t *testing.T) {
 	}
 }
 
-func setupIntegrationTest(t *testing.T) *Dialect {
+func setupIntegrationTest(t *testing.T) *LegacyDialect {
 	t.Helper()
 
 	uri := os.Getenv("SCAF_NEO4J_URI")
@@ -231,14 +234,14 @@ func setupIntegrationTest(t *testing.T) *Dialect {
 		Password: os.Getenv("SCAF_NEO4J_PASS"),
 	}
 
-	dialect, err := New(cfg)
+	dialect, err := NewLegacy(cfg)
 	if err != nil {
 		t.Fatalf("failed to create dialect: %v", err)
 	}
 
-	d, ok := dialect.(*Dialect)
+	d, ok := dialect.(*LegacyDialect)
 	if !ok {
-		t.Fatal("dialect is not *Dialect")
+		t.Fatal("dialect is not *LegacyDialect")
 	}
 
 	return d

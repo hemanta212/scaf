@@ -174,61 +174,95 @@ func (s *strct) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 	sv := reflect.New(s.typ).Elem()
 	start := ctx.RawCursor()
 	t := ctx.Peek()
-	recoveryStartPos := t.Pos // Track position where recovery might start
+	recoveryStartPos := t.Pos
 	s.maybeInjectStartToken(t, sv)
-	if out, err = s.expr.Parse(ctx, sv); err != nil {
-		// Try to recover from the error using type-specific strategies (like ViaParser)
-		// followed by global strategies
-		recovered, recoveredValues, progressed := ctx.tryRecoverForType(err, sv, reflect.PtrTo(s.typ))
-		if recovered {
-			// If ViaParser returned a replacement value, use it directly
-			// Check that the value is actually valid and non-nil (for pointer/interface types)
-			if len(recoveredValues) > 0 && recoveredValues[0].IsValid() {
-				v := recoveredValues[0]
-				// Check for nil only on types that can be nil
-				isNil := false
-				switch v.Kind() {
-				case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
-					isNil = v.IsNil()
-				}
-				if !isNil {
-					// ViaParser provides a complete replacement value
-					// Use it instead of the partially-parsed struct
-					// NOTE: Do NOT call ctx.Apply() here - the ViaParser value is the complete
-					// replacement, not a value to be merged with deferred field assignments.
-					// Calling Apply() would try to assign partial values and cause type errors.
-					return recoveredValues, nil
-				}
-			}
-			// For other strategies (SkipUntil, etc.), only accept if lexer progressed
-			// This prevents "branch X was accepted but did not progress the lexer" panics
-			if progressed {
-				// Recovery succeeded and made progress - continue with partial result
-				_ = ctx.Apply()
-				end := ctx.RawCursor()
-				t = ctx.RawPeek()
-				recoveryEndPos := t.Pos
-				s.maybeInjectEndToken(t, sv)
-				s.maybeInjectTokens(ctx.Range(start, end), sv)
-				// Inject recovery metadata
-				s.maybeInjectRecovered(true, sv)
-				s.maybeInjectRecoveredSpan(recoveryStartPos, sv)
-				s.maybeInjectRecoveredEnd(recoveryEndPos, sv)
-				return []reflect.Value{sv}, nil
-			}
-			// Recovery didn't progress the lexer and no replacement value - treat as failure
-		}
-		_ = ctx.Apply() // Best effort to give partial AST.
-		ctx.MaybeUpdateError(err)
-		return []reflect.Value{sv}, err
-	} else if out == nil {
+
+	out, err = s.expr.Parse(ctx, sv)
+	if err != nil {
+		return s.handleParseError(ctx, sv, err, start, recoveryStartPos)
+	}
+	if out == nil {
 		return nil, nil
 	}
+
+	s.injectEndMetadata(ctx, sv, start)
+	return []reflect.Value{sv}, ctx.Apply()
+}
+
+// handleParseError attempts recovery and returns an appropriate result.
+//
+// Recovery handling follows these rules:
+//  1. If a strategy returns replacement values (e.g., ViaParser), use them directly
+//     WITHOUT calling Apply() - the replacement is complete and standalone.
+//  2. If a strategy made progress (consumed tokens), apply deferred field assignments
+//     and return the partial struct with recovery metadata.
+//  3. If recovery failed or didn't progress, return the partial struct with the error.
+//
+// The Apply() contract:
+//   - Call Apply() when returning a struct that was partially parsed by the grammar,
+//     to execute any deferred field assignments from captured tokens.
+//   - Do NOT call Apply() when returning a replacement value from ViaParser,
+//     as those values are complete and not associated with the parse context's
+//     deferred assignments.
+func (s *strct) handleParseError(ctx *parseContext, sv reflect.Value, err error, start lexer.RawCursor, recoveryStartPos lexer.Position) ([]reflect.Value, error) {
+	result := ctx.tryRecover(err, sv, reflect.PtrTo(s.typ))
+
+	// Case 1: Strategy provided a replacement value (e.g., ViaParser)
+	if replacement := s.extractReplacementValue(result); replacement != nil {
+		// Do NOT call Apply() - see doc comment above
+		return replacement, nil
+	}
+
+	// Case 2: Recovery succeeded and made progress - return partial struct with metadata
+	if result.recovered && result.progressed {
+		_ = ctx.Apply()
+		s.injectEndMetadata(ctx, sv, start)
+		s.injectRecoveryMetadata(sv, recoveryStartPos, ctx.RawPeek().Pos)
+		return []reflect.Value{sv}, nil
+	}
+
+	// Case 3: Recovery failed or didn't progress - return partial struct with error
+	_ = ctx.Apply()
+	ctx.MaybeUpdateError(err)
+	return []reflect.Value{sv}, err
+}
+
+// extractReplacementValue returns the replacement values if the recovery result
+// contains a valid, non-nil value (typically from ViaParser). Returns nil otherwise.
+func (s *strct) extractReplacementValue(result recoveryResult) []reflect.Value {
+	if !result.recovered || len(result.values) == 0 {
+		return nil
+	}
+
+	v := result.values[0]
+	if !v.IsValid() {
+		return nil
+	}
+
+	// Check for nil on types that can be nil
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+		if v.IsNil() {
+			return nil
+		}
+	}
+
+	return result.values
+}
+
+// injectEndMetadata adds end position and token information to the struct.
+func (s *strct) injectEndMetadata(ctx *parseContext, sv reflect.Value, start lexer.RawCursor) {
 	end := ctx.RawCursor()
-	t = ctx.RawPeek()
+	t := ctx.RawPeek()
 	s.maybeInjectEndToken(t, sv)
 	s.maybeInjectTokens(ctx.Range(start, end), sv)
-	return []reflect.Value{sv}, ctx.Apply()
+}
+
+// injectRecoveryMetadata marks the struct as recovered and records the recovery span.
+func (s *strct) injectRecoveryMetadata(sv reflect.Value, startPos, endPos lexer.Position) {
+	s.maybeInjectRecovered(true, sv)
+	s.maybeInjectRecoveredSpan(startPos, sv)
+	s.maybeInjectRecoveredEnd(endPos, sv)
 }
 
 func (s *strct) maybeInjectStartToken(token *lexer.Token, v reflect.Value) {
@@ -357,12 +391,13 @@ func (g *group) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 		v, err := g.expr.Parse(branch, parent)
 		if err != nil {
 			ctx.MaybeUpdateError(err)
-			// Try to recover from the error
-			if recovered, recoveredValues := ctx.tryRecover(err, parent); recovered {
+			// Try to recover from the error (no type-specific strategies for repetition)
+			result := ctx.tryRecover(err, parent, nil)
+			if result.recovered {
 				// Recovery succeeded - accept what we have and continue
 				out = append(out, v...)
-				if len(recoveredValues) > 0 {
-					out = append(out, recoveredValues...)
+				if len(result.values) > 0 {
+					out = append(out, result.values...)
 				}
 				ctx.Accept(branch)
 				continue // Try to parse more iterations after recovery
@@ -831,16 +866,6 @@ func maybeRef(tmpl reflect.Type, strct reflect.Value) reflect.Value {
 // type (int, float32, etc.).
 func setField(tokens []lexer.Token, strct reflect.Value, field structLexerField, fieldValue []reflect.Value) (err error) { // nolint: gocognit
 	f := strct.FieldByIndex(field.Index)
-
-	// Special case: if field is a pointer and the incoming value is also a pointer of the same type,
-	// set it directly. This handles ViaParser recovery which returns pointer types.
-	if f.Kind() == reflect.Ptr && len(fieldValue) == 1 && fieldValue[0].IsValid() {
-		fv := fieldValue[0]
-		if fv.Kind() == reflect.Ptr && fv.Type() == f.Type() {
-			f.Set(fv)
-			return nil
-		}
-	}
 
 	// Any kind of pointer, hydrate it first.
 	if f.Kind() == reflect.Ptr {

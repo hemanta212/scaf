@@ -1200,6 +1200,206 @@ func TestParseWithRecovery(t *testing.T) {
 				}
 			},
 		},
+		// Test recovery for incomplete test constructs
+		{
+			name: "test missing name and brace",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				if len(suite.Scopes) != 1 {
+					t.Fatalf("Expected 1 scope, got %d", len(suite.Scopes))
+				}
+				// Should have a recovered test item
+				if len(suite.Scopes[0].Items) == 0 {
+					t.Fatal("Expected at least 1 item in scope")
+				}
+				test := suite.Scopes[0].Items[0].Test
+				if test == nil {
+					t.Fatal("Expected recovered test")
+				}
+				if !test.Recovered {
+					t.Error("Expected test.Recovered = true")
+				}
+			},
+		},
+		{
+			name: "test missing closing brace with content",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "incomplete" {
+						$id: 1
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				// The scope should parse with recovery finding the closing brace
+				if len(suite.Scopes) != 1 {
+					t.Errorf("Expected 1 scope, got %d", len(suite.Scopes))
+				}
+			},
+		},
+		{
+			name: "test followed by another test (recovery stops at keyword)",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "first" {
+					test "second" {}
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				if len(suite.Scopes) != 1 {
+					t.Fatalf("Expected 1 scope, got %d", len(suite.Scopes))
+				}
+				// Should have recovered first test and parsed second test
+				scope := suite.Scopes[0]
+				if len(scope.Items) < 1 {
+					t.Error("Expected at least 1 item in scope")
+				}
+			},
+		},
+		// Group recovery tests
+		{
+			name: "group missing name",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					group
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				if len(suite.Scopes) != 1 {
+					t.Fatalf("Expected 1 scope, got %d", len(suite.Scopes))
+				}
+				// Should have a recovered group
+				if len(suite.Scopes[0].Items) == 0 {
+					t.Fatal("Expected at least 1 item in scope")
+				}
+				group := suite.Scopes[0].Items[0].Group
+				if group == nil {
+					t.Fatal("Expected recovered group")
+				}
+				if !group.Recovered {
+					t.Error("Expected group.Recovered = true")
+				}
+			},
+		},
+		{
+			name: "group missing closing brace",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					group "incomplete" {
+						test "inner" {}
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				// Should have partial AST
+				if len(suite.Queries) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				}
+			},
+		},
+		// Assert recovery tests
+		{
+			name: "assert missing brace",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert
+					}
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				if len(suite.Scopes) != 1 {
+					t.Fatalf("Expected 1 scope, got %d", len(suite.Scopes))
+				}
+				if len(suite.Scopes[0].Items) == 0 {
+					t.Fatal("Expected at least 1 item in scope")
+				}
+				test := suite.Scopes[0].Items[0].Test
+				if test == nil {
+					t.Fatal("Expected test")
+				}
+				// Assert should have been recovered
+				if len(test.Asserts) == 0 {
+					t.Fatal("Expected at least 1 assert (recovered)")
+				}
+				if !test.Asserts[0].Recovered {
+					t.Error("Expected assert.Recovered = true")
+				}
+			},
+		},
+		{
+			name: "assert with query missing closing brace",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert QueryName() {
+					}
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				// Should have partial AST
+				if len(suite.Queries) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				}
+			},
+		},
+		{
+			name: "assert with inline query missing close",
+			input: `
+				query Q ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert ` + "`SELECT 1`" + ` {
+					}
+				}
+			`,
+			expectError: true,
+			checkAST: func(t *testing.T, suite *scaf.Suite) {
+				if suite == nil {
+					t.Fatal("Expected partial AST, got nil")
+				}
+				if len(suite.Queries) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

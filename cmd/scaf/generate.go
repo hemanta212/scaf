@@ -91,7 +91,7 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if langName == "" {
-		langName = "go" // default
+		langName = scaf.LangGo // default
 	}
 
 	adapterName := cmd.String("adapter")
@@ -100,19 +100,28 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	dialectName := cmd.String("dialect")
-	if dialectName == "" && cfg != nil && cfg.Dialect != "" {
-		dialectName = cfg.Dialect
+	if dialectName == "" && cfg != nil {
+		dialectName = cfg.DialectName()
 	}
 
 	if dialectName == "" {
-		dialectName = "cypher" // default
+		dialectName = scaf.DialectCypher // default
 	}
 
-	// Infer adapter from dialect if not specified
+	// Infer adapter from database/dialect if not specified
 	if adapterName == "" {
-		switch dialectName {
-		case "cypher":
-			adapterName = "neogo"
+		if cfg != nil {
+			if dbName := cfg.DatabaseName(); dbName != "" {
+				adapterName = scaf.AdapterForDatabase(dbName, langName)
+			}
+		}
+
+		// Fall back to dialect-based inference
+		if adapterName == "" {
+			switch dialectName {
+			case scaf.DialectCypher:
+				adapterName = scaf.AdapterNeogo
+			}
 		}
 	}
 

@@ -9,4 +9,7 @@ var (
 
 	// ErrUnknownDialect is returned when an unknown dialect is requested.
 	ErrUnknownDialect = errors.New("scaf: unknown dialect")
+
+	// ErrUnknownDatabase is returned when an unknown database is requested.
+	ErrUnknownDatabase = errors.New("scaf: unknown database")
 )

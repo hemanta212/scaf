@@ -1,6 +1,8 @@
 package scaf
 
 import (
+	"io"
+
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 )
@@ -34,6 +36,16 @@ func Parse(data []byte) (*Suite, error) {
 // Note: Error recovery is experimental and may not work correctly with all grammar
 // constructs. Use Parse() for normal parsing.
 func ParseWithRecovery(data []byte, withRecovery bool) (*Suite, error) {
+	return parseWithOptions(data, withRecovery, nil)
+}
+
+// ParseWithRecoveryTrace is like ParseWithRecovery but writes recovery trace to w.
+// Useful for debugging recovery behavior.
+func ParseWithRecoveryTrace(data []byte, withRecovery bool, w io.Writer) (*Suite, error) {
+	return parseWithOptions(data, withRecovery, w)
+}
+
+func parseWithOptions(data []byte, withRecovery bool, traceWriter io.Writer) (*Suite, error) {
 	// Lock to ensure trivia isn't overwritten by concurrent parses
 	dslLexer.Lock()
 	defer dslLexer.Unlock()
@@ -42,11 +54,14 @@ func ParseWithRecovery(data []byte, withRecovery bool) (*Suite, error) {
 	var err error
 
 	if withRecovery {
-		suite, err = parser.ParseBytes("", data,
+		opts := []participle.ParseOption{
 			participle.Recover(
 				// Type-specific recovery strategies (tried first for their target types)
 				// These create partial AST nodes with Recovered=true for incomplete syntax
 				participle.ViaParser(recoverSetupClause),
+				participle.ViaParser(recoverTest),
+				participle.ViaParser(recoverGroup),
+				participle.ViaParser(recoverAssert),
 				// Note: recoverNamedSetup is NOT registered here because NamedSetup is only
 				// parsed as part of SetupClause, and recoverSetupClause handles the parent.
 
@@ -69,7 +84,11 @@ func ParseWithRecovery(data []byte, withRecovery bool) (*Suite, error) {
 				participle.NestedDelimiters("(", ")"),
 			),
 			participle.MaxRecoveryErrors(50),
-		)
+		}
+		if traceWriter != nil {
+			opts = append(opts, participle.TraceRecovery(traceWriter))
+		}
+		suite, err = parser.ParseBytes("", data, opts...)
 	} else {
 		suite, err = parser.ParseBytes("", data)
 	}
@@ -271,4 +290,252 @@ func isRecoveryKeyword(typ lexer.TokenType) bool {
 	default:
 		return false
 	}
+}
+
+// recoverTest attempts to recover from incomplete test syntax.
+// Handles patterns like:
+//   - "test" (missing name)
+//   - "test "name"" (missing opening brace)
+//   - "test "name" {" (missing content and/or closing brace)
+//   - "test "name" { $param: value" (incomplete statements, missing close)
+//
+// Returns a partial Test with Recovered=true, or NextMatch if recovery fails.
+func recoverTest(lex *lexer.PeekingLexer) (*Test, error) {
+	tok := lex.Peek()
+
+	// Must be at 'test' keyword - if not, signal no match
+	if tok.EOF() || tok.Type != TokenTest {
+		return nil, participle.NextMatch
+	}
+
+	startPos := tok.Pos
+	lex.Next() // consume 'test' - MUST progress lexer
+
+	result := &Test{
+		Pos:       startPos,
+		Recovered: true,
+	}
+
+	// Look for test name (string)
+	if nameTok := lex.Peek(); nameTok.Type == TokenString {
+		result.Name = nameTok.Value
+		lex.Next()
+	} else if nameTok.EOF() || isRecoveryKeyword(nameTok.Type) || nameTok.Type == TokenRBrace {
+		// No name provided - return partial test
+		result.EndPos = lex.Peek().Pos
+		return result, nil
+	} else {
+		// Unexpected token - still return partial test
+		result.EndPos = lex.Peek().Pos
+		return result, nil
+	}
+
+	// Look for opening brace
+	if braceTok := lex.Peek(); braceTok.Type == TokenLBrace {
+		lex.Next() // consume {
+
+		// Skip content until we find closing brace or sync point
+		depth := 1
+		for depth > 0 && !lex.Peek().EOF() {
+			next := lex.Peek()
+			if next.Type == TokenLBrace {
+				depth++
+				lex.Next()
+			} else if next.Type == TokenRBrace {
+				depth--
+				if depth == 0 {
+					// Found matching close brace - consume it and mark complete
+					lex.Next()
+					result.Close = "}"
+				} else {
+					lex.Next()
+				}
+			} else if depth == 1 && isRecoveryKeyword(next.Type) {
+				// Hit a new construct at top level - stop recovery
+				break
+			} else {
+				lex.Next()
+			}
+		}
+	}
+
+	result.EndPos = lex.Peek().Pos
+	return result, nil
+}
+
+// recoverGroup attempts to recover from incomplete group syntax.
+// Handles patterns like:
+//   - "group" (missing name)
+//   - "group "name"" (missing opening brace)
+//   - "group "name" {" (missing content and/or closing brace)
+//
+// Returns a partial Group with Recovered=true, or NextMatch if recovery fails.
+func recoverGroup(lex *lexer.PeekingLexer) (*Group, error) {
+	tok := lex.Peek()
+
+	// Must be at 'group' keyword - if not, signal no match
+	if tok.EOF() || tok.Type != TokenGroup {
+		return nil, participle.NextMatch
+	}
+
+	startPos := tok.Pos
+	lex.Next() // consume 'group' - MUST progress lexer
+
+	result := &Group{
+		Pos:       startPos,
+		Recovered: true,
+	}
+
+	// Look for group name (string)
+	if nameTok := lex.Peek(); nameTok.Type == TokenString {
+		result.Name = nameTok.Value
+		lex.Next()
+	} else if nameTok.EOF() || isRecoveryKeyword(nameTok.Type) || nameTok.Type == TokenRBrace {
+		// No name provided - return partial group
+		result.EndPos = lex.Peek().Pos
+		return result, nil
+	} else {
+		// Unexpected token - still return partial group
+		result.EndPos = lex.Peek().Pos
+		return result, nil
+	}
+
+	// Look for opening brace
+	if braceTok := lex.Peek(); braceTok.Type == TokenLBrace {
+		lex.Next() // consume {
+
+		// Skip content until we find closing brace or sync point
+		depth := 1
+		for depth > 0 && !lex.Peek().EOF() {
+			next := lex.Peek()
+			if next.Type == TokenLBrace {
+				depth++
+				lex.Next()
+			} else if next.Type == TokenRBrace {
+				depth--
+				if depth == 0 {
+					// Found matching close brace - consume it and mark complete
+					lex.Next()
+					result.Close = "}"
+				} else {
+					lex.Next()
+				}
+			} else if depth == 1 && (next.Type == TokenQuery || next.Type == TokenImport) {
+				// Hit a top-level construct - stop recovery
+				break
+			} else {
+				lex.Next()
+			}
+		}
+	}
+
+	result.EndPos = lex.Peek().Pos
+	return result, nil
+}
+
+// recoverAssert attempts to recover from incomplete assert syntax.
+// Handles patterns like:
+//   - "assert" (missing brace or query)
+//   - "assert {" (missing conditions and closing brace)
+//   - "assert QueryName(" (incomplete query reference)
+//   - "assert `query` {" (inline query, missing close)
+//
+// Returns a partial Assert with Recovered=true, or NextMatch if recovery fails.
+func recoverAssert(lex *lexer.PeekingLexer) (*Assert, error) {
+	tok := lex.Peek()
+
+	// Must be at 'assert' keyword - if not, signal no match
+	if tok.EOF() || tok.Type != TokenAssert {
+		return nil, participle.NextMatch
+	}
+
+	startPos := tok.Pos
+	lex.Next() // consume 'assert' - MUST progress lexer
+
+	result := &Assert{
+		Pos:       startPos,
+		Recovered: true,
+	}
+
+	// Check what follows: could be query (inline or named) or direct open brace
+	nextTok := lex.Peek()
+
+	// Handle inline query (raw string)
+	if nextTok.Type == TokenRawString {
+		result.Query = &AssertQuery{
+			Pos:    nextTok.Pos,
+			Inline: &nextTok.Value,
+		}
+		lex.Next()
+		nextTok = lex.Peek()
+	} else if nextTok.Type == TokenIdent {
+		// Named query reference
+		queryName := nextTok.Value
+		result.Query = &AssertQuery{
+			Pos:       nextTok.Pos,
+			QueryName: &queryName,
+		}
+		lex.Next()
+
+		// Look for opening paren
+		if parenTok := lex.Peek(); parenTok.Type == TokenLParen {
+			lex.Next() // consume (
+
+			// Skip params until ) or sync token
+			depth := 1
+			for depth > 0 && !lex.Peek().EOF() {
+				next := lex.Peek()
+				if next.Type == TokenLParen {
+					depth++
+				} else if next.Type == TokenRParen {
+					depth--
+				}
+				if depth > 0 {
+					lex.Next()
+				}
+			}
+			if lex.Peek().Type == TokenRParen {
+				lex.Next() // consume )
+			}
+		}
+		nextTok = lex.Peek()
+	}
+
+	// Early exit if at EOF or sync point before brace
+	if nextTok.EOF() || isRecoveryKeyword(nextTok.Type) || nextTok.Type == TokenRBrace {
+		result.EndPos = lex.Peek().Pos
+		return result, nil
+	}
+
+	// Look for opening brace
+	if nextTok.Type == TokenLBrace {
+		lex.Next() // consume {
+
+		// Skip content until we find closing brace or sync point
+		depth := 1
+		for depth > 0 && !lex.Peek().EOF() {
+			next := lex.Peek()
+			if next.Type == TokenLBrace {
+				depth++
+				lex.Next()
+			} else if next.Type == TokenRBrace {
+				depth--
+				if depth == 0 {
+					// Found matching close brace - consume it and mark complete
+					lex.Next()
+					result.Close = "}"
+				} else {
+					lex.Next()
+				}
+			} else if depth == 1 && isRecoveryKeyword(next.Type) {
+				// Hit a new construct - stop recovery
+				break
+			} else {
+				lex.Next()
+			}
+		}
+	}
+
+	result.EndPos = lex.Peek().Pos
+	return result, nil
 }

@@ -1,12 +1,39 @@
-# Example scaf configuration
-dialect: neo4j
+# Example .scaf.yaml configuration file
+#
+# New style: Use database-specific config blocks.
+# The database determines the dialect automatically.
 
-connection:
+neo4j:
   uri: bolt://localhost:7687
   username: neo4j
   password: password
+  # database: neo4j  # optional, for multi-database setups
 
-# Optional: per-pattern dialect overrides
-# files:
-#   "postgres/**/*.scaf": postgres
-#   "integration/*.scaf": postgres
+# Generation settings (optional)
+generate:
+  # lang: go        # default: go
+  # adapter: neogo  # inferred from neo4j
+  # out: ./generated
+  # package: db
+
+# =============================================================================
+# Alternative: PostgreSQL
+# =============================================================================
+#
+# postgres:
+#   host: localhost
+#   port: 5432
+#   database: mydb
+#   user: postgres
+#   password: password
+#   sslmode: disable
+
+# =============================================================================
+# Legacy style (deprecated, but still supported):
+# =============================================================================
+#
+# dialect: cypher
+# connection:
+#   uri: bolt://localhost:7687
+#   username: neo4j
+#   password: password

@@ -34,6 +34,7 @@
 package golang
 
 import (
+	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/language"
 )
 
@@ -103,7 +104,7 @@ type GoLanguage struct{}
 
 // Name returns "go".
 func (g *GoLanguage) Name() string {
-	return "go"
+	return scaf.LangGo
 }
 
 // Generate produces scaf.go and scaf_test.go from the suite.

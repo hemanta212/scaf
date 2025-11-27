@@ -23,7 +23,7 @@ var (
 
 // Runner executes scaf test suites.
 type Runner struct {
-	dialect  scaf.Dialect
+	dialect  scaf.LegacyDialect
 	handler  Handler
 	failFast bool
 	filter   *regexp.Regexp
@@ -35,7 +35,8 @@ type Runner struct {
 type Option func(*Runner)
 
 // WithDialect sets the database dialect.
-func WithDialect(d scaf.Dialect) Option {
+// Deprecated: Will be replaced with WithDatabase.
+func WithDialect(d scaf.LegacyDialect) Option {
 	return func(r *Runner) {
 		r.dialect = d
 	}

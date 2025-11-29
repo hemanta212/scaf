@@ -1,17 +1,27 @@
 // Shared fixtures for test suites
 // This module provides reusable setup and queries that can be imported
 // Queries can be called with params: fixtures.CreateUser($id: 1, $name: "Alice")
-query CreateUser `
+fn CreateUser(
+	id,
+	name,
+	email,
+	age,
+	verified
+) `
 CREATE (u:User {id: $id, name: $name, email: $email, age: $age, verified: $verified})
 `
 
-query CreateUsers `
+fn CreateUsers() `
 CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30, verified: true})
 CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 25, verified: false})
 CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", age: null, verified: true})
 `
 
-query CreatePost `
+fn CreatePost(
+	id,
+	title,
+	authorId
+) `
 CREATE (p:Post {id: $id, title: $title, authorId: $authorId, views: 0})
 `
 

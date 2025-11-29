@@ -16,7 +16,7 @@ func TestLoader_Load(t *testing.T) {
 
 	// Create a simple .scaf file
 	scafContent := `
-query SetupTest ` + "`CREATE (:Test)`" + `
+fn SetupTest() ` + "`CREATE (:Test)`" + `
 
 SetupTest {
 	test "basic" {
@@ -46,8 +46,8 @@ SetupTest {
 			t.Fatal("Suite is nil")
 		}
 
-		if len(mod.Suite.Queries) != 1 {
-			t.Errorf("Queries count = %d, want 1", len(mod.Suite.Queries))
+		if len(mod.Suite.Functions) != 1 {
+			t.Errorf("Queries count = %d, want 1", len(mod.Suite.Functions))
 		}
 	})
 
@@ -115,7 +115,7 @@ func TestLoader_LoadFrom(t *testing.T) {
 	// Create main.scaf in root
 	mainContent := `
 import "./sub/helper"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	mainPath := filepath.Join(tmpDir, "main.scaf")
 
@@ -126,7 +126,7 @@ query Q ` + "`Q`" + `
 
 	// Create helper.scaf in sub
 	helperContent := `
-query SetupHelper ` + "`CREATE (:Helper)`" + `
+fn SetupHelper() ` + "`CREATE (:Helper)`" + `
 `
 
 	helperPath := filepath.Join(subDir, "helper.scaf")
@@ -150,12 +150,12 @@ query SetupHelper ` + "`CREATE (:Helper)`" + `
 		t.Fatalf("Failed to load helper: %v", err)
 	}
 
-	if len(helperMod.Suite.Queries) != 1 {
-		t.Errorf("Helper queries = %d, want 1", len(helperMod.Suite.Queries))
+	if len(helperMod.Suite.Functions) != 1 {
+		t.Errorf("Helper queries = %d, want 1", len(helperMod.Suite.Functions))
 	}
 
-	if helperMod.Suite.Queries[0].Name != "SetupHelper" {
-		t.Errorf("Query name = %s, want SetupHelper", helperMod.Suite.Queries[0].Name)
+	if helperMod.Suite.Functions[0].Name != "SetupHelper" {
+		t.Errorf("Query name = %s, want SetupHelper", helperMod.Suite.Functions[0].Name)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestLoader_Clear(t *testing.T) {
 
 	scafPath := filepath.Join(tmpDir, "test.scaf")
 
-	err := os.WriteFile(scafPath, []byte(`query Q `+"`Q`"), 0o600)
+	err := os.WriteFile(scafPath, []byte(`fn Q() `+"`Q`"), 0o600)
 	if err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}

@@ -21,7 +21,7 @@ func TestAnalyzer_Analyze(t *testing.T) {
 		{
 			name: "basic query and test",
 			input: `
-query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -36,8 +36,8 @@ GetUser {
 		{
 			name: "multiple queries",
 			input: `
-query GetUser ` + "`Q1`" + `
-query GetPost ` + "`Q2`" + `
+fn GetUser() ` + "`Q1`" + `
+fn GetPost() ` + "`Q2`" + `
 
 GetUser {
 	test "t1" {}
@@ -55,7 +55,7 @@ GetPost {
 import fixtures "./shared/fixtures"
 import myalias "./other"
 
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 
 Q {
 	test "t" {}
@@ -68,7 +68,7 @@ Q {
 		{
 			name: "undefined query scope",
 			input: `
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 
 UndefinedQuery {
 	test "t" {}
@@ -80,7 +80,7 @@ UndefinedQuery {
 		{
 			name: "nested groups",
 			input: `
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 
 Q {
 	group "level1" {
@@ -97,7 +97,7 @@ Q {
 		{
 			name: "parse error",
 			input: `
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 
 Q {
 	test "unclosed
@@ -179,8 +179,8 @@ func TestAnalyzer_PartialParsing(t *testing.T) {
 		{
 			name: "error after valid queries",
 			input: `
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
-query GetPost ` + "`MATCH (p:Post) RETURN p`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
+fn GetPost() ` + "`MATCH (p:Post) RETURN p`" + `
 
 GetUser {
 	test "broken" {
@@ -196,7 +196,7 @@ GetUser {
 import fixtures "./fixtures"
 import utils "./utils"
 
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 
 Q {
 	test "incomplete
@@ -207,7 +207,7 @@ Q {
 		},
 		{
 			name: "mid-query error still gets earlier queries",
-			input: "query Valid1 `Q1`\nquery Valid2 `Q2`\nquery Broken `incomplete",
+			input: "fn Valid1() `Q1`\nfn Valid2() `Q2`\nfn Broken() `incomplete",
 			wantQueries: []string{"Valid1", "Valid2"},
 			wantError:   true,
 		},
@@ -250,7 +250,7 @@ func TestAnalyzer_ExtractQueryParams(t *testing.T) {
 
 	analyzer := analysis.NewAnalyzer(nil)
 	result := analyzer.Analyze("test.scaf", []byte(`
-query GetUser `+"`MATCH (u:User {id: $userId, name: $name}) WHERE u.age > $minAge RETURN u`"+`
+fn GetUser() `+"`MATCH (u:User {id: $userId, name: $name}) WHERE u.age > $minAge RETURN u`"+`
 
 GetUser {
 	test "t" {

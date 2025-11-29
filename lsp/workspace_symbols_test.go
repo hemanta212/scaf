@@ -16,8 +16,8 @@ func TestServer_Symbols(t *testing.T) {
 
 	// Create first file
 	file1Path := tmpDir + "/queries.scaf"
-	file1Content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
-query GetPost ` + "`MATCH (p:Post {id: $id}) RETURN p`" + `
+	file1Content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetPost() ` + "`MATCH (p:Post {id: $id}) RETURN p`" + `
 
 GetUser {
 	test "finds user" {
@@ -31,7 +31,7 @@ GetUser {
 
 	// Create second file
 	file2Path := tmpDir + "/more_queries.scaf"
-	file2Content := `query CountUsers ` + "`MATCH (u:User) RETURN count(u)`" + `
+	file2Content := `fn CountUsers() ` + "`MATCH (u:User) RETURN count(u)`" + `
 
 CountUsers {
 	test "counts all users" {}
@@ -94,9 +94,9 @@ func TestServer_Symbols_FilterByQuery(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	filePath := tmpDir + "/test.scaf"
-	fileContent := `query GetUser ` + "`Q`" + `
-query GetPost ` + "`Q`" + `
-query CountUsers ` + "`Q`" + `
+	fileContent := `fn GetUser() ` + "`Q`" + `
+fn GetPost() ` + "`Q`" + `
+fn CountUsers() ` + "`Q`" + `
 
 GetUser {
 	test "finds user" {}

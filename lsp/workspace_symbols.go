@@ -29,7 +29,7 @@ func (s *Server) Symbols(_ context.Context, params *protocol.WorkspaceSymbolPara
 	// Walk workspace looking for .scaf files
 	err := filepath.Walk(s.workspaceRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip errors
+			return nil //nolint:nilerr // Skip inaccessible paths and continue walking
 		}
 		if info.IsDir() || !strings.HasSuffix(path, ".scaf") {
 			return nil
@@ -38,7 +38,7 @@ func (s *Server) Symbols(_ context.Context, params *protocol.WorkspaceSymbolPara
 		// Load and analyze the file
 		analyzed, err := s.fileLoader.LoadAndAnalyze(path)
 		if err != nil || analyzed.Suite == nil {
-			return nil
+			return nil //nolint:nilerr // Skip files that fail to parse and continue walking
 		}
 
 		uri := PathToURI(path)
@@ -78,7 +78,7 @@ func (s *Server) extractWorkspaceSymbols(uri protocol.DocumentURI, f *analysis.A
 	}
 
 	// Add queries
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		if query == "" || strings.Contains(strings.ToLower(q.Name), query) {
 			symbols = append(symbols, protocol.SymbolInformation{
 				Name: q.Name,
@@ -94,9 +94,9 @@ func (s *Server) extractWorkspaceSymbols(uri protocol.DocumentURI, f *analysis.A
 
 	// Add scopes, tests, and groups
 	for _, scope := range f.Suite.Scopes {
-		if query == "" || strings.Contains(strings.ToLower(scope.QueryName), query) {
+		if query == "" || strings.Contains(strings.ToLower(scope.FunctionName), query) {
 			symbols = append(symbols, protocol.SymbolInformation{
-				Name: scope.QueryName,
+				Name: scope.FunctionName,
 				Kind: protocol.SymbolKindClass,
 				Location: protocol.Location{
 					URI:   uri,
@@ -107,7 +107,7 @@ func (s *Server) extractWorkspaceSymbols(uri protocol.DocumentURI, f *analysis.A
 		}
 
 		// Extract tests and groups from scope
-		symbols = append(symbols, s.extractItemSymbols(uri, scope.QueryName, scope.Items, query)...)
+		symbols = append(symbols, s.extractItemSymbols(uri, scope.FunctionName, scope.Items, query)...)
 	}
 
 	return symbols

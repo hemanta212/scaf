@@ -16,7 +16,7 @@ func TestExtractTestCases(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name, u.age
 ` + "`" + `
@@ -59,7 +59,7 @@ func TestExtractTestCasesWithGroups(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name
 ` + "`" + `
@@ -99,7 +99,7 @@ func TestExtractTestCasesNullValues(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name
 ` + "`" + `
@@ -126,7 +126,7 @@ func TestExtractTestCasesComplexValues(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User)
 RETURN u
 ` + "`" + `
@@ -167,12 +167,12 @@ func TestBuildMockFuncs(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name
 ` + "`" + `
 
-query CountUsers ` + "`" + `
+fn CountUsers() ` + "`" + `
 MATCH (u:User)
 RETURN count(u) as count
 ` + "`" + `
@@ -279,7 +279,7 @@ func TestGenerateMockFile(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name, u.age AS age
 ` + "`" + `
@@ -350,7 +350,7 @@ func TestGenerateMockFileWithComplexTypes(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query FindUsers ` + "`" + `
+fn FindUsers() ` + "`" + `
 MATCH (u:User)
 WHERE u.id IN $ids
 RETURN u.name AS name
@@ -411,7 +411,7 @@ func TestGenerateMockFileNoScopes(t *testing.T) {
 
 	// Query without any test scopes
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name
 ` + "`" + `
@@ -460,12 +460,12 @@ func TestGenerateMockFileMultipleFunctions(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name
 ` + "`" + `
 
-query GetPost ` + "`" + `
+fn GetPost() ` + "`" + `
 MATCH (p:Post {id: $postId})
 RETURN p.title AS title
 ` + "`" + `
@@ -535,7 +535,7 @@ func TestGenerateMockFileBooleanValues(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query CheckActive ` + "`" + `
+fn CheckActive() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.active AS active
 ` + "`" + `
@@ -597,7 +597,7 @@ func TestGenerateMockFileNoReturns(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query DeleteUser ` + "`" + `
+fn DeleteUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 DELETE u
 ` + "`" + `
@@ -651,7 +651,7 @@ func TestGenerateMockFileMissingOutputUsesZeroValue(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name, u.age AS age
 ` + "`" + `

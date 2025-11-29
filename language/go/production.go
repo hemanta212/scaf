@@ -305,7 +305,7 @@ func (p *productionGenerator) writeProdFunc(baseSig *FuncSignature, fullSig *Bin
 	}
 
 	// Indent the body
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if line != "" {
 			fmt.Fprintf(p.buf, "\t%s\n", line)
 		}

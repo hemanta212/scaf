@@ -1,6 +1,7 @@
 package module
 
 import (
+	"maps"
 	"path/filepath"
 	"strings"
 
@@ -28,7 +29,7 @@ func NewModule(path string, suite *scaf.Suite) *Module {
 	}
 
 	// Index queries for fast lookup
-	for _, q := range suite.Queries {
+	for _, q := range suite.Functions {
 		m.Queries[q.Name] = q.Body
 	}
 
@@ -132,9 +133,7 @@ func (rc *ResolvedContext) GetQueries() map[string]string {
 	queries := make(map[string]string)
 
 	// Add root queries
-	for name, body := range rc.Root.Queries {
-		queries[name] = body
-	}
+	maps.Copy(queries, rc.Root.Queries)
 
 	// Add imported queries with prefix
 	for alias, mod := range rc.Imports {

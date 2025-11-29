@@ -15,6 +15,7 @@ import (
 // CodeAction handles textDocument/codeAction requests.
 // Returns a list of quick fixes and refactoring actions available at the cursor position.
 func (s *Server) CodeAction(_ context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
+	defer s.traceHandler("CodeAction")()
 	s.logger.Debug("CodeAction",
 		zap.String("uri", string(params.TextDocument.URI)),
 		zap.Int("diagnosticCount", len(params.Context.Diagnostics)))
@@ -280,9 +281,9 @@ func (s *Server) fixUndefinedQuery(doc *Document, diag protocol.Diagnostic) []pr
 
 	// Find where to insert the new query (before the first scope, or after last query)
 	var insertLine uint32
-	if len(doc.Analysis.Suite.Queries) > 0 {
+	if len(doc.Analysis.Suite.Functions) > 0 {
 		// Insert after the last query
-		lastQuery := doc.Analysis.Suite.Queries[len(doc.Analysis.Suite.Queries)-1]
+		lastQuery := doc.Analysis.Suite.Functions[len(doc.Analysis.Suite.Functions)-1]
 		insertLine = uint32(lastQuery.EndPos.Line) //nolint:gosec
 	} else if len(doc.Analysis.Suite.Imports) > 0 {
 		// Insert after imports
@@ -330,7 +331,7 @@ func (s *Server) fixEmptyTest(doc *Document, diag protocol.Diagnostic) []protoco
 	for _, scope := range doc.Analysis.Suite.Scopes {
 		scopeRange := spanToRange(scope.Span())
 		if rangesOverlap(scopeRange, diag.Range) {
-			queryScope = scope.QueryName
+			queryScope = scope.FunctionName
 			break
 		}
 	}

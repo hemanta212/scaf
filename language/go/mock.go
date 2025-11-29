@@ -96,7 +96,7 @@ func BuildMockFuncs(suite *scaf.Suite, signatures []*FuncSignature) []*MockFunc 
 	var mocks []*MockFunc
 
 	for _, scope := range suite.Scopes {
-		sig, ok := sigMap[scope.QueryName]
+		sig, ok := sigMap[scope.FunctionName]
 		if !ok {
 			// No matching query - skip
 			continue

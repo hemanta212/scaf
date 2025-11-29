@@ -10,7 +10,7 @@ import (
 // Implements lexer.Definition interface for full control over tokenization.
 var dslLexer = newDSLLexer()
 
-var parser = participle.MustBuild[Suite](
+var parser = participle.MustBuild[File](
 	participle.Lexer(dslLexer),
 	participle.Unquote("RawString", "String"),
 	participle.Elide("Whitespace", "Comment"),
@@ -22,7 +22,7 @@ var parser = participle.MustBuild[Suite](
 // On parse errors, returns a partial AST containing everything successfully parsed
 // up to the error location, along with the error. Callers should use the partial
 // AST for features like completion and hover even when errors are present.
-func Parse(data []byte) (*Suite, error) {
+func Parse(data []byte) (*File, error) {
 	return ParseWithRecovery(data, false)
 }
 
@@ -34,24 +34,24 @@ func Parse(data []byte) (*Suite, error) {
 //
 // Recovery uses statement-boundary synchronization:
 //   - Skips to closing braces `}` (block terminators)
-//   - Skips to keywords that start new constructs: test, group, query, import, setup, teardown, assert
+//   - Skips to keywords that start new constructs: test, group, fn, import, setup, teardown, assert
 //   - Handles nested braces and parentheses correctly
-func ParseWithRecovery(data []byte, withRecovery bool) (*Suite, error) {
+func ParseWithRecovery(data []byte, withRecovery bool) (*File, error) {
 	return parseWithOptions(data, withRecovery, nil)
 }
 
 // ParseWithRecoveryTrace is like ParseWithRecovery but writes recovery trace to w.
 // Useful for debugging recovery behavior.
-func ParseWithRecoveryTrace(data []byte, withRecovery bool, w io.Writer) (*Suite, error) {
+func ParseWithRecoveryTrace(data []byte, withRecovery bool, w io.Writer) (*File, error) {
 	return parseWithOptions(data, withRecovery, w)
 }
 
-func parseWithOptions(data []byte, withRecovery bool, traceWriter io.Writer) (*Suite, error) {
+func parseWithOptions(data []byte, withRecovery bool, traceWriter io.Writer) (*File, error) {
 	// Lock to ensure trivia isn't overwritten by concurrent parses
 	dslLexer.Lock()
 	defer dslLexer.Unlock()
 
-	var suite *Suite
+	var file *File
 	var err error
 
 	if withRecovery {
@@ -65,7 +65,7 @@ func parseWithOptions(data []byte, withRecovery bool, traceWriter io.Writer) (*S
 					"}",        // Block closer - ends test, group, assert, scope, setup block
 					"test",     // Test definition
 					"group",    // Group definition
-					"query",    // Query definition
+					"fn",       // Function definition
 					"import",   // Import statement
 					"setup",    // Setup clause
 					"teardown", // Teardown clause
@@ -80,21 +80,23 @@ func parseWithOptions(data []byte, withRecovery bool, traceWriter io.Writer) (*S
 			),
 			participle.MaxRecoveryErrors(50),
 		}
-		if traceWriter != nil {
-			opts = append(opts, participle.TraceRecovery(traceWriter))
-		}
-		suite, err = parser.ParseBytes("", data, opts...)
+		// TODO: TraceRecovery is not in standard participle - needs fork update
+		// if traceWriter != nil {
+		// 	opts = append(opts, participle.TraceRecovery(traceWriter))
+		// }
+		_ = traceWriter // suppress unused warning
+		file, err = parser.ParseBytes("", data, opts...)
 	} else {
-		suite, err = parser.ParseBytes("", data)
+		file, err = parser.ParseBytes("", data)
 	}
 
 	// Attach comments even to partial ASTs - Participle populates as much
 	// of the AST as possible before the error location
-	if suite != nil {
-		attachComments(suite, dslLexer.Trivia())
+	if file != nil {
+		attachComments(file, dslLexer.Trivia())
 	}
 
-	return suite, err
+	return file, err
 }
 
 // ExportedLexer returns the lexer definition for testing purposes.

@@ -44,7 +44,7 @@ func TestGenerateRequiresBinding(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name
 ` + "`" + `
@@ -73,7 +73,7 @@ func TestGenerateProductionFileMultipleReturns(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name, u.age AS age
 ` + "`" + `
@@ -131,12 +131,12 @@ func TestGenerateProductionFileMultipleFunctions(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query GetUser ` + "`" + `
+fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name
 ` + "`" + `
 
-query GetPost ` + "`" + `
+fn GetPost() ` + "`" + `
 MATCH (p:Post {id: $postId})
 RETURN p.title AS title
 ` + "`" + `
@@ -198,7 +198,7 @@ func TestGenerateProductionFileNoParams(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query CountUsers ` + "`" + `
+fn CountUsers() ` + "`" + `
 MATCH (u:User)
 RETURN count(u) AS count
 ` + "`" + `
@@ -233,13 +233,13 @@ import (
 	"github.com/example/db"
 )
 
-func CountUsers() []any {
+func CountUsers() []int {
 	return countUsersImpl()
 }
 
-var countUsersImpl func() []any = countUsersProd
+var countUsersImpl func() []int = countUsersProd
 
-func countUsersProd() []any {
+func countUsersProd() []int {
 	return db.Query(ctx, query)
 }
 `
@@ -267,7 +267,7 @@ func TestGenerateProductionFileNoReturns(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query DeleteUser ` + "`" + `
+fn DeleteUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 DELETE u
 ` + "`" + `

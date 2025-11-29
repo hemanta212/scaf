@@ -39,7 +39,7 @@ func (s *Server) References(_ context.Context, params *protocol.ReferenceParams)
 		locations = s.findQueryReferences(doc, node.Name, includeDecl)
 
 	case *scaf.QueryScope:
-		locations = s.findQueryReferences(doc, node.QueryName, includeDecl)
+		locations = s.findQueryReferences(doc, node.FunctionName, includeDecl)
 
 	case *scaf.Import:
 		alias := baseNameFromImport(node)
@@ -47,9 +47,10 @@ func (s *Server) References(_ context.Context, params *protocol.ReferenceParams)
 
 	case *scaf.SetupCall:
 		if tokenCtx.Token != nil {
-			if tokenCtx.Token.Value == node.Module {
+			switch tokenCtx.Token.Value {
+			case node.Module:
 				locations = s.findImportReferences(doc, node.Module, includeDecl)
-			} else if tokenCtx.Token.Value == node.Query {
+			case node.Query:
 				// Find references to this query in the imported module
 				locations = s.findCrossFileQueryReferences(doc, node.Module, node.Query, includeDecl)
 			}
@@ -94,7 +95,7 @@ func (s *Server) findQueryReferences(doc *Document, queryName string, includeDec
 
 	// Include declaration if requested
 	if includeDecl {
-		for _, q := range doc.Analysis.Suite.Queries {
+		for _, q := range doc.Analysis.Suite.Functions {
 			if q.Name == queryName {
 				locations = append(locations, protocol.Location{
 					URI:   doc.URI,
@@ -107,7 +108,7 @@ func (s *Server) findQueryReferences(doc *Document, queryName string, includeDec
 
 	// Find all query scope references
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName == queryName {
+		if scope.FunctionName == queryName {
 			locations = append(locations, protocol.Location{
 				URI:   doc.URI,
 				Range: scopeNameRange(scope),
@@ -341,7 +342,7 @@ func (s *Server) searchWorkspaceForQueryRefs(importedPath, queryName string, exc
 	// Walk workspace looking for .scaf files
 	err := filepath.Walk(s.workspaceRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip errors
+			return nil //nolint:nilerr // Skip inaccessible paths and continue walking
 		}
 		if info.IsDir() || !strings.HasSuffix(path, ".scaf") {
 			return nil
@@ -363,7 +364,7 @@ func (s *Server) searchWorkspaceForQueryRefs(importedPath, queryName string, exc
 		// Load and analyze the file
 		analyzed, err := s.fileLoader.LoadAndAnalyze(path)
 		if err != nil || analyzed.Suite == nil {
-			return nil
+			return nil //nolint:nilerr // Skip files that fail to parse and continue walking
 		}
 
 		// Check if this file imports the target module
@@ -391,7 +392,7 @@ func (s *Server) findParameterReferences(doc *Document, queryScope, paramKey str
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 		s.collectParamRefs(doc.URI, scope.Items, paramKey, &locations)
@@ -465,7 +466,7 @@ func (s *Server) findReturnFieldReferences(doc *Document, queryScope, fieldKey s
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 		s.collectFieldRefs(doc.URI, scope.Items, fieldKey, &locations)

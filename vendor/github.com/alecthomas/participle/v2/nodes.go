@@ -117,15 +117,14 @@ func (u *union) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 
 // @@
 type strct struct {
-	typ                        reflect.Type
-	expr                       node
-	tokensFieldIndex           []int
-	posFieldIndex              []int
-	endPosFieldIndex           []int
-	recoveredSpanFieldIndex    []int // For RecoveredSpan lexer.Position field (start of recovery)
-	recoveredEndFieldIndex     []int // For RecoveredEnd lexer.Position field (end of recovery)
-	recoveredTokensFieldIndex  []int // For RecoveredTokens []lexer.Token field
-	usages                     int
+	typ                    reflect.Type
+	expr                   node
+	tokensFieldIndex       []int
+	posFieldIndex          []int
+	endPosFieldIndex       []int
+	recoveredFieldIndex    []int // For Recovered bool field
+	recoveredSpanFieldIndex []int // For RecoveredSpan lexer.Position field
+	usages                 int
 }
 
 func newStrct(typ reflect.Type) *strct {
@@ -146,17 +145,13 @@ func newStrct(typ reflect.Type) *strct {
 		s.tokensFieldIndex = field.Index
 	}
 	// Recovery metadata fields
+	field, ok = typ.FieldByName("Recovered")
+	if ok && field.Type.Kind() == reflect.Bool {
+		s.recoveredFieldIndex = field.Index
+	}
 	field, ok = typ.FieldByName("RecoveredSpan")
 	if ok && positionType.ConvertibleTo(field.Type) {
 		s.recoveredSpanFieldIndex = field.Index
-	}
-	field, ok = typ.FieldByName("RecoveredEnd")
-	if ok && positionType.ConvertibleTo(field.Type) {
-		s.recoveredEndFieldIndex = field.Index
-	}
-	field, ok = typ.FieldByName("RecoveredTokens")
-	if ok && field.Type == tokensType {
-		s.recoveredTokensFieldIndex = field.Index
 	}
 	return s
 }
@@ -169,59 +164,33 @@ func (s *strct) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 	sv := reflect.New(s.typ).Elem()
 	start := ctx.RawCursor()
 	t := ctx.Peek()
-	recoveryStartPos := t.Pos
+	recoveryStartPos := t.Pos // Track position where recovery might start
 	s.maybeInjectStartToken(t, sv)
-
-	out, err = s.expr.Parse(ctx, sv)
-	if err != nil {
-		return s.handleParseError(ctx, sv, err, start, recoveryStartPos)
-	}
-	if out == nil {
+	if out, err = s.expr.Parse(ctx, sv); err != nil {
+		// Try to recover from the error
+		if recovered, _ := ctx.tryRecover(err, sv); recovered {
+			// Recovery succeeded - continue with partial result
+			_ = ctx.Apply()
+			end := ctx.RawCursor()
+			t = ctx.RawPeek()
+			s.maybeInjectEndToken(t, sv)
+			s.maybeInjectTokens(ctx.Range(start, end), sv)
+			// Inject recovery metadata
+			s.maybeInjectRecovered(true, sv)
+			s.maybeInjectRecoveredSpan(recoveryStartPos, sv)
+			return []reflect.Value{sv}, nil
+		}
+		_ = ctx.Apply() // Best effort to give partial AST.
+		ctx.MaybeUpdateError(err)
+		return []reflect.Value{sv}, err
+	} else if out == nil {
 		return nil, nil
 	}
-
-	s.injectEndMetadata(ctx, sv, start)
-	return []reflect.Value{sv}, ctx.Apply()
-}
-
-// handleParseError attempts recovery and returns an appropriate result.
-func (s *strct) handleParseError(ctx *parseContext, sv reflect.Value, err error, start lexer.RawCursor, recoveryStartPos lexer.Position) ([]reflect.Value, error) {
-	result := ctx.tryRecover(err, sv)
-
-	// Recovery succeeded - return partial struct with metadata
-	if result.recovered {
-		// If recovery didn't progress the lexer, we can't claim success.
-		// Returning a value without progressing would cause infinite loops
-		// or panics in the disjunction parser ("branch was accepted but did not progress").
-		if !result.progressed {
-			ctx.MaybeUpdateError(err)
-			return nil, nil
-		}
-		_ = ctx.Apply()
-		s.injectEndMetadata(ctx, sv, start)
-		s.injectRecoveryMetadata(sv, recoveryStartPos, ctx.RawPeek().Pos, result.recoveredTokens)
-		return []reflect.Value{sv}, nil
-	}
-
-	// Recovery failed - return partial struct with error
-	_ = ctx.Apply()
-	ctx.MaybeUpdateError(err)
-	return []reflect.Value{sv}, err
-}
-
-// injectEndMetadata adds end position and token information to the struct.
-func (s *strct) injectEndMetadata(ctx *parseContext, sv reflect.Value, start lexer.RawCursor) {
 	end := ctx.RawCursor()
-	t := ctx.RawPeek()
+	t = ctx.RawPeek()
 	s.maybeInjectEndToken(t, sv)
 	s.maybeInjectTokens(ctx.Range(start, end), sv)
-}
-
-// injectRecoveryMetadata marks the struct as recovered and records the recovery span and tokens.
-func (s *strct) injectRecoveryMetadata(sv reflect.Value, startPos, endPos lexer.Position, recoveredTokens []lexer.Token) {
-	s.maybeInjectRecoveredSpan(startPos, sv)
-	s.maybeInjectRecoveredEnd(endPos, sv)
-	s.maybeInjectRecoveredTokens(recoveredTokens, sv)
+	return []reflect.Value{sv}, ctx.Apply()
 }
 
 func (s *strct) maybeInjectStartToken(token *lexer.Token, v reflect.Value) {
@@ -247,27 +216,19 @@ func (s *strct) maybeInjectTokens(tokens []lexer.Token, v reflect.Value) {
 	v.FieldByIndex(s.tokensFieldIndex).Set(reflect.ValueOf(tokens))
 }
 
+func (s *strct) maybeInjectRecovered(recovered bool, v reflect.Value) {
+	if s.recoveredFieldIndex == nil {
+		return
+	}
+	v.FieldByIndex(s.recoveredFieldIndex).SetBool(recovered)
+}
+
 func (s *strct) maybeInjectRecoveredSpan(pos lexer.Position, v reflect.Value) {
 	if s.recoveredSpanFieldIndex == nil {
 		return
 	}
 	f := v.FieldByIndex(s.recoveredSpanFieldIndex)
 	f.Set(reflect.ValueOf(pos).Convert(f.Type()))
-}
-
-func (s *strct) maybeInjectRecoveredEnd(pos lexer.Position, v reflect.Value) {
-	if s.recoveredEndFieldIndex == nil {
-		return
-	}
-	f := v.FieldByIndex(s.recoveredEndFieldIndex)
-	f.Set(reflect.ValueOf(pos).Convert(f.Type()))
-}
-
-func (s *strct) maybeInjectRecoveredTokens(tokens []lexer.Token, v reflect.Value) {
-	if s.recoveredTokensFieldIndex == nil {
-		return
-	}
-	v.FieldByIndex(s.recoveredTokensFieldIndex).Set(reflect.ValueOf(tokens))
 }
 
 type groupMatchMode int
@@ -344,10 +305,12 @@ func (g *group) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 		if err != nil {
 			ctx.MaybeUpdateError(err)
 			// Try to recover from the error
-			result := ctx.tryRecover(err, parent)
-			if result.recovered {
+			if recovered, recoveredValues := ctx.tryRecover(err, parent); recovered {
 				// Recovery succeeded - accept what we have and continue
 				out = append(out, v...)
+				if len(recoveredValues) > 0 {
+					out = append(out, recoveredValues...)
+				}
 				ctx.Accept(branch)
 				continue // Try to parse more iterations after recovery
 			}
@@ -486,9 +449,8 @@ func (s *sequence) Parse(ctx *parseContext, parent reflect.Value) (out []reflect
 
 // @<expr>
 type capture struct {
-	field    structLexerField
-	node     node
-	recovery *nodeRecoveryConfig
+	field structLexerField
+	node  node
 }
 
 func (c *capture) String() string   { return ebnf(c) }
@@ -497,7 +459,6 @@ func (c *capture) GoString() string { return "capture{}" }
 func (c *capture) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Value, err error) {
 	defer ctx.printTrace(c)()
 	start := ctx.RawCursor()
-	startPos := ctx.Peek().Pos
 	v, err := c.node.Parse(ctx, parent)
 	if v != nil {
 		ctx.Defer(ctx.Range(start, ctx.RawCursor()), parent, c.field, v)
@@ -506,123 +467,9 @@ func (c *capture) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.
 		return []reflect.Value{parent}, err
 	}
 	if v == nil {
-		// Collect all applicable recovery strategies:
-		// 1. Node-level strategies (from struct tags or build-time RecoverTypeWith)
-		// 2. Parse-time type-specific strategies (from RecoverVia in Recover())
-		var strategies []RecoveryStrategy
-		if c.recovery != nil {
-			strategies = append(strategies, c.recovery.strategies...)
-		}
-
-		// Try recovery if we have strategies
-		if len(strategies) > 0 {
-			checkpoint := ctx.saveCheckpoint()
-			reportErr := &UnexpectedTokenError{Unexpected: *ctx.Peek(), expectNode: c.node}
-
-			// Extract expected message (UnexpectedTokenError implements Error interface)
-			expectedMsg := reportErr.Message()
-
-			for _, strategy := range strategies {
-				ctx.restoreCheckpoint(checkpoint)
-
-				// Check if this is a retry strategy
-				if retryStrat, ok := strategy.(RetryStrategy); ok && retryStrat.IsRetryStrategy() {
-					recoveredValues, recoveredTokens, recovered := c.retryRecovery(ctx, retryStrat, parent)
-					if recovered {
-						endPos := ctx.Peek().Pos
-						c.recordEnhancedRecoveryError(ctx, startPos, endPos, expectedMsg, recoveredTokens, "skip_then_retry", reportErr)
-						if len(recoveredValues) > 0 {
-							ctx.Defer(ctx.Range(start, ctx.RawCursor()), parent, c.field, c.adaptValues(recoveredValues))
-						}
-						return []reflect.Value{parent}, nil
-					}
-					continue
-				}
-
-				// Try enhanced recovery if available
-				if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
-					result := enhanced.RecoverWithContext(ctx, reportErr, parent)
-					if result.recovered && len(result.values) > 0 {
-						endPos := ctx.Peek().Pos
-						c.recordEnhancedRecoveryError(ctx, startPos, endPos, expectedMsg, result.recoveredTokens, result.strategyName, reportErr)
-						ctx.Defer(ctx.Range(start, ctx.RawCursor()), parent, c.field, c.adaptValues(result.values))
-						return []reflect.Value{parent}, nil
-					}
-				}
-			}
-			ctx.restoreCheckpoint(checkpoint)
-		}
 		return nil, nil
 	}
 	return []reflect.Value{parent}, nil
-}
-
-// retryRecovery implements retry-at-each-position for capture nodes.
-// Returns recovered values, recovered tokens, and whether recovery succeeded.
-func (c *capture) retryRecovery(ctx *parseContext, strategy RetryStrategy, parent reflect.Value) ([]reflect.Value, []lexer.Token, bool) {
-	maxSkip := 100
-	if stru, ok := strategy.(*SkipThenRetryUntilStrategy); ok && stru.MaxSkip > 0 {
-		maxSkip = stru.MaxSkip
-	}
-
-	var recoveredTokens []lexer.Token
-	for len(recoveredTokens) < maxSkip {
-		if strategy.ShouldStop(ctx) {
-			return nil, recoveredTokens, false
-		}
-		recoveredTokens = append(recoveredTokens, *ctx.Next())
-		values, err := c.node.Parse(ctx, parent)
-		if err == nil && values != nil {
-			return values, recoveredTokens, true
-		}
-	}
-	return nil, recoveredTokens, false
-}
-
-// adaptValues adapts recovered values to the field type.
-func (c *capture) adaptValues(recoveredValues []reflect.Value) []reflect.Value {
-	fieldType := c.field.Type
-	adaptedValues := make([]reflect.Value, 0, len(recoveredValues))
-	for _, rv := range recoveredValues {
-		if rv.Kind() == reflect.Ptr && !rv.IsNil() {
-			if fieldType.Kind() == reflect.Ptr && rv.Type() == fieldType {
-				adaptedValues = append(adaptedValues, rv.Elem())
-			} else {
-				adaptedValues = append(adaptedValues, rv)
-			}
-		} else {
-			adaptedValues = append(adaptedValues, rv)
-		}
-	}
-	return adaptedValues
-}
-
-// recordEnhancedRecoveryError records a recovery error with rich context.
-func (c *capture) recordEnhancedRecoveryError(ctx *parseContext, startPos, endPos lexer.Position, message string, recoveredTokens []lexer.Token, strategyName string, underlying error) {
-	var label string
-	if c.recovery != nil {
-		label = c.recovery.label
-	}
-	err := makeRecoveredError(
-		startPos,
-		endPos,
-		message,
-		label,
-		recoveredTokens,
-		strategyName,
-		underlying,
-	)
-	ctx.addRecoveryError(err)
-}
-
-// SetRecovery sets recovery configuration on the capture node.
-func (c *capture) SetRecovery(config *nodeRecoveryConfig) {
-	c.recovery = config
-}
-
-// GetRecovery returns the recovery configuration.
-func (c *capture) GetRecovery() *nodeRecoveryConfig {
-	return c.recovery
 }
 
 // <identifier> - named lexer token reference
@@ -715,13 +562,6 @@ func conform(t reflect.Type, values []reflect.Value) (out []reflect.Value, err e
 				return
 			}
 			v = v.Addr()
-		}
-
-		// Dereference pointer if target is non-pointer struct.
-		if v.Kind() == reflect.Ptr && t.Kind() == reflect.Struct && !v.IsNil() {
-			if v.Elem().Type() == t {
-				v = v.Elem()
-			}
 		}
 
 		// Already of the right kind, don't bother converting.

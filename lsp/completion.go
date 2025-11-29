@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/alecthomas/participle/v2/lexer"
@@ -13,16 +14,32 @@ import (
 	"github.com/rlch/scaf/analysis"
 )
 
+// completionTimeout is the maximum time for completion to prevent editor freezes.
+const completionTimeout = 5 * time.Second
+
 // Completion handles textDocument/completion requests.
 // Following gopls pattern: single path, token-based dispatch.
-func (s *Server) Completion(_ context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	s.logger.Debug("Completion",
+func (s *Server) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+	start := time.Now()
+	s.logger.Debug("Completion request started",
 		zap.String("uri", string(params.TextDocument.URI)),
 		zap.Uint32("line", params.Position.Line),
 		zap.Uint32("character", params.Position.Character))
 
+	// Log completion of request
+	defer func() {
+		s.logger.Debug("Completion request finished",
+			zap.Duration("elapsed", time.Since(start)))
+	}()
+
+	// Add timeout to prevent editor freezes
+	ctx, cancel := context.WithTimeout(ctx, completionTimeout)
+	_ = ctx // TODO: pass ctx to completion methods for cancellation support
+	defer cancel()
+
 	doc, ok := s.getDocument(params.TextDocument.URI)
 	if !ok {
+		s.logger.Debug("Completion: document not found")
 		return nil, nil //nolint:nilnil
 	}
 
@@ -63,7 +80,7 @@ func (s *Server) Completion(_ context.Context, params *protocol.CompletionParams
 	// Filter by prefix
 	// Skip filtering for return fields when prefix contains a dot (e.g., "u.")
 	// because completeReturnFields already handles prefix matching internally
-	if cc.Prefix != "" && !(cc.Kind == CompletionKindReturnField && strings.Contains(cc.Prefix, ".")) {
+	if cc.Prefix != "" && (cc.Kind != CompletionKindReturnField || !strings.Contains(cc.Prefix, ".")) {
 		items = filterByPrefix(items, cc.Prefix)
 	}
 
@@ -162,7 +179,7 @@ func (s *Server) determinePositionalContext(cc *CompletionContext, af *analysis.
 		if !containsLexerPosition(scope.Span(), pos) {
 			continue
 		}
-		cc.InScope = scope.QueryName
+		cc.InScope = scope.FunctionName
 
 		// Check scope-level setup
 		if scope.Setup != nil && containsLexerPosition(scope.Setup.Span(), pos) {
@@ -306,13 +323,14 @@ func (s *Server) handleDotCompletion(cc *CompletionContext, doc *Document, af *a
 	var identValue string
 
 	if prevToken != nil {
-		if prevToken.Type == scaf.TokenDot {
+		switch prevToken.Type {
+		case scaf.TokenDot:
 			// Token before cursor is the dot - find token before the dot
 			tokenBeforeDot := s.findPrevToken(doc, af, prevToken.Pos)
 			if tokenBeforeDot != nil && tokenBeforeDot.Type == scaf.TokenIdent {
 				identValue = tokenBeforeDot.Value
 			}
-		} else if prevToken.Type == scaf.TokenIdent {
+		case scaf.TokenIdent:
 			// Token before cursor is an identifier (cursor might be on the dot)
 			identValue = prevToken.Value
 		}
@@ -490,8 +508,8 @@ func (s *Server) completeKeywords(cc *CompletionContext) []protocol.CompletionIt
 			{
 				label:   "assert",
 				detail:  "Add assertion query",
-				snippet: "assert ${1:QueryName}(${2:params}) {\n\t$0\n}",
-				doc:     "Assert the results of another query after the main query runs.",
+				snippet: "assert ${1:QueryName}(${2:params}) {\n\t($0)\n}",
+				doc:     "Assert the results of another query after the main query runs. Conditions must be in parentheses.",
 			},
 		}
 	} else {
@@ -663,46 +681,64 @@ func (s *Server) completeImportAliases(doc *Document, _ *CompletionContext) []pr
 
 // completeSetupFunctions returns setup function completions from imported module.
 func (s *Server) completeSetupFunctions(doc *Document, cc *CompletionContext) []protocol.CompletionItem {
+	start := time.Now()
+	s.logger.Debug("completeSetupFunctions: starting",
+		zap.String("moduleAlias", cc.ModuleAlias))
+	defer func() {
+		s.logger.Debug("completeSetupFunctions: finished",
+			zap.Duration("elapsed", time.Since(start)))
+	}()
+
 	if cc.ModuleAlias == "" {
+		s.logger.Debug("completeSetupFunctions: no module alias")
 		return nil
 	}
 
 	af := s.getSymbolsAnalysis(doc)
 	if af == nil || af.Symbols == nil {
+		s.logger.Debug("completeSetupFunctions: no analysis or symbols")
 		return nil
 	}
 
 	if s.fileLoader == nil {
-		s.logger.Debug("FileLoader not available for cross-file completion")
+		s.logger.Debug("completeSetupFunctions: FileLoader not available")
 		return nil
 	}
 
 	imp, ok := af.Symbols.Imports[cc.ModuleAlias]
 	if !ok {
-		s.logger.Debug("Import not found for module alias", zap.String("alias", cc.ModuleAlias))
+		s.logger.Debug("completeSetupFunctions: import not found",
+			zap.String("alias", cc.ModuleAlias),
+			zap.Int("availableImports", len(af.Symbols.Imports)))
 		return nil
 	}
 
 	// Resolve and load the imported file
 	docPath := URIToPath(doc.URI)
+	s.logger.Debug("completeSetupFunctions: resolving import",
+		zap.String("docPath", docPath),
+		zap.String("importPath", imp.Path))
+
 	importedPath := s.fileLoader.ResolveImportPath(docPath, imp.Path)
 
-	s.logger.Debug("Resolving import for setup completion",
-		zap.String("alias", cc.ModuleAlias),
-		zap.String("importPath", imp.Path),
+	s.logger.Debug("completeSetupFunctions: loading imported file",
 		zap.String("resolvedPath", importedPath))
 
 	importedFile, err := s.fileLoader.LoadAndAnalyze(importedPath)
 	if err != nil {
-		s.logger.Debug("Failed to load imported file",
+		s.logger.Debug("completeSetupFunctions: failed to load imported file",
 			zap.String("path", importedPath),
 			zap.Error(err))
 		return nil
 	}
 
 	if importedFile.Symbols == nil {
+		s.logger.Debug("completeSetupFunctions: imported file has no symbols")
 		return nil
 	}
+
+	s.logger.Debug("completeSetupFunctions: building completions",
+		zap.Int("queryCount", len(importedFile.Symbols.Queries)))
 
 	var items []protocol.CompletionItem
 
@@ -727,15 +763,21 @@ func (s *Server) completeSetupFunctions(doc *Document, cc *CompletionContext) []
 
 		// Build snippet with parameter placeholders
 		if len(q.Params) > 0 {
-			insertText := name + "("
+			var sb strings.Builder
+			sb.WriteString(name)
+			sb.WriteByte('(')
 			for i, p := range q.Params {
 				if i > 0 {
-					insertText += ", "
+					sb.WriteString(", ")
 				}
-				insertText += "$" + p + ": ${" + string(rune('1'+i)) + "}"
+				sb.WriteByte('$')
+				sb.WriteString(p)
+				sb.WriteString(": ${")
+				sb.WriteByte('1' + byte(i))
+				sb.WriteByte('}')
 			}
-			insertText += ")"
-			item.InsertText = insertText
+			sb.WriteByte(')')
+			item.InsertText = sb.String()
 			item.InsertTextFormat = protocol.InsertTextFormatSnippet
 		} else {
 			item.InsertText = name + "()"

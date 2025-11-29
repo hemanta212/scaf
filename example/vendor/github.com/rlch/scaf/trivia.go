@@ -52,51 +52,55 @@ func (t *TriviaList) Reset() {
 	t.items = t.items[:0]
 }
 
-// commentMap stores comments for AST nodes, keyed by their Span.
-// This is used internally during comment attachment.
-type commentMap map[Span]*nodeComments
-
-// nodeComments holds comments attached to an AST node.
-type nodeComments struct {
-	leading  []string // Comments before the node
-	trailing string   // Comment on same line after node (empty if none)
+// commentableNode represents an AST node that can have comments attached.
+// We store both the span (for position matching) and a pointer to the CommentMeta.
+type commentableNode struct {
+	span    Span
+	comment *CommentMeta
 }
 
 // attachComments associates collected trivia with AST nodes based on positions,
 // applying the comments directly to the node fields.
+//
+// Comment attachment rules:
+//   - Comments on the same line after a node are trailing comments for that node
+//   - Comments before a node attach to the closest following node
+//   - Comments at the very top of the file (before any declarations) attach to Suite
+//     only if separated from the first declaration by a blank line
 func attachComments(suite *Suite, trivia *TriviaList) {
-	if trivia == nil || len(trivia.items) == 0 {
+	if trivia == nil || len(trivia.items) == 0 || suite == nil {
 		return
 	}
 
-	cm := make(commentMap)
 	allTrivia := trivia.All()
 
-	// Build a list of all node spans
-	var spans []Span
-	collectSpans(suite, &spans)
+	// Collect all commentable nodes (excluding Suite - handled separately)
+	var nodes []commentableNode
+	collectCommentableNodes(suite, &nodes)
 
-	// For each trivia item, find which node it belongs to
+	// Find the first declaration's line number for Suite comment detection
+	firstDeclLine := findFirstDeclarationLine(suite)
+
+	// Extract just the comments for easier processing
+	var comments []Trivia
 	for _, t := range allTrivia {
-		if t.Type != TriviaComment {
-			continue
+		if t.Type == TriviaComment {
+			comments = append(comments, t)
 		}
+	}
 
+	// For each comment, find which node it belongs to
+	for _, t := range comments {
 		commentText := t.Text
-
-		// Check if it's a trailing comment (same line as end of some node)
 		attached := false
 
-		for _, span := range spans {
+		// Check if it's a trailing comment (same line as end of some node)
+		for j := range nodes {
+			node := &nodes[j]
 			// Trailing: comment starts on same line as node ends, after the node
-			if t.Span.Start.Line == span.End.Line && t.Span.Start.Offset > span.End.Offset {
-				if cm[span] == nil {
-					cm[span] = &nodeComments{}
-				}
-
-				cm[span].trailing = commentText
+			if t.Span.Start.Line == node.span.End.Line && t.Span.Start.Offset > node.span.End.Offset {
+				node.comment.TrailingComment = commentText
 				attached = true
-
 				break
 			}
 		}
@@ -105,186 +109,179 @@ func attachComments(suite *Suite, trivia *TriviaList) {
 			continue
 		}
 
-		// Leading: find the node that starts after this comment
-		for _, span := range spans {
+		// Leading: find the closest node that starts after this comment
+		var closestNode *commentableNode
+		for j := range nodes {
+			node := &nodes[j]
 			// Comment ends before node starts (on previous line or same line before)
-			if t.Span.End.Line < span.Start.Line ||
-				(t.Span.End.Line == span.Start.Line && t.Span.End.Offset < span.Start.Offset) {
-				// Check there's no other node between the comment and this node
-				if isClosestNode(t.Span, span, spans) {
-					if cm[span] == nil {
-						cm[span] = &nodeComments{}
-					}
-
-					cm[span].leading = append(cm[span].leading, commentText)
-
-					break
+			if t.Span.End.Line < node.span.Start.Line ||
+				(t.Span.End.Line == node.span.Start.Line && t.Span.End.Offset < node.span.Start.Offset) {
+				// Check if this is the closest node
+				if closestNode == nil || node.span.Start.Line < closestNode.span.Start.Line ||
+					(node.span.Start.Line == closestNode.span.Start.Line && node.span.Start.Offset < closestNode.span.Start.Offset) {
+					closestNode = node
 				}
 			}
 		}
-	}
 
-	// Now apply the comment map to the actual nodes
-	applyComments(suite, cm)
+		if closestNode != nil {
+			// Check if this comment should be a Suite comment.
+			// Suite comments are before the first declaration AND part of a comment block
+			// that is separated by a blank line from the first declaration (or its doc comments).
+			isFirstDecl := closestNode.span.Start.Line == firstDeclLine
+
+			shouldAttachToSuite := false
+			if isFirstDecl {
+				// Find where the "doc comment block" for the first declaration starts.
+				// Walk backwards from the declaration to find consecutive comments (no blank lines).
+				docBlockStartLine := closestNode.span.Start.Line
+
+				// Find the last comment before the declaration and trace back through
+				// consecutive comments to find where the doc block starts
+				for j := len(comments) - 1; j >= 0; j-- {
+					c := comments[j]
+					if c.Span.End.Line >= closestNode.span.Start.Line {
+						continue // Comment is on or after the declaration
+					}
+					// Check if this comment is consecutive with docBlockStartLine
+					if c.Span.End.Line == docBlockStartLine-1 {
+						docBlockStartLine = c.Span.Start.Line
+					} else if c.Span.End.Line < docBlockStartLine-1 {
+						// There's a gap - this comment is before the doc block
+						break
+					}
+				}
+
+				// This comment should go to Suite if it ends before the doc block starts
+				// (i.e., there's a blank line between this comment and the doc block)
+				shouldAttachToSuite = t.Span.End.Line < docBlockStartLine-1
+			}
+
+			if shouldAttachToSuite {
+				// Comment separated by blank line -> Suite comment
+				suite.LeadingComments = append(suite.LeadingComments, commentText)
+			} else {
+				// Comment directly before node -> leading comment for that node
+				closestNode.comment.LeadingComments = append(closestNode.comment.LeadingComments, commentText)
+			}
+			attached = true
+		}
+
+		// If comment wasn't attached to any declaration (e.g., file with no declarations),
+		// attach to Suite
+		if !attached {
+			suite.LeadingComments = append(suite.LeadingComments, commentText)
+		}
+	}
 }
 
-// applyComments transfers comments from the map to the AST node fields.
-func applyComments(suite *Suite, cm commentMap) {
+// findFirstDeclarationLine returns the line number of the first declaration
+// (import, query, setup, teardown, or scope). Returns 0 if no declarations.
+func findFirstDeclarationLine(suite *Suite) int {
+	if suite == nil {
+		return 0
+	}
+
+	firstLine := 0
+
+	// Check imports
+	for _, imp := range suite.Imports {
+		if firstLine == 0 || imp.Pos.Line < firstLine {
+			firstLine = imp.Pos.Line
+		}
+	}
+
+	// Check queries
+	for _, q := range suite.Queries {
+		if firstLine == 0 || q.Pos.Line < firstLine {
+			firstLine = q.Pos.Line
+		}
+	}
+
+	// Check scopes
+	for _, scope := range suite.Scopes {
+		if firstLine == 0 || scope.Pos.Line < firstLine {
+			firstLine = scope.Pos.Line
+		}
+	}
+
+	return firstLine
+}
+
+// collectCommentableNodes gathers all nodes that can have comments attached.
+// Suite is excluded - it's handled specially for file-level comments.
+func collectCommentableNodes(suite *Suite, nodes *[]commentableNode) {
 	if suite == nil {
 		return
 	}
 
-	// Suite
-	if c := cm[suite.Span()]; c != nil {
-		suite.LeadingComments = c.leading
-		suite.TrailingComment = c.trailing
-	}
+	// NOTE: We intentionally do NOT include Suite here.
+	// Suite only gets comments that are separated by a blank line from
+	// the first declaration.
 
-	// Imports
 	for _, imp := range suite.Imports {
-		if c := cm[imp.Span()]; c != nil {
-			imp.LeadingComments = c.leading
-			imp.TrailingComment = c.trailing
-		}
+		*nodes = append(*nodes, commentableNode{
+			span:    imp.Span(),
+			comment: &imp.CommentMeta,
+		})
 	}
 
-	// Queries
 	for _, q := range suite.Queries {
-		if c := cm[q.Span()]; c != nil {
-			q.LeadingComments = c.leading
-			q.TrailingComment = c.trailing
-		}
+		*nodes = append(*nodes, commentableNode{
+			span:    q.Span(),
+			comment: &q.CommentMeta,
+		})
 	}
 
-	// Scopes
 	for _, scope := range suite.Scopes {
-		applyScopeComments(scope, cm)
+		collectScopeCommentableNodes(scope, nodes)
 	}
 }
 
-func applyScopeComments(scope *QueryScope, cm commentMap) {
+func collectScopeCommentableNodes(scope *QueryScope, nodes *[]commentableNode) {
 	if scope == nil {
 		return
 	}
 
-	if c := cm[scope.Span()]; c != nil {
-		scope.LeadingComments = c.leading
-		scope.TrailingComment = c.trailing
-	}
+	*nodes = append(*nodes, commentableNode{
+		span:    scope.Span(),
+		comment: &scope.CommentMeta,
+	})
 
 	for _, item := range scope.Items {
 		if item.Test != nil {
-			if c := cm[item.Test.Span()]; c != nil {
-				item.Test.LeadingComments = c.leading
-				item.Test.TrailingComment = c.trailing
-			}
+			*nodes = append(*nodes, commentableNode{
+				span:    item.Test.Span(),
+				comment: &item.Test.CommentMeta,
+			})
 		}
 
 		if item.Group != nil {
-			applyGroupComments(item.Group, cm)
+			collectGroupCommentableNodes(item.Group, nodes)
 		}
 	}
 }
 
-func applyGroupComments(group *Group, cm commentMap) {
+func collectGroupCommentableNodes(group *Group, nodes *[]commentableNode) {
 	if group == nil {
 		return
 	}
 
-	if c := cm[group.Span()]; c != nil {
-		group.LeadingComments = c.leading
-		group.TrailingComment = c.trailing
-	}
+	*nodes = append(*nodes, commentableNode{
+		span:    group.Span(),
+		comment: &group.CommentMeta,
+	})
 
 	for _, item := range group.Items {
 		if item.Test != nil {
-			if c := cm[item.Test.Span()]; c != nil {
-				item.Test.LeadingComments = c.leading
-				item.Test.TrailingComment = c.trailing
-			}
+			*nodes = append(*nodes, commentableNode{
+				span:    item.Test.Span(),
+				comment: &item.Test.CommentMeta,
+			})
 		}
 
 		if item.Group != nil {
-			applyGroupComments(item.Group, cm)
-		}
-	}
-}
-
-// isClosestNode checks if targetSpan is the closest node after the comment.
-func isClosestNode(commentSpan, targetSpan Span, allSpans []Span) bool {
-	for _, span := range allSpans {
-		// Skip the target itself
-		if span == targetSpan {
-			continue
-		}
-		// Check if this span is between the comment and target
-		if span.Start.Line > commentSpan.End.Line && span.Start.Line < targetSpan.Start.Line {
-			return false
-		}
-
-		if span.Start.Line == commentSpan.End.Line &&
-			span.Start.Offset > commentSpan.End.Offset &&
-			span.Start.Line < targetSpan.Start.Line {
-			return false
-		}
-	}
-
-	return true
-}
-
-// collectSpans gathers all spans from the AST.
-func collectSpans(suite *Suite, spans *[]Span) {
-	if suite == nil {
-		return
-	}
-
-	*spans = append(*spans, suite.Span())
-
-	for _, imp := range suite.Imports {
-		*spans = append(*spans, imp.Span())
-	}
-
-	for _, q := range suite.Queries {
-		*spans = append(*spans, q.Span())
-	}
-
-	for _, scope := range suite.Scopes {
-		collectScopeSpans(scope, spans)
-	}
-}
-
-func collectScopeSpans(scope *QueryScope, spans *[]Span) {
-	if scope == nil {
-		return
-	}
-
-	*spans = append(*spans, scope.Span())
-
-	for _, item := range scope.Items {
-		if item.Test != nil {
-			*spans = append(*spans, item.Test.Span())
-		}
-
-		if item.Group != nil {
-			collectGroupSpans(item.Group, spans)
-		}
-	}
-}
-
-func collectGroupSpans(group *Group, spans *[]Span) {
-	if group == nil {
-		return
-	}
-
-	*spans = append(*spans, group.Span())
-
-	for _, item := range group.Items {
-		if item.Test != nil {
-			*spans = append(*spans, item.Test.Span())
-		}
-
-		if item.Group != nil {
-			collectGroupSpans(item.Group, spans)
+			collectGroupCommentableNodes(item.Group, nodes)
 		}
 	}
 }

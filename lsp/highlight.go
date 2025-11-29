@@ -13,6 +13,7 @@ import (
 // DocumentHighlight handles textDocument/documentHighlight requests.
 // Highlights all occurrences of the symbol under the cursor within the same document.
 func (s *Server) DocumentHighlight(_ context.Context, params *protocol.DocumentHighlightParams) ([]protocol.DocumentHighlight, error) {
+	defer s.traceHandler("DocumentHighlight")()
 	s.logger.Debug("DocumentHighlight",
 		zap.String("uri", string(params.TextDocument.URI)),
 		zap.Uint32("line", params.Position.Line),
@@ -36,7 +37,7 @@ func (s *Server) DocumentHighlight(_ context.Context, params *protocol.DocumentH
 
 	case *scaf.QueryScope:
 		// On a query scope - highlight scope + query definition + other scopes
-		highlights = s.highlightQueryUsages(doc, node.QueryName)
+		highlights = s.highlightQueryUsages(doc, node.FunctionName)
 
 	case *scaf.Import:
 		// On an import - highlight import + all usages
@@ -46,9 +47,10 @@ func (s *Server) DocumentHighlight(_ context.Context, params *protocol.DocumentH
 	case *scaf.SetupCall:
 		// Check if on the module name or query name
 		if tokenCtx.Token != nil {
-			if tokenCtx.Token.Value == node.Module {
+			switch tokenCtx.Token.Value {
+			case node.Module:
 				highlights = s.highlightImportUsages(doc, node.Module)
-			} else if tokenCtx.Token.Value == node.Query {
+			case node.Query:
 				// Could highlight the query in the imported module, but that's cross-file
 				// For now, highlight all setup calls to the same query
 				highlights = s.highlightSetupCallQuery(doc, node.Module, node.Query)
@@ -96,7 +98,7 @@ func (s *Server) highlightQueryUsages(doc *Document, queryName string) []protoco
 	var highlights []protocol.DocumentHighlight
 
 	// Find the query definition
-	for _, q := range doc.Analysis.Suite.Queries {
+	for _, q := range doc.Analysis.Suite.Functions {
 		if q.Name == queryName {
 			highlights = append(highlights, protocol.DocumentHighlight{
 				Range: queryNameRange(q),
@@ -108,7 +110,7 @@ func (s *Server) highlightQueryUsages(doc *Document, queryName string) []protoco
 
 	// Find all query scopes referencing this query
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName == queryName {
+		if scope.FunctionName == queryName {
 			highlights = append(highlights, protocol.DocumentHighlight{
 				Range: scopeNameRange(scope),
 				Kind:  protocol.DocumentHighlightKindRead,
@@ -389,7 +391,7 @@ func (s *Server) highlightParameterUsages(doc *Document, queryScope, paramKey st
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 
@@ -444,7 +446,7 @@ func (s *Server) highlightReturnFieldUsages(doc *Document, queryScope, fieldKey 
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 

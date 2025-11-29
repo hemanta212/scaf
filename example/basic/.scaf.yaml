@@ -1,6 +1,11 @@
-dialect: cypher
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rlch/scaf/refs/heads/master/.scaf.schema.json
 
-connection:
+neo4j:
   uri: bolt://localhost:7687
   username: neo4j
   password: password
+
+generate:
+  adapter: neogo
+  schema: .scaf-schema.yaml
+  package: movies

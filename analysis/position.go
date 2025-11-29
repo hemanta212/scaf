@@ -26,7 +26,7 @@ func NodeAtPosition(f *AnalyzedFile, pos lexer.Position) scaf.Node {
 	}
 
 	// Check queries.
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		if containsPosition(q.Span(), pos) {
 			best = q
 		}
@@ -212,7 +212,7 @@ func QueryAtPosition(f *AnalyzedFile, pos lexer.Position) *QuerySymbol {
 		if pos.Line == scope.Pos.Line {
 			// Position is on the scope declaration line.
 			// Return the referenced query.
-			if q, ok := f.Symbols.Queries[scope.QueryName]; ok {
+			if q, ok := f.Symbols.Queries[scope.FunctionName]; ok {
 				return q
 			}
 		}
@@ -274,7 +274,7 @@ func TokenAtPosition(f *AnalyzedFile, pos lexer.Position) *lexer.Token {
 	}
 
 	// Check queries
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		for i := range q.Tokens {
 			tok := &q.Tokens[i]
 			if tokenContainsPosition(tok, pos) {
@@ -533,7 +533,7 @@ func PrevTokenAtPosition(f *AnalyzedFile, pos lexer.Position) *lexer.Token {
 	}
 
 	// Check queries
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		for i := range q.Tokens {
 			checkToken(&q.Tokens[i])
 		}
@@ -723,7 +723,7 @@ func GetTokenContext(f *AnalyzedFile, pos lexer.Position) *TokenContext {
 	// Determine context from node hierarchy
 	for _, scope := range f.Suite.Scopes {
 		if containsPosition(scope.Span(), pos) {
-			ctx.QueryScope = scope.QueryName
+			ctx.QueryScope = scope.FunctionName
 
 			// Check if in setup
 			if scope.Setup != nil && containsPosition(scope.Setup.Span(), pos) {

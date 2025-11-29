@@ -2,7 +2,6 @@ package participle
 
 import (
 	"fmt"
-	"io"
 	"reflect"
 	"regexp"
 	"strings"
@@ -37,31 +36,9 @@ type RecoveryStrategy interface {
 
 // recoveryConfig holds recovery configuration for a parse context.
 type recoveryConfig struct {
-	strategies  []RecoveryStrategy // Recovery strategies
-	errors      []error
-	maxErrors   int
-	traceWriter io.Writer // If non-nil, write recovery trace to this writer
-}
-
-// recoveryResult holds the result of a recovery attempt with additional context.
-type recoveryResult struct {
-	recovered       bool
-	values          []reflect.Value
-	err             error
-	recoveredTokens []lexer.Token // Tokens that were consumed during recovery
-	strategyName    string
-	progressed      bool // Whether the lexer position advanced during recovery
-}
-
-// EnhancedRecoveryStrategy is an optional interface for strategies that provide
-// enhanced recovery information including recovered tokens.
-type EnhancedRecoveryStrategy interface {
-	RecoveryStrategy
-	// RecoverWithContext performs recovery and returns detailed information about
-	// what tokens were consumed. This is used for populating recovery metadata fields.
-	RecoverWithContext(ctx *parseContext, err error, parent reflect.Value) recoveryResult
-	// Name returns a human-readable name for this strategy (used in error messages).
-	Name() string
+	strategies []RecoveryStrategy
+	errors     []error
+	maxErrors  int
 }
 
 // RecoveryError wraps multiple errors that occurred during parsing with recovery.
@@ -89,105 +66,6 @@ func (r *RecoveryError) Unwrap() error {
 		return nil
 	}
 	return r.Errors[0]
-}
-
-// RecoveredParseError represents a parse error that was recovered from,
-// with additional context about what tokens were consumed during recovery and where.
-type RecoveredParseError struct {
-	// Pos is the position where the error occurred.
-	Pos lexer.Position
-	// EndPos is the position where recovery ended (after recovered tokens).
-	EndPos lexer.Position
-	// Expected is the error message describing what was expected.
-	Expected string
-	// Label is a descriptive name for what was being parsed (e.g., "expression", "statement").
-	Label string
-	// RecoveredTokens are the tokens that were consumed during recovery.
-	RecoveredTokens []lexer.Token
-	// Strategy is the name of the recovery strategy that succeeded.
-	Strategy string
-	// Underlying is the original error that triggered recovery.
-	Underlying error
-}
-
-func (e *RecoveredParseError) Error() string {
-	return FormatError(e)
-}
-
-func (e *RecoveredParseError) Position() lexer.Position {
-	return e.Pos
-}
-
-// Message implements the Error interface, providing a richly formatted error message.
-func (e *RecoveredParseError) Message() string {
-	return e.buildMessage()
-}
-
-// formatRecoveredTokens returns a human-readable representation of recovered tokens.
-func (e *RecoveredParseError) formatRecoveredTokens() string {
-	if len(e.RecoveredTokens) == 0 {
-		return ""
-	}
-	if len(e.RecoveredTokens) == 1 {
-		return fmt.Sprintf("%q", e.RecoveredTokens[0].Value)
-	}
-	if len(e.RecoveredTokens) <= 3 {
-		var parts []string
-		for _, t := range e.RecoveredTokens {
-			parts = append(parts, fmt.Sprintf("%q", t.Value))
-		}
-		return strings.Join(parts, ", ")
-	}
-	// For longer sequences, show first 2 and count
-	return fmt.Sprintf("%q, %q, ... (%d tokens total)",
-		e.RecoveredTokens[0].Value,
-		e.RecoveredTokens[1].Value,
-		len(e.RecoveredTokens))
-}
-
-func (e *RecoveredParseError) buildMessage() string {
-	var parts []string
-
-	// Start with label context if available
-	if e.Label != "" {
-		parts = append(parts, fmt.Sprintf("in %s", e.Label))
-	}
-
-	// Add the core error message
-	parts = append(parts, e.Expected)
-
-	// Add information about what was recovered
-	if len(e.RecoveredTokens) > 0 {
-		parts = append(parts, fmt.Sprintf("(skipped %s)", e.formatRecoveredTokens()))
-	}
-
-	return strings.Join(parts, ": ")
-}
-
-// Unwrap returns the underlying error.
-func (e *RecoveredParseError) Unwrap() error {
-	return e.Underlying
-}
-
-// makeRecoveredError creates a RecoveredParseError with proper context.
-func makeRecoveredError(
-	pos lexer.Position,
-	endPos lexer.Position,
-	expected string,
-	label string,
-	recoveredTokens []lexer.Token,
-	strategy string,
-	underlying error,
-) *RecoveredParseError {
-	return &RecoveredParseError{
-		Pos:             pos,
-		EndPos:          endPos,
-		Expected:        expected,
-		Label:           label,
-		RecoveredTokens: recoveredTokens,
-		Strategy:        strategy,
-		Underlying:      underlying,
-	}
 }
 
 // SkipUntilStrategy skips tokens until one of the synchronization tokens is found.
@@ -236,52 +114,30 @@ func (s *SkipUntilStrategy) WithFallback(f func() interface{}) *SkipUntilStrateg
 }
 
 func (s *SkipUntilStrategy) Recover(ctx *parseContext, err error, parent reflect.Value) (bool, []reflect.Value, error) {
-	result := s.RecoverWithContext(ctx, err, parent)
-	return result.recovered, result.values, result.err
-}
-
-// RecoverWithContext implements EnhancedRecoveryStrategy.
-func (s *SkipUntilStrategy) RecoverWithContext(ctx *parseContext, err error, parent reflect.Value) recoveryResult {
 	syncSet := make(map[string]bool)
 	for _, t := range s.SyncTokens {
 		syncSet[t] = true
 	}
 
-	var recoveredTokens []lexer.Token
-
 	// Skip tokens until we find a sync token or EOF
 	for {
 		token := ctx.Peek()
 		if token.EOF() {
-			return recoveryResult{recovered: false, err: err, recoveredTokens: recoveredTokens, strategyName: s.Name()}
+			return false, nil, err
 		}
 		if syncSet[token.Value] {
 			if s.ConsumeSyncToken {
-				recoveredTokens = append(recoveredTokens, *ctx.Next())
+				ctx.Next()
 			}
 			// Recovery successful
 			var values []reflect.Value
 			if s.Fallback != nil {
 				values = []reflect.Value{reflect.ValueOf(s.Fallback())}
 			}
-			return recoveryResult{
-				recovered:       true,
-				values:          values,
-				err:             err,
-				recoveredTokens: recoveredTokens,
-				strategyName:    s.Name(),
-			}
+			return true, values, err
 		}
-		recoveredTokens = append(recoveredTokens, *ctx.Next())
+		ctx.Next()
 	}
-}
-
-// Name implements EnhancedRecoveryStrategy.
-func (s *SkipUntilStrategy) Name() string {
-	if s.ConsumeSyncToken {
-		return "skip_past"
-	}
-	return "skip_until"
 }
 
 // SkipThenRetryUntilStrategy skips tokens and retries parsing until successful
@@ -294,9 +150,6 @@ func (s *SkipUntilStrategy) Name() string {
 // 4. If parsing fails, repeats from step 1
 //
 // This continues until a termination token is found or EOF is reached.
-//
-// Note: This strategy requires special handling in recoveryNode to actually
-// retry the inner parser. When used via Recover(), it signals retry mode.
 type SkipThenRetryUntilStrategy struct {
 	// Tokens that terminate the recovery attempt (stop trying)
 	UntilTokens []string
@@ -318,8 +171,6 @@ func (s *SkipThenRetryUntilStrategy) WithMaxSkip(max int) *SkipThenRetryUntilStr
 	return s
 }
 
-// Recover implements simple skip behavior.
-// The actual retry logic is in recoveryNode.Parse for retry-capable strategies.
 func (s *SkipThenRetryUntilStrategy) Recover(ctx *parseContext, err error, parent reflect.Value) (bool, []reflect.Value, error) {
 	untilSet := make(map[string]bool)
 	for _, t := range s.UntilTokens {
@@ -332,38 +183,11 @@ func (s *SkipThenRetryUntilStrategy) Recover(ctx *parseContext, err error, paren
 		return false, nil, err
 	}
 
-	// Skip one token - caller may retry
+	// Skip one token and signal that the caller should retry parsing.
+	// The caller (parseContext) will call this strategy again if parsing
+	// fails again, allowing incremental recovery.
 	ctx.Next()
 	return true, nil, err
-}
-
-// IsRetryStrategy returns true, indicating this strategy supports retry semantics.
-func (s *SkipThenRetryUntilStrategy) IsRetryStrategy() bool {
-	return true
-}
-
-// ShouldStop returns true if we've hit a termination condition.
-func (s *SkipThenRetryUntilStrategy) ShouldStop(ctx *parseContext) bool {
-	token := ctx.Peek()
-	if token.EOF() {
-		return true
-	}
-	for _, t := range s.UntilTokens {
-		if token.Value == t {
-			return true
-		}
-	}
-	return false
-}
-
-// RetryStrategy is an optional interface for strategies that support
-// retry-at-each-position semantics (like Chumsky's skip_then_retry_until).
-type RetryStrategy interface {
-	RecoveryStrategy
-	// IsRetryStrategy returns true for strategies that want retry behavior.
-	IsRetryStrategy() bool
-	// ShouldStop returns true when the strategy should give up.
-	ShouldStop(ctx *parseContext) bool
 }
 
 // NestedDelimitersStrategy recovers by finding balanced delimiters.
@@ -402,12 +226,6 @@ func (n *NestedDelimitersStrategy) WithFallback(f func() interface{}) *NestedDel
 }
 
 func (n *NestedDelimitersStrategy) Recover(ctx *parseContext, err error, parent reflect.Value) (bool, []reflect.Value, error) {
-	result := n.RecoverWithContext(ctx, err, parent)
-	return result.recovered, result.values, result.err
-}
-
-// RecoverWithContext implements EnhancedRecoveryStrategy.
-func (n *NestedDelimitersStrategy) RecoverWithContext(ctx *parseContext, err error, parent reflect.Value) recoveryResult {
 	// Build delimiter maps
 	openers := map[string]string{n.Start: n.End}
 	closers := map[string]bool{n.End: true}
@@ -418,7 +236,6 @@ func (n *NestedDelimitersStrategy) RecoverWithContext(ctx *parseContext, err err
 
 	// Track nesting depth for each delimiter type
 	depths := make(map[string]int)
-	var recoveredTokens []lexer.Token
 
 	// We start inside the delimited region, so we're looking for the closing delimiter
 	// at depth 0 (or the matching closer for our opener)
@@ -428,7 +245,7 @@ func (n *NestedDelimitersStrategy) RecoverWithContext(ctx *parseContext, err err
 	for {
 		token := ctx.Peek()
 		if token.EOF() {
-			return recoveryResult{recovered: false, err: err, recoveredTokens: recoveredTokens, strategyName: n.Name()}
+			return false, nil, err
 		}
 
 		// Check if this opens a nested delimiter
@@ -450,30 +267,19 @@ func (n *NestedDelimitersStrategy) RecoverWithContext(ctx *parseContext, err err
 					if n.Fallback != nil {
 						values = []reflect.Value{reflect.ValueOf(n.Fallback())}
 					}
-					return recoveryResult{
-						recovered:       true,
-						values:          values,
-						err:             err,
-						recoveredTokens: recoveredTokens,
-						strategyName:    n.Name(),
-					}
+					return true, values, err
 				}
 			} else if depths[token.Value] > 0 {
 				depths[token.Value]--
 			} else {
 				// Mismatched closer - this is an error, but we can try to continue
 				// by treating it as the end of our recovery region
-				return recoveryResult{recovered: false, err: err, recoveredTokens: recoveredTokens, strategyName: n.Name()}
+				return false, nil, err
 			}
 		}
 
-		recoveredTokens = append(recoveredTokens, *ctx.Next())
+		ctx.Next()
 	}
-}
-
-// Name implements EnhancedRecoveryStrategy.
-func (n *NestedDelimitersStrategy) Name() string {
-	return "nested_delimiters"
 }
 
 // TokenSyncStrategy synchronizes on specific token types rather than values.
@@ -498,47 +304,28 @@ func SyncToTokenType(types ...lexer.TokenType) *TokenSyncStrategy {
 }
 
 func (t *TokenSyncStrategy) Recover(ctx *parseContext, err error, parent reflect.Value) (bool, []reflect.Value, error) {
-	result := t.RecoverWithContext(ctx, err, parent)
-	return result.recovered, result.values, result.err
-}
-
-// RecoverWithContext implements EnhancedRecoveryStrategy.
-func (t *TokenSyncStrategy) RecoverWithContext(ctx *parseContext, err error, parent reflect.Value) recoveryResult {
 	syncSet := make(map[lexer.TokenType]bool)
 	for _, tt := range t.SyncTypes {
 		syncSet[tt] = true
 	}
 
-	var recoveredTokens []lexer.Token
-
 	for {
 		token := ctx.Peek()
 		if token.EOF() {
-			return recoveryResult{recovered: false, err: err, recoveredTokens: recoveredTokens, strategyName: t.Name()}
+			return false, nil, err
 		}
 		if syncSet[token.Type] {
 			if t.ConsumeSyncToken {
-				recoveredTokens = append(recoveredTokens, *ctx.Next())
+				ctx.Next()
 			}
 			var values []reflect.Value
 			if t.Fallback != nil {
 				values = []reflect.Value{reflect.ValueOf(t.Fallback())}
 			}
-			return recoveryResult{
-				recovered:       true,
-				values:          values,
-				err:             err,
-				recoveredTokens: recoveredTokens,
-				strategyName:    t.Name(),
-			}
+			return true, values, err
 		}
-		recoveredTokens = append(recoveredTokens, *ctx.Next())
+		ctx.Next()
 	}
-}
-
-// Name implements EnhancedRecoveryStrategy.
-func (t *TokenSyncStrategy) Name() string {
-	return "sync_to_token_type"
 }
 
 // CompositeStrategy tries multiple strategies in order until one succeeds.
@@ -552,41 +339,17 @@ func TryStrategies(strategies ...RecoveryStrategy) *CompositeStrategy {
 }
 
 func (c *CompositeStrategy) Recover(ctx *parseContext, err error, parent reflect.Value) (bool, []reflect.Value, error) {
-	result := c.RecoverWithContext(ctx, err, parent)
-	return result.recovered, result.values, result.err
-}
-
-// RecoverWithContext implements EnhancedRecoveryStrategy.
-func (c *CompositeStrategy) RecoverWithContext(ctx *parseContext, err error, parent reflect.Value) recoveryResult {
 	checkpoint := ctx.saveCheckpoint()
 
 	for _, strategy := range c.Strategies {
-		// Try enhanced recovery first if available
-		if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
-			result := enhanced.RecoverWithContext(ctx, err, parent)
-			if result.recovered {
-				return result
-			}
-		} else {
-			recovered, values, newErr := strategy.Recover(ctx, err, parent)
-			if recovered {
-				return recoveryResult{
-					recovered:    true,
-					values:       values,
-					err:          newErr,
-					strategyName: c.Name(),
-				}
-			}
+		recovered, values, newErr := strategy.Recover(ctx, err, parent)
+		if recovered {
+			return true, values, newErr
 		}
 		// Reset cursor for next strategy attempt
 		ctx.restoreCheckpoint(checkpoint)
 	}
-	return recoveryResult{recovered: false, err: err, strategyName: c.Name()}
-}
-
-// Name implements EnhancedRecoveryStrategy.
-func (c *CompositeStrategy) Name() string {
-	return "composite"
+	return false, nil, err
 }
 
 // Helper functions for checkpoint-based recovery
@@ -637,25 +400,16 @@ type recoverableNode interface {
 var recoveryTagPattern = regexp.MustCompile(`^(\w+)\((.*)\)$`)
 
 // parseRecoveryTag parses a recovery struct tag into a RecoveryStrategy.
-//
-// Supported strategy formats:
+// Supported formats:
 //   - skip_until(tok1, tok2, ...)     - skip until one of the tokens, don't consume
 //   - skip_past(tok1, tok2, ...)      - skip until and consume the sync token
 //   - nested(start, end)              - skip to balanced delimiter
 //   - nested(start, end, [s1, e1])    - with additional delimiter pairs
-//   - retry(tok1, tok2, ...)          - skip and retry until tokens (alias: retry_until)
+//   - retry_until(tok1, tok2, ...)    - skip and retry until tokens
+//   - label:name                      - set a label for error messages
 //
-// Multiple strategies are separated by semicolon (;):
-//   - "nested((, )); skip_until(;)"
-//
-// Legacy syntax with pipe (|) is also supported for backwards compatibility:
-//   - "nested((, ))|skip_until(;)"
-//
-// Labels should use a separate `label` struct tag for clarity:
-//   - `parser:"@@" recover:"skip_until(;)" label:"expression"`
-//
-// Legacy inline label syntax is still supported:
-//   - "label:name; skip_until(;)"
+// Multiple strategies can be combined with |:
+//   - nested((, ))|skip_until(;)
 func parseRecoveryTag(tag string) (*nodeRecoveryConfig, error) {
 	if tag == "" {
 		return nil, nil
@@ -663,19 +417,26 @@ func parseRecoveryTag(tag string) (*nodeRecoveryConfig, error) {
 
 	config := &nodeRecoveryConfig{}
 
-	// Normalize separators: support both ; and | for backwards compatibility
-	// Replace | with ; for uniform processing
-	tag = strings.ReplaceAll(tag, "|", ";")
+	// Check for label prefix: "label:name|strategies..."
+	if strings.HasPrefix(tag, "label:") {
+		parts := strings.SplitN(tag[6:], "|", 2)
+		config.label = strings.TrimSpace(parts[0])
+		if len(parts) > 1 {
+			tag = parts[1]
+		} else {
+			return config, nil
+		}
+	}
 
-	// Split by ; for multiple strategies
-	strategyStrs := splitStrategies(tag)
+	// Split by | for multiple strategies
+	strategyStrs := strings.Split(tag, "|")
 	for _, stratStr := range strategyStrs {
 		stratStr = strings.TrimSpace(stratStr)
 		if stratStr == "" {
 			continue
 		}
 
-		// Check for label prefix (legacy inline syntax)
+		// Check for label anywhere
 		if strings.HasPrefix(stratStr, "label:") {
 			config.label = strings.TrimSpace(stratStr[6:])
 			continue
@@ -694,40 +455,6 @@ func parseRecoveryTag(tag string) (*nodeRecoveryConfig, error) {
 		return nil, nil
 	}
 	return config, nil
-}
-
-// splitStrategies splits a recover tag by semicolons, but respects parentheses.
-// This allows tokens like ";" inside strategy arguments.
-func splitStrategies(tag string) []string {
-	var result []string
-	var current strings.Builder
-	depth := 0
-
-	for _, r := range tag {
-		switch r {
-		case '(':
-			depth++
-			current.WriteRune(r)
-		case ')':
-			depth--
-			current.WriteRune(r)
-		case ';':
-			if depth == 0 {
-				result = append(result, current.String())
-				current.Reset()
-			} else {
-				current.WriteRune(r)
-			}
-		default:
-			current.WriteRune(r)
-		}
-	}
-
-	if current.Len() > 0 {
-		result = append(result, current.String())
-	}
-
-	return result
 }
 
 // parseSingleRecoveryStrategy parses a single recovery strategy expression.
@@ -755,10 +482,10 @@ func parseSingleRecoveryStrategy(expr string) (RecoveryStrategy, error) {
 		}
 		return SkipPast(tokens...), nil
 
-	case "retry_until", "retry":
+	case "retry_until":
 		tokens := parseTokenList(argsStr)
 		if len(tokens) == 0 {
-			return nil, fmt.Errorf("retry requires at least one token")
+			return nil, fmt.Errorf("retry_until requires at least one token")
 		}
 		return SkipThenRetryUntil(tokens...), nil
 
@@ -896,11 +623,10 @@ func (r *recoveryNode) GoString() string { return fmt.Sprintf("recovery{%s}", r.
 func (r *recoveryNode) Parse(ctx *parseContext, parent reflect.Value) ([]reflect.Value, error) {
 	// Save checkpoint for potential recovery
 	checkpoint := ctx.saveCheckpoint()
-	startPos := ctx.Peek().Pos
 
 	// Try parsing normally
 	values, err := r.inner.Parse(ctx, parent)
-
+	
 	// If parsing succeeded (values != nil, err == nil), return normally
 	if err == nil && values != nil {
 		return values, nil
@@ -913,7 +639,6 @@ func (r *recoveryNode) Parse(ctx *parseContext, parent reflect.Value) ([]reflect
 
 	// Check if we've exceeded max errors
 	if ctx.recovery != nil && ctx.recovery.maxErrors > 0 && len(ctx.recoveryErrors) >= ctx.recovery.maxErrors {
-		ctx.traceRecovery("max errors (%d) reached, not attempting recovery", ctx.recovery.maxErrors)
 		return values, err
 	}
 
@@ -926,127 +651,30 @@ func (r *recoveryNode) Parse(ctx *parseContext, parent reflect.Value) ([]reflect
 		reportErr = &UnexpectedTokenError{Unexpected: *tok, expectNode: r.inner}
 	}
 
-	// Extract expected message from the underlying error
-	var expectedMsg string
-	if perr, ok := reportErr.(Error); ok {
-		expectedMsg = perr.Message()
-	} else {
-		expectedMsg = reportErr.Error()
-	}
-
-	// Trace recovery attempt
-	ctx.traceRecoveryAttempt(startPos, reportErr, r.inner.String())
-
 	// Try each recovery strategy
 	for _, strategy := range r.recovery.strategies {
 		ctx.restoreCheckpoint(checkpoint)
-		currentPos := ctx.Peek().Pos
-
-		// Check if this is a retry strategy (like skip_then_retry_until)
-		if retryStrat, ok := strategy.(RetryStrategy); ok && retryStrat.IsRetryStrategy() {
-			ctx.traceRecoveryStrategy("skip_then_retry", currentPos)
-			// Retry strategy: skip tokens one at a time and retry parsing at each position
-			recoveredValues, recoveredTokens, recovered := r.retryRecovery(ctx, retryStrat, reportErr, parent)
-			if recovered {
-				endPos := ctx.Peek().Pos
-				ctx.traceRecoverySuccess("skip_then_retry", len(recoveredTokens), endPos)
-				r.recordEnhancedRecoveryError(ctx, startPos, endPos, expectedMsg, recoveredTokens, "skip_then_retry", reportErr)
-				if len(recoveredValues) > 0 {
-					return recoveredValues, nil
-				}
-				return []reflect.Value{}, nil
-			}
-			ctx.traceRecoveryFailed("skip_then_retry", "could not find valid parse position")
-			continue
-		}
-
-		// Try enhanced recovery first if available
-		if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
-			strategyName := enhanced.Name()
-			ctx.traceRecoveryStrategy(strategyName, currentPos)
-			result := enhanced.RecoverWithContext(ctx, reportErr, parent)
-			if result.recovered {
-				endPos := ctx.Peek().Pos
-				ctx.traceRecoverySuccess(strategyName, len(result.recoveredTokens), endPos)
-				r.recordEnhancedRecoveryError(ctx, startPos, endPos, expectedMsg, result.recoveredTokens, result.strategyName, reportErr)
-				if len(result.values) > 0 {
-					return result.values, nil
-				}
-				return []reflect.Value{}, nil
-			}
-			ctx.traceRecoveryFailed(strategyName, "strategy returned false")
-			continue
-		}
-
-		// Regular strategy (fallback)
-		ctx.traceRecoveryStrategy("unknown", currentPos)
-		recovered, recoveredValues, _ := strategy.Recover(ctx, reportErr, parent)
+		recovered, recoveredValues, newErr := strategy.Recover(ctx, reportErr, parent)
 		if recovered {
-			endPos := ctx.Peek().Pos
-			ctx.traceRecoverySuccess("unknown", 0, endPos)
-			r.recordEnhancedRecoveryError(ctx, startPos, endPos, expectedMsg, nil, "unknown", reportErr)
+			// Wrap error with label if present
+			if r.recovery.label != "" {
+				if perr, ok := newErr.(Error); ok {
+					newErr = Errorf(perr.Position(), "in %s: %s", r.recovery.label, perr.Message())
+				}
+			}
+			ctx.addRecoveryError(newErr)
 			if len(recoveredValues) > 0 {
 				return recoveredValues, nil
 			}
+			// Return empty slice to indicate recovery succeeded (matched but skipped)
+			// This is different from nil which means "no match"
 			return []reflect.Value{}, nil
 		}
-		ctx.traceRecoveryFailed("unknown", "strategy returned false")
 	}
 
 	// No strategy succeeded, restore and return original result
-	ctx.traceRecoveryAllFailed()
 	ctx.restoreCheckpoint(checkpoint)
 	return values, err
-}
-
-// retryRecovery implements the skip-then-retry-at-each-position behavior.
-// Returns recovered values, recovered tokens, and whether recovery succeeded.
-func (r *recoveryNode) retryRecovery(ctx *parseContext, strategy RetryStrategy, originalErr error, parent reflect.Value) ([]reflect.Value, []lexer.Token, bool) {
-	// Get max skip from the strategy if it's our SkipThenRetryUntilStrategy
-	maxSkip := 100
-	if stru, ok := strategy.(*SkipThenRetryUntilStrategy); ok {
-		if stru.MaxSkip > 0 {
-			maxSkip = stru.MaxSkip
-		}
-	}
-
-	var recoveredTokens []lexer.Token
-	for len(recoveredTokens) < maxSkip {
-		// Check if we should stop (hit termination token or EOF)
-		if strategy.ShouldStop(ctx) {
-			return nil, recoveredTokens, false
-		}
-
-		// Skip one token
-		recoveredTokens = append(recoveredTokens, *ctx.Next())
-
-		// Try to parse again
-		values, err := r.inner.Parse(ctx, parent)
-
-		// If parsing succeeded (values != nil, no error), we recovered!
-		if err == nil && values != nil {
-			return values, recoveredTokens, true
-		}
-
-		// If we got an error but made progress, that's also recovery
-		// (we found a valid starting point even if parsing failed later)
-	}
-
-	return nil, recoveredTokens, false
-}
-
-// recordEnhancedRecoveryError records a recovery error with rich context.
-func (r *recoveryNode) recordEnhancedRecoveryError(ctx *parseContext, startPos, endPos lexer.Position, message string, recoveredTokens []lexer.Token, strategyName string, underlying error) {
-	err := makeRecoveredError(
-		startPos,
-		endPos,
-		message,
-		r.recovery.label,
-		recoveredTokens,
-		strategyName,
-		underlying,
-	)
-	ctx.addRecoveryError(err)
 }
 
 // SetRecovery implements recoverableNode.

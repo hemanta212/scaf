@@ -18,7 +18,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "basic query and test",
 			input: `
-				query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+				fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 				GetUser {
 					test "finds user" {
 						$id: 1
@@ -27,12 +27,12 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{
+				Functions: []*scaf.Query{
 					{Name: "GetUser", Body: "MATCH (u:User) RETURN u"},
 				},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "GetUser",
+						FunctionName: "GetUser",
 						Items: []*scaf.TestOrGroup{
 							{
 								Test: &scaf.Test{
@@ -51,18 +51,18 @@ func TestParse(t *testing.T) {
 		{
 			name: "global setup",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				setup ` + "`CREATE (:User)`" + `
 				Q {
 					test "t" {}
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Setup: &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
 				},
@@ -71,17 +71,17 @@ func TestParse(t *testing.T) {
 		{
 			name: "scope setup",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup ` + "`SCOPE SETUP`" + `
 					test "t" {}
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Setup: &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
 						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
@@ -91,7 +91,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "test setup",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						setup ` + "`TEST SETUP`" + `
@@ -99,10 +99,10 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{Test: &scaf.Test{Name: "t", Setup: &scaf.SetupClause{Inline: ptr("TEST SETUP")}}},
 						},
@@ -113,7 +113,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "group with tests",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group "users" {
 						test "a" { $x: 1 }
@@ -122,10 +122,10 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{
 								Group: &scaf.Group{
@@ -154,7 +154,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "nested groups",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group "level1" {
 						group "level2" {
@@ -164,10 +164,10 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{
 								Group: &scaf.Group{
@@ -190,20 +190,20 @@ func TestParse(t *testing.T) {
 		{
 			name: "assertion block",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert ` + "`MATCH (n) RETURN count(n) as c`" + ` {
-							c == 1
+							(c == 1)
 						}
 					}
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{
 								Test: &scaf.Test{
@@ -213,13 +213,11 @@ func TestParse(t *testing.T) {
 											Query: &scaf.AssertQuery{
 												Inline: ptr("MATCH (n) RETURN count(n) as c"),
 											},
-											Conditions: []*scaf.Expr{
-												{ExprTokens: []*scaf.ExprToken{
-													{Ident: ptr("c")},
-													{Op: ptr("==")},
-													{Number: ptr("1")},
-												}},
-											},
+											Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+												{Ident: ptr("c")},
+												{Op: ptr("==")},
+												{Number: ptr("1")},
+											}}),
 										},
 									},
 								},
@@ -232,20 +230,20 @@ func TestParse(t *testing.T) {
 		{
 			name: "assert with field ref param",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert OtherQuery($id: u.id) {
-							count > 0
+							(count > 0)
 						}
 					}
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{
 								Test: &scaf.Test{
@@ -258,13 +256,11 @@ func TestParse(t *testing.T) {
 													{Name: "$id", Value: &scaf.ParamValue{FieldRef: &scaf.DottedIdent{Parts: []string{"u", "id"}}}},
 												},
 											},
-											Conditions: []*scaf.Expr{
-												{ExprTokens: []*scaf.ExprToken{
-													{Ident: ptr("count")},
-													{Op: ptr(">")},
-													{Number: ptr("0")},
-												}},
-											},
+											Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+												{Ident: ptr("count")},
+												{Op: ptr(">")},
+												{Number: ptr("0")},
+											}}),
 										},
 									},
 								},
@@ -277,43 +273,43 @@ func TestParse(t *testing.T) {
 		{
 			name: "multiple queries and scopes",
 			input: `
-				query A ` + "`A`" + `
-				query B ` + "`B`" + `
+				fn A() ` + "`A`" + `
+				fn B() ` + "`B`" + `
 				A { test "a" {} }
 				B { test "b" {} }
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{
+				Functions: []*scaf.Query{
 					{Name: "A", Body: "A"},
 					{Name: "B", Body: "B"},
 				},
 				Scopes: []*scaf.QueryScope{
-					{QueryName: "A", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "a"}}}},
-					{QueryName: "B", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "b"}}}},
+					{FunctionName: "A", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "a"}}}},
+					{FunctionName: "B", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "b"}}}},
 				},
 			},
 		},
 		{
 			name: "global teardown",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				setup ` + "`CREATE (:User)`" + `
 				teardown ` + "`MATCH (u:User) DELETE u`" + `
 				Q { test "t" {} }
 			`,
 			expected: &scaf.Suite{
-				Queries:  []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions:  []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Setup: &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
 				Teardown: ptr("MATCH (u:User) DELETE u"),
 				Scopes: []*scaf.QueryScope{
-					{QueryName: "Q", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}}},
+					{FunctionName: "Q", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}}},
 				},
 			},
 		},
 		{
 			name: "scope teardown",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup ` + "`SCOPE SETUP`" + `
 					teardown ` + "`SCOPE TEARDOWN`" + `
@@ -321,10 +317,10 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Setup: &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
 						Teardown:  ptr("SCOPE TEARDOWN"),
 						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
@@ -335,7 +331,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "group teardown",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group "g" {
 						setup ` + "`GROUP SETUP`" + `
@@ -345,10 +341,10 @@ func TestParse(t *testing.T) {
 				}
 			`,
 			expected: &scaf.Suite{
-				Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 				Scopes: []*scaf.QueryScope{
 					{
-						QueryName: "Q",
+						FunctionName: "Q",
 						Items: []*scaf.TestOrGroup{
 							{
 								Group: &scaf.Group{
@@ -393,7 +389,7 @@ func TestParseImports(t *testing.T) {
 			name: "simple import",
 			input: `
 				import "../../setup/db"
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 			`,
 			expected: []*scaf.Import{
 				{Path: "../../setup/db"},
@@ -403,7 +399,7 @@ func TestParseImports(t *testing.T) {
 			name: "import with alias",
 			input: `
 				import fixtures "../shared/fixtures"
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 			`,
 			expected: []*scaf.Import{
 				{Alias: ptr("fixtures"), Path: "../shared/fixtures"},
@@ -415,7 +411,7 @@ func TestParseImports(t *testing.T) {
 				import "../../setup/db"
 				import fixtures "../shared/fixtures"
 				import utils "./utils"
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 			`,
 			expected: []*scaf.Import{
 				{Path: "../../setup/db"},
@@ -452,7 +448,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup call with module",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup fixtures.SetupDB()
 					test "t" {}
@@ -468,7 +464,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup call with params",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup fixtures.CreatePosts($n: 10, $title: "Post")
 					test "t" {}
@@ -488,7 +484,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup module reference",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup fixtures
 					test "t" {}
@@ -501,7 +497,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup block with single inline",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup { ` + "`CREATE (:User)`" + ` }
 					test "t" {}
@@ -516,7 +512,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup block with single module",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup { fixtures }
 					test "t" {}
@@ -531,7 +527,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup block with single call",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup { fixtures.SetupUsers() }
 					test "t" {}
@@ -546,7 +542,7 @@ func TestParseSetupCall(t *testing.T) {
 		{
 			name: "setup block with multiple items",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup {
 						` + "`CREATE (:User)`" + `
@@ -645,7 +641,7 @@ func TestParseValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			src := `query Q ` + "`Q`" + ` Q { test "t" { v: ` + tt.input + ` } }`
+			src := `fn Q() ` + "`Q`" + ` Q { test "t" { v: ` + tt.input + ` } }`
 
 			result, err := scaf.Parse([]byte(src))
 			if err != nil {
@@ -653,8 +649,155 @@ func TestParseValues(t *testing.T) {
 			}
 
 			gotValue := result.Scopes[0].Items[0].Test.Statements[0].Value
-			if diff := cmp.Diff(tt.expected, gotValue, cmpIgnoreAST); diff != "" {
+			if gotValue == nil {
+				t.Fatal("Value is nil")
+			}
+			if diff := cmp.Diff(tt.expected, gotValue.Literal, cmpIgnoreAST); diff != "" {
 				t.Errorf("Value mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestParseFnParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams []*scaf.FnParam
+		expectedGoType []string
+	}{
+		{
+			name:           "no params",
+			input:          `fn GetUser() ` + "`Q`",
+			expectedParams: nil,
+			expectedGoType: nil,
+		},
+		{
+			name:  "single simple param",
+			input: `fn GetUser(id: string) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "id", Type: &scaf.TypeExpr{Simple: ptr("string")}},
+			},
+			expectedGoType: []string{"string"},
+		},
+		{
+			name:  "multiple params",
+			input: `fn CreateUser(name: string, age: int) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "name", Type: &scaf.TypeExpr{Simple: ptr("string")}},
+				{Name: "age", Type: &scaf.TypeExpr{Simple: ptr("int")}},
+			},
+			expectedGoType: []string{"string", "int"},
+		},
+		{
+			name:  "nullable type",
+			input: `fn GetUser(id: string, name: string?) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "id", Type: &scaf.TypeExpr{Simple: ptr("string")}},
+				{Name: "name", Type: &scaf.TypeExpr{Simple: ptr("string"), Nullable: true}},
+			},
+			expectedGoType: []string{"string", "*string"},
+		},
+		{
+			name:  "array type",
+			input: `fn GetUsers(ids: [string]) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "ids", Type: &scaf.TypeExpr{Array: &scaf.TypeExpr{Simple: ptr("string")}}},
+			},
+			expectedGoType: []string{"[]string"},
+		},
+		{
+			name:  "map type",
+			input: `fn CreateData(data: {string: int}) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "data", Type: &scaf.TypeExpr{Map: &scaf.MapTypeExpr{
+					Key:   &scaf.TypeExpr{Simple: ptr("string")},
+					Value: &scaf.TypeExpr{Simple: ptr("int")},
+				}}},
+			},
+			expectedGoType: []string{"map[string]int"},
+		},
+		{
+			name:  "nested map with array",
+			input: `fn CreateData(data: {string: [int]}) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "data", Type: &scaf.TypeExpr{Map: &scaf.MapTypeExpr{
+					Key:   &scaf.TypeExpr{Simple: ptr("string")},
+					Value: &scaf.TypeExpr{Array: &scaf.TypeExpr{Simple: ptr("int")}},
+				}}},
+			},
+			expectedGoType: []string{"map[string][]int"},
+		},
+		{
+			name:  "nullable array",
+			input: `fn GetIds(ids: [int]?) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "ids", Type: &scaf.TypeExpr{
+					Array:    &scaf.TypeExpr{Simple: ptr("int")},
+					Nullable: true,
+				}},
+			},
+			expectedGoType: []string{"*[]int"},
+		},
+		{
+			name:  "untyped param",
+			input: `fn GetUser(id) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "id", Type: nil},
+			},
+			expectedGoType: []string{"any"},
+		},
+		{
+			name:  "mixed typed and untyped params",
+			input: `fn CreateUser(id, name: string, data) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "id", Type: nil},
+				{Name: "name", Type: &scaf.TypeExpr{Simple: ptr("string")}},
+				{Name: "data", Type: nil},
+			},
+			expectedGoType: []string{"any", "string", "any"},
+		},
+		{
+			name:  "multiple untyped params",
+			input: `fn Query(a, b, c) ` + "`Q`",
+			expectedParams: []*scaf.FnParam{
+				{Name: "a", Type: nil},
+				{Name: "b", Type: nil},
+				{Name: "c", Type: nil},
+			},
+			expectedGoType: []string{"any", "any", "any"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := scaf.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse() error: %v", err)
+			}
+
+			if len(result.Functions) != 1 {
+				t.Fatalf("Expected 1 function, got %d", len(result.Functions))
+			}
+
+			fn := result.Functions[0]
+			if len(fn.Params) != len(tt.expectedParams) {
+				t.Fatalf("Expected %d params, got %d", len(tt.expectedParams), len(fn.Params))
+			}
+
+			for i, expected := range tt.expectedParams {
+				got := fn.Params[i]
+				if got.Name != expected.Name {
+					t.Errorf("Param %d: name = %q, want %q", i, got.Name, expected.Name)
+				}
+				goType := got.Type.ToGoType()
+				if goType != tt.expectedGoType[i] {
+					t.Errorf("Param %d: ToGoType() = %q, want %q", i, goType, tt.expectedGoType[i])
+				}
 			}
 		})
 	}
@@ -707,7 +850,7 @@ func TestParseComments(t *testing.T) {
 
 	src := `
 		// This is a comment
-		query Q ` + "`Q`" + `
+		fn Q() ` + "`Q`" + `
 		// Another comment
 		Q {
 			// Group comment
@@ -724,10 +867,10 @@ func TestParseComments(t *testing.T) {
 	}
 
 	expected := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "Q", Body: "Q"}},
+		Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
 		Scopes: []*scaf.QueryScope{
 			{
-				QueryName: "Q",
+				FunctionName: "Q",
 				Items: []*scaf.TestOrGroup{
 					{Test: &scaf.Test{Name: "t", Statements: []*scaf.Statement{scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)})}}},
 				},
@@ -798,10 +941,10 @@ func TestParseExprAssert(t *testing.T) {
 		{
 			name: "simple comparison",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
-						assert { u.age > 18 }
+						assert { (u.age > 18) }
 					}
 				}
 			`,
@@ -810,10 +953,10 @@ func TestParseExprAssert(t *testing.T) {
 		{
 			name: "expression with function call",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
-						assert { u.createdAt - now() < duration("24h") }
+						assert { (u.createdAt - now() < duration("24h")) }
 					}
 				}
 			`,
@@ -822,10 +965,10 @@ func TestParseExprAssert(t *testing.T) {
 		{
 			name: "complex expression",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
-						assert { len(u.posts) > 0 && u.verified == true }
+						assert { (len(u.posts) > 0 && u.verified == true) }
 					}
 				}
 			`,
@@ -834,10 +977,10 @@ func TestParseExprAssert(t *testing.T) {
 		{
 			name: "multiple expressions",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
-						assert { x > 0; y < 10; z == 5 }
+						assert { (x > 0) (y < 10) (z == 5) }
 					}
 				}
 			`,
@@ -878,6 +1021,129 @@ func TestParseExprAssert(t *testing.T) {
 	}
 }
 
+func TestParseShorthandAssert(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string // expected expression string
+	}{
+		{
+			name: "simple shorthand assert",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert (u.age >= 18)
+					}
+				}
+			`,
+			expected: "u.age >= 18",
+		},
+		{
+			name: "shorthand with function call",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert (len(items) > 0)
+					}
+				}
+			`,
+			expected: "len(items) > 0",
+		},
+		{
+			name: "shorthand with complex expression",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert (x > 0 && y < 10)
+					}
+				}
+			`,
+			expected: "x > 0 && y < 10",
+		},
+		{
+			name: "shorthand with member access",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert (user.profile.name == "Alice")
+					}
+				}
+			`,
+			expected: `user.profile.name == "Alice"`,
+		},
+		{
+			name: "shorthand with nested parens",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert ((x + y) * 2 > 10)
+					}
+				}
+			`,
+			expected: "(x + y) * 2 > 10",
+		},
+		{
+			name: "multiple shorthand asserts",
+			input: `
+				fn Q() ` + "`Q`" + `
+				Q {
+					test "t" {
+						assert (x > 0)
+						assert (y < 10)
+						assert (z == 5)
+					}
+				}
+			`,
+			expected: "x > 0", // First assert
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := scaf.Parse([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Parse() error: %v", err)
+			}
+
+			test := result.Scopes[0].Items[0].Test
+			if len(test.Asserts) == 0 {
+				t.Fatal("Expected at least one assert")
+			}
+
+			assert := test.Asserts[0]
+
+			// Should be shorthand form
+			if !assert.IsShorthand() {
+				t.Fatal("Expected shorthand assert form")
+			}
+
+			if assert.Shorthand == nil {
+				t.Fatal("Expected Shorthand to be non-nil")
+			}
+
+			gotExpr := assert.Shorthand.String()
+			if gotExpr != tt.expected {
+				t.Errorf("Shorthand.String() = %q, want %q", gotExpr, tt.expected)
+			}
+
+			// AllConditions should return the shorthand as a single condition
+			allConds := assert.AllConditions()
+			if len(allConds) != 1 {
+				t.Errorf("AllConditions() count = %d, want 1", len(allConds))
+			}
+		})
+	}
+}
+
 func TestParseQueryAssert(t *testing.T) {
 	t.Parallel()
 
@@ -892,12 +1158,12 @@ func TestParseQueryAssert(t *testing.T) {
 		{
 			name: "inline query with conditions",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert ` + "`MATCH (n) RETURN count(n) as cnt`" + ` {
-							cnt > 0;
-							cnt < 100
+							(cnt > 0)
+							(cnt < 100)
 						}
 					}
 				}
@@ -908,11 +1174,11 @@ func TestParseQueryAssert(t *testing.T) {
 		{
 			name: "named query without params",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert CheckCount() {
-							c == 1
+							(c == 1)
 						}
 					}
 				}
@@ -924,11 +1190,11 @@ func TestParseQueryAssert(t *testing.T) {
 		{
 			name: "named query with params",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert CreatePost($title: "test", $authorId: 1) {
-							p.title == "test"
+							(p.title == "test")
 						}
 					}
 				}
@@ -997,7 +1263,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "valid input with recovery enabled",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						$id: 1
@@ -1020,7 +1286,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "incomplete setup - missing close paren",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup Func(
 					test "t" {}
@@ -1032,8 +1298,8 @@ func TestParseWithRecovery(t *testing.T) {
 				if suite == nil {
 					t.Fatal("Expected partial AST, got nil")
 				}
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 				if len(suite.Scopes) != 1 {
 					t.Errorf("Expected 1 scope, got %d", len(suite.Scopes))
@@ -1043,7 +1309,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "incomplete test - missing closing brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "unclosed" {
 						$id: 1
@@ -1054,16 +1320,16 @@ func TestParseWithRecovery(t *testing.T) {
 				if suite == nil {
 					t.Fatal("Expected partial AST, got nil")
 				}
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
 		{
 			name: "multiple scopes with error in second",
 			input: `
-				query Q1 ` + "`Q1`" + `
-				query Q2 ` + "`Q2`" + `
+				fn Q1() ` + "`Q1`" + `
+				fn Q2() ` + "`Q2`" + `
 				Q1 {
 					test "valid" {}
 				}
@@ -1077,8 +1343,8 @@ func TestParseWithRecovery(t *testing.T) {
 				if suite == nil {
 					t.Fatal("Expected partial AST, got nil")
 				}
-				if len(suite.Queries) != 2 {
-					t.Errorf("Expected 2 queries, got %d", len(suite.Queries))
+				if len(suite.Functions) != 2 {
+					t.Errorf("Expected 2 queries, got %d", len(suite.Functions))
 				}
 				// Both scopes should be present
 				if len(suite.Scopes) != 2 {
@@ -1089,7 +1355,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "extra token after setup",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup ` + "`Q`" + ` extra
 					test "t" {}
@@ -1100,8 +1366,8 @@ func TestParseWithRecovery(t *testing.T) {
 				if suite == nil {
 					t.Fatal("Expected partial AST, got nil")
 				}
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
@@ -1110,7 +1376,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "empty setup before closing brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup
 				}
@@ -1126,7 +1392,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "empty setup before test keyword",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup
 					test "t" {}
@@ -1155,7 +1421,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "test missing name and brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test
 				}
@@ -1173,7 +1439,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "test missing closing brace with content",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "incomplete" {
 						$id: 1
@@ -1193,7 +1459,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "test followed by another test (recovery stops at keyword)",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "first" {
 					test "second" {}
@@ -1210,8 +1476,8 @@ func TestParseWithRecovery(t *testing.T) {
 					t.Fatal("Expected partial AST, got nil")
 				}
 				// The query should still be present
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
@@ -1220,7 +1486,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "group missing name",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group
 				}
@@ -1236,7 +1502,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "group missing closing brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group "incomplete" {
 						test "inner" {}
@@ -1248,8 +1514,8 @@ func TestParseWithRecovery(t *testing.T) {
 					t.Fatal("Expected partial AST, got nil")
 				}
 				// Should have partial AST
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
@@ -1258,7 +1524,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "assert missing brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert
@@ -1276,7 +1542,7 @@ func TestParseWithRecovery(t *testing.T) {
 		{
 			name: "assert with query missing closing brace",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert QueryName() {
@@ -1289,15 +1555,15 @@ func TestParseWithRecovery(t *testing.T) {
 					t.Fatal("Expected partial AST, got nil")
 				}
 				// Should have partial AST
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
 		{
 			name: "assert with inline query missing close",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
 						assert ` + "`SELECT 1`" + ` {
@@ -1309,8 +1575,8 @@ func TestParseWithRecovery(t *testing.T) {
 				if suite == nil {
 					t.Fatal("Expected partial AST, got nil")
 				}
-				if len(suite.Queries) != 1 {
-					t.Errorf("Expected 1 query, got %d", len(suite.Queries))
+				if len(suite.Functions) != 1 {
+					t.Errorf("Expected 1 query, got %d", len(suite.Functions))
 				}
 			},
 		},
@@ -1347,7 +1613,7 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete test has Close",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {}
 				}
@@ -1368,7 +1634,7 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete group has Close",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					group "g" {
 						test "t" {}
@@ -1391,10 +1657,10 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete assert has Close",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {
-						assert { true }
+						assert { (true) }
 					}
 				}
 			`,
@@ -1415,7 +1681,7 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete QueryScope has Close",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					test "t" {}
 				}
@@ -1433,7 +1699,7 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete SetupClause with inline",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup ` + "`CREATE (:N)`" + `
 					test "t" {}
@@ -1452,7 +1718,7 @@ func TestIsComplete(t *testing.T) {
 		{
 			name: "complete SetupCall",
 			input: `
-				query Q ` + "`Q`" + `
+				fn Q() ` + "`Q`" + `
 				Q {
 					setup fixtures.Func()
 					test "t" {}

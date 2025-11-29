@@ -16,7 +16,7 @@ func TestServer_PrepareRename_Query(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -63,7 +63,7 @@ func TestServer_Rename_Query(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -125,7 +125,7 @@ func TestServer_Rename_Import(t *testing.T) {
 
 	content := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures
@@ -179,8 +179,8 @@ func TestServer_Rename_Conflict(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
-query FindUser ` + "`MATCH (u:User) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn FindUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -221,7 +221,7 @@ func TestServer_Rename_InvalidName(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 `
 	uri := protocol.DocumentURI("file:///test.scaf")
 	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{

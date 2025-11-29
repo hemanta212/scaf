@@ -19,14 +19,14 @@ func TestNewModule(t *testing.T) {
 		{
 			name: "no queries",
 			suite: &scaf.Suite{
-				Queries: nil,
+				Functions: nil,
 			},
 			expectQueries: nil,
 		},
 		{
 			name: "single query",
 			suite: &scaf.Suite{
-				Queries: []*scaf.Query{
+				Functions: []*scaf.Function{
 					{Name: "GetUser", Body: "MATCH (u:User) RETURN u"},
 				},
 			},
@@ -35,7 +35,7 @@ func TestNewModule(t *testing.T) {
 		{
 			name: "multiple queries",
 			suite: &scaf.Suite{
-				Queries: []*scaf.Query{
+				Functions: []*scaf.Function{
 					{Name: "GetUser", Body: "MATCH (u) RETURN u"},
 					{Name: "CreatePost", Body: "CREATE (:Post)"},
 					{Name: "SetupDB", Body: "CREATE (:Node)"},
@@ -100,7 +100,7 @@ func TestResolvedContext_ResolveModule(t *testing.T) {
 
 	// Create root module
 	rootSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "GetUser", Body: "MATCH (u) RETURN u"},
 		},
 	}
@@ -108,7 +108,7 @@ func TestResolvedContext_ResolveModule(t *testing.T) {
 
 	// Create imported module
 	importedSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "CreateFixtures", Body: "CREATE (:Fixture {n: $n})"},
 		},
 	}
@@ -166,7 +166,7 @@ func TestResolvedContext_ResolveQuery(t *testing.T) {
 
 	// Create root module
 	rootSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "GetUser", Body: "MATCH (u) RETURN u"},
 		},
 	}
@@ -174,7 +174,7 @@ func TestResolvedContext_ResolveQuery(t *testing.T) {
 
 	// Create imported module
 	importedSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "CreateFixtures", Body: "CREATE (:Fixture {n: $n})"},
 		},
 	}
@@ -240,7 +240,7 @@ func TestResolvedContext_GetQueries(t *testing.T) {
 	t.Parallel()
 
 	rootSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "GetUser", Body: "MATCH (u) RETURN u"},
 			{Name: "SetupDB", Body: "CREATE (:DB)"},
 		},
@@ -248,7 +248,7 @@ func TestResolvedContext_GetQueries(t *testing.T) {
 	root := module.NewModule("/root.scaf", rootSuite)
 
 	importedSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "CreatePost", Body: "CREATE (:Post)"},
 		},
 	}
@@ -317,7 +317,7 @@ func TestModule_GetQuery(t *testing.T) {
 	t.Parallel()
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Function{
 			{Name: "GetUser", Body: "MATCH (u) RETURN u"},
 		},
 	}

@@ -18,8 +18,8 @@ func TestServer_FoldingRanges(t *testing.T) {
 
 	// Open a file with various foldable elements
 	content := "import fixtures \"./fixtures\"\nimport utils \"./utils\"\n\n" +
-		"query GetUser `MATCH (u:User {id: $id}) RETURN u`\n\n" +
-		"query CountPosts `MATCH (p:Post)\nRETURN count(p)`\n\n" +
+		"fn GetUser() `MATCH (u:User {id: $id}) RETURN u`\n\n" +
+		"fn CountPosts() `MATCH (p:Post)\nRETURN count(p)`\n\n" +
 		"GetUser {\n" +
 		"\tsetup fixtures.CreateUser($id: 1)\n" +
 		"\ttest \"finds user by id\" {\n" +
@@ -52,7 +52,7 @@ func TestServer_FoldingRanges(t *testing.T) {
 		t.Fatalf("FoldingRanges() error: %v", err)
 	}
 
-	if result == nil || len(result) == 0 {
+	if len(result) == 0 {
 		t.Fatal("Expected folding ranges")
 	}
 
@@ -85,9 +85,9 @@ func TestServer_FoldingRanges(t *testing.T) {
 		t.Error("Expected at least 1 import folding range")
 	}
 
-	// Should have at least 2 query folds
-	if queries < 2 {
-		t.Errorf("Expected at least 2 query folding ranges, got %d", queries)
+	// Should have at least 1 query fold (only multi-line queries fold)
+	if queries < 1 {
+		t.Errorf("Expected at least 1 query folding range, got %d", queries)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestServer_FoldingRanges_Empty(t *testing.T) {
 	}
 
 	// Should return nil for non-existent document
-	if result != nil && len(result) > 0 {
+	if len(result) > 0 {
 		t.Error("Expected nil or empty result for non-existent document")
 	}
 }
@@ -132,7 +132,7 @@ func TestServer_FoldingRanges_SingleImport(t *testing.T) {
 			Version: 1,
 			Text: `import fixtures "./fixtures"
 
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 Q { test "t" {} }
 `,
 		},

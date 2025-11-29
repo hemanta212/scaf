@@ -21,7 +21,7 @@ func TestServer_Definition_QueryScope(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open a file with a query and a scope referencing it
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -64,10 +64,10 @@ GetUser {
 		t.Errorf("Expected definition on line 0, got line %d", loc.Range.Start.Line)
 	}
 
-	// Should point to the query name "GetUser" (after "query ")
-	// "query " = 6 chars, so column should be 6
-	if loc.Range.Start.Character != 6 {
-		t.Errorf("Expected definition at character 6, got %d", loc.Range.Start.Character)
+	// Should point to the query name "GetUser" (after "fn ")
+	// "fn " = 3 chars, so column should be 3
+	if loc.Range.Start.Character != 3 {
+		t.Errorf("Expected definition at character 3, got %d", loc.Range.Start.Character)
 	}
 
 	t.Logf("Definition location: line %d, char %d-%d",
@@ -90,7 +90,7 @@ func TestServer_Definition_SetupModuleRef(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
 `
 	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
@@ -100,7 +100,7 @@ func TestServer_Definition_SetupModuleRef(t *testing.T) {
 	mainPath := filepath.Join(tmpDir, "main.scaf")
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "test")
@@ -170,7 +170,7 @@ func TestServer_Definition_ImportAlias(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create fixtures.scaf
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
 `
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
@@ -187,7 +187,7 @@ func TestServer_Definition_ImportAlias(t *testing.T) {
 
 	content := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "test")
@@ -250,8 +250,8 @@ func TestServer_Definition_CrossFile_NamedSetup(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create fixtures.scaf with queries
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
-query CreatePost ` + "`CREATE (p:Post {title: $title}) RETURN p`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+fn CreatePost() ` + "`CREATE (p:Post {title: $title}) RETURN p`" + `
 `
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
@@ -261,7 +261,7 @@ query CreatePost ` + "`CREATE (p:Post {title: $title}) RETURN p`" + `
 	// Create main file that imports fixtures
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "test")
@@ -337,7 +337,7 @@ func TestServer_Definition_NoResult(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -408,9 +408,9 @@ func TestServer_Definition_MultipleQueries(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User) RETURN u`" + `
-query GetPost ` + "`MATCH (p:Post) RETURN p`" + `
-query GetComment ` + "`MATCH (c:Comment) RETURN c`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
+fn GetPost() ` + "`MATCH (p:Post) RETURN p`" + `
+fn GetComment() ` + "`MATCH (c:Comment) RETURN c`" + `
 
 GetPost {
 	test "finds post" {
@@ -464,7 +464,7 @@ func TestServer_Definition_Parameter(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Query with parameter on same line
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -531,7 +531,7 @@ func TestServer_Definition_Parameter_MultipleUses(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUserWithManager ` + "`MATCH (u:User {id: $id})-[:REPORTS_TO]->(m:User {id: $id}) RETURN u`" + `
+	content := `fn GetUserWithManager() ` + "`MATCH (u:User {id: $id})-[:REPORTS_TO]->(m:User {id: $id}) RETURN u`" + `
 
 GetUserWithManager {
 	test "finds user" {
@@ -584,7 +584,7 @@ func TestServer_Definition_Parameter_NotFound(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -630,7 +630,7 @@ func TestServer_Definition_InTestSetup(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
-	fixturesContent := `query SetupData ` + "`CREATE (d:Data) RETURN d`" + `
+	fixturesContent := `fn SetupData() ` + "`CREATE (d:Data) RETURN d`" + `
 `
 	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
@@ -640,7 +640,7 @@ func TestServer_Definition_InTestSetup(t *testing.T) {
 	mainPath := filepath.Join(tmpDir, "main.scaf")
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "with setup" {
@@ -714,7 +714,7 @@ func TestServer_Definition_ReturnField(t *testing.T) {
 
 	// Query with explicit return fields
 	// Line numbers (0-indexed):
-	// 0: query GetUser `
+	// 0: fn GetUser() `
 	// 1: MATCH (u:User {id: $userId})
 	// 2: RETURN u.id, u.name, u.email
 	// 3: `
@@ -725,7 +725,7 @@ func TestServer_Definition_ReturnField(t *testing.T) {
 	// 8:     u.name: "Alice"
 	// 9:   }
 	// 10: }
-	content := `query GetUser ` + "`" + `
+	content := `fn GetUser() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.id, u.name, u.email
 ` + "`" + `
@@ -803,16 +803,16 @@ func TestServer_Definition_AllContexts(t *testing.T) {
 
 	// Create fixtures.scaf with setup queries (mirrors example/basic/shared/fixtures.cypher.scaf)
 	fixturesContent := `// Shared fixtures
-query SetupUsers ` + "`" + `
+fn SetupUsers() ` + "`" + `
 CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", age: 30, verified: true})
 CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", age: 25, verified: false})
 ` + "`" + `
 
-query SetupPosts ` + "`" + `
+fn SetupPosts() ` + "`" + `
 CREATE (p:Post {id: $postId, title: $title, authorId: $authorId, views: 0})
 ` + "`" + `
 
-query SetupCleanDB ` + "`" + `
+fn SetupCleanDB() ` + "`" + `
 MATCH (n) DETACH DELETE n
 ` + "`" + `
 `
@@ -843,15 +843,15 @@ MATCH (n) DETACH DELETE n
 	// 13:      setup fixtures.SetupPosts($postId: 1, $title: "Hello", $authorId: 1)
 	// 14:      $userId: 1
 	// 15:      u.name: "Alice"
-	// 16:      assert CountUserPosts($authorId: u.id) { postCount == 0 }
+	// 16:      assert CountUserPosts($authorId: u.id) { (postCount == 0) }
 	// 17:    }
 	// 18:  }
 	// 19: }
 	mainContent := `import fixtures "./shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User {id: $userId}) RETURN u.id, u.name, u.email`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $userId}) RETURN u.id, u.name, u.email`" + `
 
-query CountUserPosts ` + "`MATCH (p:Post {authorId: $authorId}) RETURN count(p) as postCount`" + `
+fn CountUserPosts() ` + "`MATCH (p:Post {authorId: $authorId}) RETURN count(p) as postCount`" + `
 
 setup fixtures.SetupCleanDB()
 
@@ -863,7 +863,7 @@ GetUser {
 			setup fixtures.SetupPosts($postId: 1, $title: "Hello", $authorId: 1)
 			$userId: 1
 			u.name: "Alice"
-			assert CountUserPosts($authorId: u.id) { postCount == 0 }
+			assert CountUserPosts($authorId: u.id) { (postCount == 0) }
 		}
 	}
 }
@@ -1053,10 +1053,8 @@ GetUser {
 
 				t.Logf("%s: found at %s line %d, char %d-%d",
 					tt.name, loc.URI, loc.Range.Start.Line, loc.Range.Start.Character, loc.Range.End.Character)
-			} else {
-				if len(result) != 0 {
-					t.Errorf("%s: expected no results, got %d", tt.description, len(result))
-				}
+			} else if len(result) != 0 {
+				t.Errorf("%s: expected no results, got %d", tt.description, len(result))
 			}
 		})
 	}

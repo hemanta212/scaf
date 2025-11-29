@@ -23,9 +23,9 @@ func TestServer_Completion_QueryNames(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
-query GetUsers ` + "`MATCH (u:User) RETURN u`" + `
-query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+fn GetUsers() ` + "`MATCH (u:User) RETURN u`" + `
+fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
 
 `,
 		},
@@ -76,7 +76,7 @@ func TestServer_Completion_Parameters(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -143,7 +143,7 @@ func TestServer_Completion_ReturnFields(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u.name AS name, u.email AS email`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u.name AS name, u.email AS email`" + `
 
 GetUser {
 	test "finds user" {
@@ -235,7 +235,7 @@ func TestServer_Completion_ReturnFields_NoAlias(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.email`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.email`" + `
 
 GetUser {
 	test "finds user" {
@@ -347,7 +347,7 @@ func TestServer_Completion_ImportAliases(t *testing.T) {
 			Text: `import fixtures "../shared/fixtures"
 import db "./setup_db"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup ` + "`CREATE (n:Node)`" + `
@@ -412,7 +412,7 @@ func TestServer_Completion_Keywords_InTest(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -524,9 +524,9 @@ func TestServer_Completion_FilterByPrefix(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User) RETURN u`" + `
-query GetPosts ` + "`MATCH (p:Post) RETURN p`" + `
-query CreateUser ` + "`CREATE (u:User) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
+fn GetPosts() ` + "`MATCH (p:Post) RETURN p`" + `
+fn CreateUser() ` + "`CREATE (u:User) RETURN u`" + `
 
 Get
 `,
@@ -565,9 +565,9 @@ func TestServer_Completion_SetupFunctions_CrossFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create fixtures.scaf with queries
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name, email: $email}) RETURN u`" + `
-query CreatePost ` + "`CREATE (p:Post {title: $title, authorId: $authorId}) RETURN p`" + `
-query SetupDatabase ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name, email: $email}) RETURN u`" + `
+fn CreatePost() ` + "`CREATE (p:Post {title: $title, authorId: $authorId}) RETURN p`" + `
+fn SetupDatabase() ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
 `
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
@@ -580,7 +580,7 @@ query SetupDatabase ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`
 	// For completion testing, we use a placeholder comment to make it parse
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -643,7 +643,7 @@ GetUser {
 	// We'll use setup block syntax which can contain setup calls
 	validContentWithSetup := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup {
@@ -730,8 +730,8 @@ func TestServer_Completion_SetupFunctions_AfterDot_Invalid(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create fixtures.scaf with queries
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
-query SetupDB ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+fn SetupDB() ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
 `
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
@@ -750,7 +750,7 @@ query SetupDB ` + "`CREATE CONSTRAINT FOR (u:User) REQUIRE u.id IS UNIQUE`" + `
 	// Open an INVALID file with "setup fixtures." (incomplete)
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures.
@@ -828,7 +828,7 @@ func TestServer_Completion_SetupImportAlias_InScope(t *testing.T) {
 	// First, open a valid document
 	validContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {}
@@ -845,7 +845,7 @@ GetUser {
 	// Now simulate typing "setup " - document becomes temporarily invalid
 	invalidContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup 
@@ -910,7 +910,7 @@ func TestServer_Completion_SetupWithPrefix(t *testing.T) {
 	// First, open a valid document
 	validContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {
@@ -928,7 +928,7 @@ GetUser {
 	// Now simulate typing "setup fi" inside the test
 	invalidContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {
@@ -996,7 +996,7 @@ func TestServer_Completion_SetupWithPrefix_FileNeverValid(t *testing.T) {
 	// Open a file that's already invalid (no LastValidAnalysis will be stored)
 	invalidContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {
@@ -1060,7 +1060,7 @@ func TestServer_Completion_SetupImportAlias_InTest(t *testing.T) {
 	// First, open a valid document
 	validContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {
@@ -1078,7 +1078,7 @@ GetUser {
 	// Now simulate typing "setup " inside the test
 	invalidContent := `import fixtures "../shared/fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "t" {

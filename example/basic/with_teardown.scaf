@@ -1,4 +1,4 @@
-query GetUser `
+fn GetUser(userId) `
 MATCH (u:User {id: $userId})
 RETURN u.name, u.email
 `

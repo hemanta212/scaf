@@ -21,7 +21,7 @@ func (s *Server) Formatting(_ context.Context, params *protocol.DocumentFormatti
 
 	// Need a valid parse to format (no parse errors)
 	if doc.Analysis == nil || doc.Analysis.Suite == nil || doc.Analysis.ParseError != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // Cannot format documents with parse errors; return no edits
 	}
 
 	// Use the existing formatter

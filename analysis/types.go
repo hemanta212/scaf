@@ -1,4 +1,3 @@
-// Package analysis provides semantic analysis for scaf DSL files.
 package analysis
 
 import (
@@ -34,6 +33,11 @@ type AnalyzedFile struct {
 	// Resolver is used for cross-file analysis (e.g., validating setup calls).
 	// May be nil if cross-file analysis is not available.
 	Resolver CrossFileResolver
+
+	// QueryAnalyzer is the dialect-specific query analyzer.
+	// Used for expression validation to build type environments from query returns.
+	// May be nil if no dialect analyzer is available.
+	QueryAnalyzer scaf.QueryAnalyzer
 }
 
 // SymbolTable holds all named definitions in a file.
@@ -88,9 +92,24 @@ type QuerySymbol struct {
 
 	Body string
 
-	// Params are the $-prefixed parameters extracted from the query body.
-	// Useful for completion and validation.
+	// Params are the $-prefixed parameters extracted from the query body (via regex fallback).
+	// Useful for completion and validation when no dialect analyzer is available.
 	Params []string
+
+	// QueryBodyParams are parameters extracted from the query body by the dialect analyzer.
+	// More accurate than Params as it uses proper parsing for the dialect.
+	// nil if no dialect analyzer was used.
+	QueryBodyParams []scaf.ParameterInfo
+
+	// DeclaredParams contains all parameter names declared in the function signature.
+	// Includes both typed and untyped parameters.
+	// Use this to check if a parameter is declared (regardless of type annotation).
+	DeclaredParams map[string]bool
+
+	// TypedParams maps parameter names to their type expressions.
+	// Populated from explicit type annotations in function definition.
+	// Only contains parameters with type annotations (untyped params have nil Type).
+	TypedParams map[string]*scaf.TypeExpr
 
 	// Node is the AST node for this query.
 	Node *scaf.Query

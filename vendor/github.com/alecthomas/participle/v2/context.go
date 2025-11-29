@@ -146,126 +146,29 @@ func (p *parseContext) addRecoveryError(err error) {
 	p.recoveryErrors = append(p.recoveryErrors, err)
 }
 
-// tryRecover attempts to recover from a parse error using the configured strategies.
-func (p *parseContext) tryRecover(err error, parent reflect.Value) recoveryResult {
+// tryRecover attempts to recover from a parse error using configured strategies.
+// Returns true if recovery was successful.
+func (p *parseContext) tryRecover(err error, parent reflect.Value) (bool, []reflect.Value) {
 	if !p.recoveryEnabled() {
-		return recoveryResult{}
+		return false, nil
 	}
 
 	// Check if we've exceeded max errors
 	if p.recovery.maxErrors > 0 && len(p.recoveryErrors) >= p.recovery.maxErrors {
-		p.traceRecovery("max errors (%d) reached, not attempting recovery", p.recovery.maxErrors)
-		return recoveryResult{}
+		return false, nil
 	}
-
-	startPos := p.Peek().Pos
-	startCursor := p.RawCursor()
-
-	p.traceRecoveryAttempt(startPos, err, "recovery")
 
 	// Try each strategy in order
 	for _, strategy := range p.recovery.strategies {
-		if result, ok := p.tryStrategy(strategy, err, parent, startCursor); ok {
-			return result
+		checkpoint := p.PeekingLexer.MakeCheckpoint()
+		recovered, values, newErr := strategy.Recover(p, err, parent)
+		if recovered {
+			p.addRecoveryError(newErr)
+			return true, values
 		}
+		// Restore checkpoint if strategy failed
+		p.PeekingLexer.LoadCheckpoint(checkpoint)
 	}
 
-	p.traceRecoveryAllFailed()
-	return recoveryResult{}
-}
-
-// tryStrategy attempts a single recovery strategy, returning the result and whether it succeeded.
-func (p *parseContext) tryStrategy(strategy RecoveryStrategy, err error, parent reflect.Value, startCursor lexer.RawCursor) (recoveryResult, bool) {
-	checkpoint := p.PeekingLexer.MakeCheckpoint()
-	currentPos := p.Peek().Pos
-
-	strategyName := p.getStrategyName(strategy)
-	p.traceRecoveryStrategy(strategyName, currentPos)
-
-	var recovered bool
-	var values []reflect.Value
-	var newErr error
-	var recoveredTokens []lexer.Token
-
-	if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
-		result := enhanced.RecoverWithContext(p, err, parent)
-		recovered = result.recovered
-		values = result.values
-		newErr = result.err
-		recoveredTokens = result.recoveredTokens
-		strategyName = result.strategyName // Use actual name from result
-	} else {
-		recovered, values, newErr = strategy.Recover(p, err, parent)
-	}
-
-	if recovered {
-		progressed := p.RawCursor() > startCursor
-		p.traceRecoverySuccess(strategyName, len(recoveredTokens), p.Peek().Pos)
-		p.addRecoveryError(newErr)
-		return recoveryResult{
-			recovered:       true,
-			values:          values,
-			progressed:      progressed,
-			recoveredTokens: recoveredTokens,
-			strategyName:    strategyName,
-		}, true
-	}
-
-	p.traceRecoveryFailed(strategyName, "strategy returned false")
-	p.PeekingLexer.LoadCheckpoint(checkpoint)
-	return recoveryResult{}, false
-}
-
-// getStrategyName returns a human-readable name for tracing.
-func (p *parseContext) getStrategyName(strategy RecoveryStrategy) string {
-	if enhanced, ok := strategy.(EnhancedRecoveryStrategy); ok {
-		return enhanced.Name()
-	}
-	return "unknown"
-}
-
-// Recovery tracing methods
-
-// traceRecovery writes a trace message if recovery tracing is enabled.
-func (p *parseContext) traceRecovery(format string, args ...interface{}) {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery] "+format+"\n", args...)
-	}
-}
-
-// traceRecoveryAttempt logs when a recovery attempt begins.
-func (p *parseContext) traceRecoveryAttempt(pos lexer.Position, err error, nodeName string) {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery] %s: attempting recovery for %q (error: %v)\n",
-			pos, nodeName, err)
-	}
-}
-
-// traceRecoveryStrategy logs when a specific strategy is being tried.
-func (p *parseContext) traceRecoveryStrategy(strategyName string, pos lexer.Position) {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   trying strategy %q at %v\n", strategyName, pos)
-	}
-}
-
-// traceRecoverySuccess logs when recovery succeeds.
-func (p *parseContext) traceRecoverySuccess(strategyName string, skippedCount int, newPos lexer.Position) {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   SUCCESS: %q skipped %d token(s), now at %v\n",
-			strategyName, skippedCount, newPos)
-	}
-}
-
-// traceRecoveryFailed logs when a strategy fails.
-func (p *parseContext) traceRecoveryFailed(strategyName string, reason string) {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   FAILED: %q - %s\n", strategyName, reason)
-	}
-}
-
-// traceRecoveryAllFailed logs when all strategies fail.
-func (p *parseContext) traceRecoveryAllFailed() {
-	if p.recovery != nil && p.recovery.traceWriter != nil {
-		fmt.Fprintf(p.recovery.traceWriter, "[recovery]   all strategies failed\n")
-	}
+	return false, nil
 }

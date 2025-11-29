@@ -115,7 +115,7 @@ func TestServer_DidOpen_ValidFile(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+			Text: `fn GetUser(id: int) ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -155,7 +155,7 @@ func TestServer_DidOpen_ParseError(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text:    `query GetUser`, // Missing body.
+			Text:    `fn GetUser()`, // Missing body.
 		},
 	})
 	if err != nil {
@@ -186,7 +186,7 @@ func TestServer_DidOpen_SemanticError(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`Q`" + `
+			Text: `fn GetUser() ` + "`Q`" + `
 
 UndefinedQuery {
 	test "t" {}
@@ -237,7 +237,7 @@ func TestServer_DidChange(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query Q ` + "`Q`" + `
+			Text: `fn Q() ` + "`Q`" + `
 Q { test "t" {} }
 `,
 		},
@@ -254,7 +254,7 @@ Q { test "t" {} }
 			Version: 2,
 		},
 		ContentChanges: []protocol.TextDocumentContentChangeEvent{
-			{Text: `query Q`}, // Invalid - missing body.
+			{Text: `fn Q()`}, // Invalid - missing body.
 		},
 	})
 	if err != nil {
@@ -287,7 +287,7 @@ func TestServer_DidClose(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text:    `query Q ` + "`Q`" + ` Q { test "t" {} }`,
+			Text:    `fn Q() ` + "`Q`" + ` Q { test "t" {} }`,
 		},
 	})
 
@@ -328,7 +328,7 @@ func TestServer_Hover_Query(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -364,6 +364,81 @@ GetUser {
 	}
 }
 
+func TestServer_Hover_WithDocComment(t *testing.T) {
+	// Not parallel - uses trivia state
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with doc comments
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text: `// This query fetches a user by ID.
+// Returns the full user object.
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+
+// Test suite for GetUser query
+GetUser {
+	// Tests the basic lookup functionality
+	test "finds user" {
+		$id: 1
+	}
+}
+`,
+		},
+	})
+
+	// Hover over the query definition - should show doc comment
+	result, err := server.Hover(ctx, &protocol.HoverParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 2, Character: 7}, // "GetUser" on query line
+		},
+	})
+	if err != nil {
+		t.Fatalf("Hover() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected hover result")
+	}
+
+	content := result.Contents.Value
+	t.Logf("Hover content:\n%s", content)
+
+	// Should contain the doc comment text
+	if !contains(content, "fetches a user by ID") {
+		t.Errorf("Expected doc comment in hover, got: %s", content)
+	}
+
+	// Hover over the test - should show test doc comment
+	testResult, err := server.Hover(ctx, &protocol.HoverParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 7, Character: 6}, // "test" keyword
+		},
+	})
+	if err != nil {
+		t.Fatalf("Hover() error: %v", err)
+	}
+
+	if testResult == nil {
+		t.Fatal("Expected hover result for test")
+	}
+
+	testContent := testResult.Contents.Value
+	t.Logf("Test hover content:\n%s", testContent)
+
+	// Should contain the test doc comment
+	if !contains(testContent, "basic lookup functionality") {
+		t.Errorf("Expected test doc comment in hover, got: %s", testContent)
+	}
+}
+
 func TestServer_Hover_NoContent(t *testing.T) {
 	t.Parallel()
 
@@ -378,7 +453,7 @@ func TestServer_Hover_NoContent(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text:    `query Q ` + "`Q`" + ` Q { test "t" {} }`,
+			Text:    `fn Q() ` + "`Q`" + ` Q { test "t" {} }`,
 		},
 	})
 
@@ -413,7 +488,7 @@ func TestServer_Hover_Parameter(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -473,7 +548,7 @@ func TestServer_Hover_ReturnField(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.email`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.email`" + `
 
 GetUser {
 	test "finds user" {
@@ -532,13 +607,13 @@ func TestServer_Hover_AssertQuery(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query GetUser ` + "`MATCH (u:User {id: $userId}) RETURN u.name`" + `
-query CountPosts ` + "`MATCH (p:Post {authorId: $authorId}) RETURN count(p) as count`" + `
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $userId}) RETURN u.name`" + `
+fn CountPosts() ` + "`MATCH (p:Post {authorId: $authorId}) RETURN count(p) as count`" + `
 
 GetUser {
 	test "finds user" {
 		$userId: 1
-		assert CountPosts($authorId: 1) { count == 0 }
+		assert CountPosts($authorId: 1) { (count == 0) }
 	}
 }
 `,
@@ -604,8 +679,8 @@ func TestServer_DocumentSymbol(t *testing.T) {
 			Version: 1,
 			Text: `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User {id: $userId}) RETURN u.name`" + `
-query CountPosts ` + "`MATCH (p:Post) RETURN count(p)`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $userId}) RETURN u.name`" + `
+fn CountPosts() ` + "`MATCH (p:Post) RETURN count(p)`" + `
 
 GetUser {
 	setup fixtures.CreateUser($id: 1)
@@ -685,7 +760,7 @@ func TestServer_DocumentSymbol_Empty(t *testing.T) {
 	}
 
 	// Should return nil/empty for non-existent document
-	if result != nil && len(result) > 0 {
+	if len(result) > 0 {
 		t.Error("Expected nil or empty result for non-existent document")
 	}
 }
@@ -698,14 +773,14 @@ func TestServer_Hover_SetupCall_CrossFile(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := "query SetupUsers `CREATE (u:User {name: $name}) RETURN u`\nquery SetupPosts `CREATE (p:Post {title: $title}) RETURN p`\n"
+	fixturesContent := "fn SetupUsers() `CREATE (u:User {name: $name}) RETURN u`\nfn SetupPosts() `CREATE (p:Post {title: $title}) RETURN p`\n"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
 	}
 
 	// Create main.scaf that imports fixtures
 	mainPath := tmpDir + "/main.scaf"
-	mainContent := "import fixtures \"./fixtures\"\n\nquery GetUser `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.SetupUsers($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
+	mainContent := "import fixtures \"./fixtures\"\n\nfn GetUser() `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.SetupUsers($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
 	if err := writeFile(mainPath, mainContent); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
@@ -766,14 +841,14 @@ func TestServer_Diagnostic_UndefinedSetupQuery(t *testing.T) {
 
 	// Create fixtures.scaf with ONLY SetupUsers, not SetupPosts
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := "query SetupUsers `CREATE (u:User {name: $name}) RETURN u`\n"
+	fixturesContent := "fn SetupUsers() `CREATE (u:User {name: $name}) RETURN u`\n"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
 	}
 
 	// Create main.scaf that imports fixtures and calls a NON-EXISTENT query
 	mainPath := tmpDir + "/main.scaf"
-	mainContent := "import fixtures \"./fixtures\"\n\nquery GetUser `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.NonExistentQuery($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
+	mainContent := "import fixtures \"./fixtures\"\n\nfn GetUser() `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.NonExistentQuery($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
 	if err := writeFile(mainPath, mainContent); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
@@ -835,14 +910,14 @@ func TestServer_Diagnostic_ValidSetupQuery(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := "query SetupUsers `CREATE (u:User {name: $name}) RETURN u`\n"
+	fixturesContent := "fn SetupUsers() `CREATE (u:User {name: $name}) RETURN u`\n"
 	if err := writeFile(fixturesPath, fixturesContent); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
 	}
 
 	// Create main.scaf that imports fixtures and calls a VALID query
 	mainPath := tmpDir + "/main.scaf"
-	mainContent := "import fixtures \"./fixtures\"\n\nquery GetUser `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.SetupUsers($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
+	mainContent := "import fixtures \"./fixtures\"\n\nfn GetUser() `MATCH (u:User {id: $id}) RETURN u`\n\nGetUser {\n\tsetup fixtures.SetupUsers($name: \"test\")\n\ttest \"finds user\" {\n\t\t$id: 1\n\t}\n}\n"
 	if err := writeFile(mainPath, mainContent); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
@@ -885,7 +960,7 @@ func TestServer_CodeLens(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open a file with tests, groups, and scopes
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user by id" {
@@ -930,6 +1005,7 @@ GetUser {
 		}
 		t.Logf("Lens: %s at line %d, cmd=%s, args=%v",
 			lens.Command.Title, lens.Range.Start.Line, lens.Command.Command, lens.Command.Arguments)
+
 		switch lens.Command.Command {
 		case "scaf.runScope":
 			runAll++
@@ -962,7 +1038,7 @@ func TestServer_CodeLens_Ranges(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open a file with known positions
-	content := `query Q ` + "`Q`" + `
+	content := `fn Q() ` + "`Q`" + `
 
 Q {
 	test "first test" {}
@@ -1003,15 +1079,26 @@ Q {
 		if lens.Command == nil || len(lens.Command.Arguments) < 2 {
 			continue
 		}
-		key := lens.Command.Command + ":" + lens.Command.Arguments[1].(string)
+
+		arg1, ok := lens.Command.Arguments[1].(string)
+		if !ok {
+			t.Errorf("Expected string argument, got %T", lens.Command.Arguments[1])
+
+			continue
+		}
+
+		key := lens.Command.Command + ":" + arg1
 		expectedLine, ok := expectations[key]
 		if !ok {
 			t.Errorf("Unexpected lens: %s", key)
+
 			continue
 		}
+
 		if lens.Range.Start.Line != expectedLine {
 			t.Errorf("Lens %s expected at line %d, got line %d", key, expectedLine, lens.Range.Start.Line)
 		}
+
 		delete(expectations, key)
 	}
 
@@ -1052,7 +1139,7 @@ func TestServer_CodeLens_Arguments(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds Alice" {}
@@ -1132,7 +1219,7 @@ func TestServer_Formatting(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open an unformatted file (missing blank lines, inconsistent indentation, etc.)
-	unformattedContent := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	unformattedContent := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 GetUser {
 test "finds user" {
 $id: 1
@@ -1204,7 +1291,7 @@ func TestServer_Formatting_AlreadyFormatted(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open an already well-formatted file
-	formattedContent := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	formattedContent := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -1259,7 +1346,7 @@ func TestServer_Formatting_ParseError(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text:    `query GetUser`, // Missing body
+			Text:    `fn GetUser()`, // Missing body
 		},
 	})
 	if err != nil {

@@ -127,7 +127,7 @@ func TestLSPFileLoader_Load(t *testing.T) {
 	// Create a temp file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.scaf")
-	testContent := "query Test `MATCH (n) RETURN n`\n"
+	testContent := "fn Test() `MATCH (n) RETURN n`\n"
 
 	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -163,8 +163,8 @@ func TestLSPFileLoader_LoadAndAnalyze(t *testing.T) {
 	// Create a temp file with valid scaf content
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.scaf")
-	testContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
-query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	testContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 `
 
 	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
@@ -214,7 +214,7 @@ func TestLSPFileLoader_ResolveImportPath_DialectExtension(t *testing.T) {
 
 	// Create fixtures.cypher.scaf (not fixtures.scaf)
 	fixturesFile := filepath.Join(sharedDir, "fixtures.cypher.scaf")
-	if err := os.WriteFile(fixturesFile, []byte("query Test `test`"), 0644); err != nil {
+	if err := os.WriteFile(fixturesFile, []byte("fn Test() `test`"), 0644); err != nil {
 		t.Fatalf("Failed to create fixtures file: %v", err)
 	}
 
@@ -243,12 +243,12 @@ func TestLSPFileLoader_ResolveImportPath_PreferPlainScaf(t *testing.T) {
 
 	// Create both files
 	plainFile := filepath.Join(sharedDir, "fixtures.scaf")
-	if err := os.WriteFile(plainFile, []byte("query Test `test`"), 0644); err != nil {
+	if err := os.WriteFile(plainFile, []byte("fn Test() `test`"), 0644); err != nil {
 		t.Fatalf("Failed to create plain fixtures file: %v", err)
 	}
 
 	dialectFile := filepath.Join(sharedDir, "fixtures.cypher.scaf")
-	if err := os.WriteFile(dialectFile, []byte("query Test `test`"), 0644); err != nil {
+	if err := os.WriteFile(dialectFile, []byte("fn Test() `test`"), 0644); err != nil {
 		t.Fatalf("Failed to create dialect fixtures file: %v", err)
 	}
 
@@ -271,7 +271,7 @@ func TestLSPFileLoader_InvalidatePath(t *testing.T) {
 	// Create a temp file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.scaf")
-	testContent := "query Test `MATCH (n) RETURN n`\n"
+	testContent := "fn Test() `MATCH (n) RETURN n`\n"
 
 	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -287,7 +287,7 @@ func TestLSPFileLoader_InvalidatePath(t *testing.T) {
 	loader.InvalidatePath(testFile)
 
 	// Update file content
-	newContent := "query Updated `MATCH (m) RETURN m`\n"
+	newContent := "fn Updated() `MATCH (m) RETURN m`\n"
 	if err := os.WriteFile(testFile, []byte(newContent), 0644); err != nil {
 		t.Fatalf("Failed to update test file: %v", err)
 	}

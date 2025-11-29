@@ -158,14 +158,14 @@ func BuildSuiteTree(suite *scaf.Suite, suitePath string) SuiteTree {
 	// Add query scopes
 	for _, scope := range suite.Scopes {
 		scopeNode := &treeNode{
-			name:   scope.QueryName,
+			name:   scope.FunctionName,
 			kind:   kindScope,
 			parent: st.root,
 		}
 		st.root.children = append(st.root.children, scopeNode)
 
 		// Add items (tests and groups) - include suite path to avoid collisions
-		addItems(scopeNode, scope.Items, []string{scope.QueryName}, suitePath, st.idx)
+		addItems(scopeNode, scope.Items, []string{scope.FunctionName}, suitePath, st.idx)
 	}
 
 	return st

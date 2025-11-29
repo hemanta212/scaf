@@ -16,10 +16,12 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// Test command errors.
 var (
-	ErrNoScafFiles     = errors.New("no .scaf files found")
-	ErrNoDatabase      = errors.New("no database specified (use neo4j config in .scaf.yaml)")
-	ErrNoConnectionURI = errors.New("no connection URI specified (use --uri or .scaf.yaml)")
+	ErrNoScafFiles         = errors.New("no .scaf files found")
+	ErrNoDatabase          = errors.New("no database specified (use neo4j config in .scaf.yaml)")
+	ErrNoConnectionURI     = errors.New("no connection URI specified (use --uri or .scaf.yaml)")
+	ErrUnsupportedDatabase = errors.New("unsupported database")
 )
 
 func testCommand() *cli.Command {
@@ -139,7 +141,7 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 		}
 		dbCfg = neo4jCfg
 	default:
-		return fmt.Errorf("unsupported database: %s", databaseName)
+		return fmt.Errorf("%w: %s", ErrUnsupportedDatabase, databaseName)
 	}
 
 	// Parse all suites upfront and resolve modules (needed for TUI tree and named setups)

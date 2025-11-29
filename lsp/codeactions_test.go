@@ -18,7 +18,7 @@ func TestServer_CodeAction_MissingParams(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// File with missing parameter
-	content := `query GetUser ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id, name: $name}) RETURN u`" + `
 
 GetUser {
 	test "incomplete test" {
@@ -98,7 +98,7 @@ func TestServer_CodeAction_UnusedImport(t *testing.T) {
 	// File with unused import
 	content := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -262,7 +262,7 @@ func TestServer_CodeAction_NoDiagnostics(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Valid file with no issues
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {

@@ -23,7 +23,7 @@ func TestExtractSignatures(t *testing.T) {
 		{
 			name: "simple query with parameter and return",
 			input: `
-query getUserById ` + "`" + `
+fn getUserById() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name AS name
 ` + "`" + `
@@ -44,7 +44,7 @@ RETURN u.name AS name
 		{
 			name: "query with multiple parameters",
 			input: `
-query findUsers ` + "`" + `
+fn findUsers() ` + "`" + `
 MATCH (u:User)
 WHERE u.age > $minAge AND u.active = $isActive
 RETURN u.id AS id, u.name AS name
@@ -68,7 +68,7 @@ RETURN u.id AS id, u.name AS name
 		{
 			name: "query with aggregate return",
 			input: `
-query countUsers ` + "`" + `
+fn countUsers() ` + "`" + `
 MATCH (u:User)
 RETURN count(u) AS count
 ` + "`" + `
@@ -79,7 +79,7 @@ RETURN count(u) AS count
 					QueryName: "countUsers",
 					Params:    []FuncParam{},
 					Returns: []FuncReturn{
-						{Name: "count", Type: "any", IsSlice: false},
+						{Name: "count", Type: "int", IsSlice: false},
 					},
 				},
 			},
@@ -87,7 +87,7 @@ RETURN count(u) AS count
 		{
 			name: "snake_case query name",
 			input: `
-query get_user_by_id ` + "`" + `
+fn get_user_by_id() ` + "`" + `
 MATCH (u:User {id: $userId})
 RETURN u.name
 ` + "`" + `
@@ -167,7 +167,7 @@ func TestExtractSignaturesWithSchema(t *testing.T) {
 	}
 
 	input := `
-query getUser ` + "`" + `
+fn getUser() ` + "`" + `
 MATCH (u:User {id: $id})
 RETURN u.name AS name, u.age AS age, u.balance AS balance, u.createdAt AS createdAt
 ` + "`" + `
@@ -208,7 +208,7 @@ func TestExtractSignatureWithWildcard(t *testing.T) {
 
 	// Query with RETURN * should skip wildcard returns
 	input := `
-query getAllUsers ` + "`" + `
+fn getAllUsers() ` + "`" + `
 MATCH (u:User)
 RETURN *
 ` + "`" + `
@@ -229,7 +229,7 @@ func TestExtractSignaturesNilAnalyzer(t *testing.T) {
 	t.Parallel()
 
 	input := `
-query getUser ` + "`" + `
+fn getUser() ` + "`" + `
 MATCH (u:User {id: $id})
 RETURN u.name AS name
 ` + "`" + `
@@ -248,13 +248,125 @@ RETURN u.name AS name
 	assert.Empty(t, sig.Returns)
 }
 
+func TestExtractSignaturesWithExplicitTypes(t *testing.T) {
+	t.Parallel()
+
+	// Test explicit type annotations take precedence over schema inference
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeString, Required: true}, // schema says string
+				},
+			},
+		},
+	}
+
+	// Explicit type annotation: id: int (different from schema's string)
+	input := `
+fn getUser(id: int, name: string?) ` + "`" + `
+MATCH (u:User {id: $id, name: $name})
+RETURN u
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, schema)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+
+	// Explicit type annotation should take precedence over schema
+	require.Len(t, sig.Params, 2)
+	assert.Equal(t, "id", sig.Params[0].Name)
+	assert.Equal(t, "int", sig.Params[0].Type, "explicit type should override schema")
+	assert.Equal(t, "name", sig.Params[1].Name)
+	assert.Equal(t, "*string", sig.Params[1].Type, "nullable should become pointer")
+}
+
+func TestExtractSignaturesWithExplicitArrayType(t *testing.T) {
+	t.Parallel()
+
+	input := `
+fn getUsersByIds(ids: [string]) ` + "`" + `
+MATCH (u:User) WHERE u.id IN $ids
+RETURN u
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, nil)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Params, 1)
+	assert.Equal(t, "ids", sig.Params[0].Name)
+	assert.Equal(t, "[]string", sig.Params[0].Type, "array type should be []string")
+}
+
+func TestExtractSignaturesWithExplicitMapType(t *testing.T) {
+	t.Parallel()
+
+	input := `
+fn createUser(data: {string: any}) ` + "`" + `
+CREATE (u:User $data)
+RETURN u
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, nil)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Params, 1)
+	assert.Equal(t, "data", sig.Params[0].Name)
+	assert.Equal(t, "map[string]any", sig.Params[0].Type, "map type should be map[string]any")
+}
+
+func TestExtractSignaturesWithExplicitTypesNoAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	// When no analyzer, explicit types should still be used
+	input := `
+fn getUser(id: int, active: bool) ` + "`" + `
+MATCH (u:User {id: $id, active: $active})
+RETURN u
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	// Without analyzer, we use explicit types from function definition
+	sigs, err := ExtractSignatures(suite, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Params, 2)
+	assert.Equal(t, "id", sig.Params[0].Name)
+	assert.Equal(t, "int", sig.Params[0].Type)
+	assert.Equal(t, "active", sig.Params[1].Name)
+	assert.Equal(t, "bool", sig.Params[1].Type)
+}
+
 func TestInferParamTypeWithAnalyzerHint(t *testing.T) {
 	t.Parallel()
 
 	// When analyzer provides a type hint, use it
 	param := scaf.ParameterInfo{
 		Name: "userId",
-		Type: "string", // Analyzer-provided type hint
+		Type: scaf.TypeString, // Analyzer-provided type hint
 	}
 
 	typ := inferParamType(param, nil)
@@ -268,7 +380,7 @@ func TestInferReturnTypeWithAnalyzerHint(t *testing.T) {
 	// The Cypher analyzer now returns Go type strings from schema
 	ret := scaf.ReturnInfo{
 		Name: "count",
-		Type: "int64", // Analyzer-provided Go type from schema
+		Type: scaf.TypeInt64, // Analyzer-provided Go type from schema
 	}
 
 	typ := inferReturnType(ret, nil)
@@ -394,7 +506,7 @@ func TestResultStructGeneration(t *testing.T) {
 
 	// Query with multiple returns should generate a result struct name
 	input := `
-query getUser ` + "`" + `
+fn getUser() ` + "`" + `
 MATCH (u:User {id: $id})
 RETURN u.name AS name, u.email AS email
 ` + "`" + `
@@ -423,7 +535,7 @@ func TestResultStructNotGeneratedForSingleReturn(t *testing.T) {
 
 	// Query with single return should NOT generate a result struct
 	input := `
-query getName ` + "`" + `
+fn getName() ` + "`" + `
 MATCH (u:User)
 RETURN u.name AS name
 ` + "`" + `

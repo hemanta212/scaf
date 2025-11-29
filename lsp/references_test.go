@@ -18,7 +18,7 @@ func TestServer_References_Query(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -63,7 +63,7 @@ func TestServer_References_Import_CrossFile(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name}) RETURN u`" + `
 `
 	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
@@ -73,7 +73,7 @@ func TestServer_References_Import_CrossFile(t *testing.T) {
 	mainPath := filepath.Join(tmpDir, "main.scaf")
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "Alice")
@@ -133,7 +133,7 @@ func TestServer_References_NoDeclaration(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {

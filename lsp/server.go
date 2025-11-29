@@ -4,6 +4,7 @@ package lsp
 import (
 	"context"
 	"sync"
+	"time"
 
 	"go.lsp.dev/protocol"
 	"go.uber.org/zap"
@@ -73,7 +74,7 @@ func NewServer(client protocol.Client, logger *zap.Logger, dialectName string) *
 		client:        client,
 		logger:        logger,
 		documents:     make(map[protocol.DocumentURI]*Document),
-		analyzer:      analysis.NewAnalyzerWithResolver(fileLoader, resolver),
+		analyzer:      analysis.NewAnalyzerWithQueryAnalyzer(fileLoader, resolver, queryAnalyzer),
 		fileLoader:    fileLoader,
 		dialectName:   dialectName,
 		queryAnalyzer: queryAnalyzer,
@@ -183,9 +184,6 @@ func (s *Server) Exit(_ context.Context) error {
 func (s *Server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
 	s.logger.Info("DidOpen", zap.String("uri", string(params.TextDocument.URI)))
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	doc := &Document{
 		URI:     params.TextDocument.URI,
 		Version: params.TextDocument.Version,
@@ -202,9 +200,12 @@ func (s *Server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 		doc.LastValidAnalysis = doc.Analysis
 	}
 
+	// Hold lock only for document map update
+	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = doc
+	s.mu.Unlock()
 
-	// Publish diagnostics
+	// Publish diagnostics outside the lock to prevent deadlock
 	s.publishDiagnostics(ctx, doc)
 
 	return nil
@@ -212,15 +213,20 @@ func (s *Server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 
 // DidChange handles textDocument/didChange notifications.
 func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	s.logger.Info("DidChange",
+	start := time.Now()
+	s.logger.Info("DidChange START",
 		zap.String("uri", string(params.TextDocument.URI)),
 		zap.Int32("version", params.TextDocument.Version))
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Hold the lock only for document state updates, not for RPC calls.
+	// This prevents deadlock when client sends requests while we're publishing diagnostics.
+	var docForDiagnostics *Document
 
+	s.mu.Lock()
+	s.logger.Debug("DidChange: acquired lock", zap.Duration("elapsed", time.Since(start)))
 	doc, ok := s.documents[params.TextDocument.URI]
 	if !ok {
+		s.mu.Unlock()
 		s.logger.Warn("DidChange for unknown document", zap.String("uri", string(params.TextDocument.URI)))
 
 		return nil
@@ -232,18 +238,34 @@ func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 		doc.Version = params.TextDocument.Version
 
 		// Re-analyze (use file system path for proper import resolution)
+		analyzeStart := time.Now()
 		docPath := URIToPath(params.TextDocument.URI)
 		doc.Analysis = s.analyzer.Analyze(docPath, []byte(doc.Content))
+		s.logger.Debug("DidChange: analysis complete",
+			zap.Duration("analyzeTime", time.Since(analyzeStart)),
+			zap.Bool("hasParseError", doc.Analysis.ParseError != nil))
 
 		// If parsing succeeded, save as last valid analysis for completion fallback
 		if doc.Analysis.ParseError == nil {
 			doc.LastValidAnalysis = doc.Analysis
 		}
 
-		// Publish diagnostics
-		s.publishDiagnostics(ctx, doc)
+		docForDiagnostics = doc
+	}
+	s.mu.Unlock()
+	s.logger.Debug("DidChange: released lock", zap.Duration("elapsed", time.Since(start)))
+
+	// Publish diagnostics outside the lock to prevent deadlock.
+	// The client may send requests (e.g., completion) while we're publishing.
+	if docForDiagnostics != nil {
+		diagStart := time.Now()
+		s.publishDiagnostics(ctx, docForDiagnostics)
+		s.logger.Debug("DidChange: diagnostics published",
+			zap.Duration("diagTime", time.Since(diagStart)),
+			zap.Duration("totalTime", time.Since(start)))
 	}
 
+	s.logger.Info("DidChange END", zap.Duration("elapsed", time.Since(start)))
 	return nil
 }
 
@@ -251,12 +273,12 @@ func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 func (s *Server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	s.logger.Info("DidClose", zap.String("uri", string(params.TextDocument.URI)))
 
+	// Hold lock only for document map update
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	delete(s.documents, params.TextDocument.URI)
+	s.mu.Unlock()
 
-	// Clear diagnostics for closed document
+	// Clear diagnostics outside the lock to prevent deadlock
 	err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
 		URI:         params.TextDocument.URI,
 		Diagnostics: []protocol.Diagnostic{},

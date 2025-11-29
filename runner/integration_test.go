@@ -47,7 +47,7 @@ func TestRunner_FileBasedModuleResolution(t *testing.T) {
 
 	// Create a fixture module
 	fixturesContent := `
-query SetupTestData ` + "`CREATE (:Test {name: $name})`" + `
+fn SetupTestData() ` + "`CREATE (:Test {name: $name})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -60,7 +60,7 @@ query SetupTestData ` + "`CREATE (:Test {name: $name})`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetTest ` + "`MATCH (t:Test) RETURN t.name`" + `
+fn GetTest() ` + "`MATCH (t:Test) RETURN t.name`" + `
 
 GetTest {
 	setup fixtures.SetupTestData($name: "hello")
@@ -126,7 +126,7 @@ func TestRunner_TransitiveImports(t *testing.T) {
 
 	// Create helper module
 	helperContent := `
-query SetupHelperData ` + "`CREATE (:Helper {value: $value})`" + `
+fn SetupHelperData() ` + "`CREATE (:Helper {value: $value})`" + `
 `
 	helperPath := filepath.Join(tmpDir, "helper.scaf")
 
@@ -138,7 +138,7 @@ query SetupHelperData ` + "`CREATE (:Helper {value: $value})`" + `
 	// Create fixture module that imports helper
 	fixturesContent := `
 import "./helper"
-query SetupFixtures ` + "`CREATE (:Fixture)`" + `
+fn SetupFixtures() ` + "`CREATE (:Fixture)`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -151,7 +151,7 @@ query SetupFixtures ` + "`CREATE (:Fixture)`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	setup helper.SetupHelperData($value: 42)
@@ -215,9 +215,9 @@ func TestRunner_MultipleSetupLevels(t *testing.T) {
 
 	// Create fixture module
 	fixturesContent := `
-query SetupGlobal ` + "`CREATE (:Global)`" + `
-query SetupScope ` + "`CREATE (:Scope {id: $id})`" + `
-query SetupTest ` + "`CREATE (:Test {name: $name})`" + `
+fn SetupGlobal() ` + "`CREATE (:Global)`" + `
+fn SetupScope() ` + "`CREATE (:Scope {id: $id})`" + `
+fn SetupTest() ` + "`CREATE (:Test {name: $name})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -230,7 +230,7 @@ query SetupTest ` + "`CREATE (:Test {name: $name})`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 setup fixtures.SetupGlobal()
 
@@ -314,7 +314,7 @@ func TestRunner_RunFileConvenience(t *testing.T) {
 
 	// Create a simple module with inline setup
 	content := `
-query GetData ` + "`MATCH (d:Data) RETURN d`" + `
+fn GetData() ` + "`MATCH (d:Data) RETURN d`" + `
 
 GetData {
 	setup ` + "`CREATE (:Data)`" + `
@@ -368,7 +368,7 @@ func TestRunner_NestedDirectoryImports(t *testing.T) {
 
 	// Create fixture in shared directory
 	fixturesContent := `
-query SetupShared ` + "`CREATE (:Shared {key: $key})`" + `
+fn SetupShared() ` + "`CREATE (:Shared {key: $key})`" + `
 `
 	fixturesPath := filepath.Join(sharedDir, "fixtures.scaf")
 
@@ -381,7 +381,7 @@ query SetupShared ` + "`CREATE (:Shared {key: $key})`" + `
 	mainContent := `
 import fixtures "./shared/fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	setup fixtures.SetupShared($key: "test-value")
@@ -436,7 +436,7 @@ func TestRunner_SetupWithVariousParamTypes(t *testing.T) {
 
 	// Create fixture module with different param types
 	fixturesContent := `
-query SetupWithTypes ` + "`CREATE (:Node {str: $str, num: $num, bool: $bool, nothing: $nothing})`" + `
+fn SetupWithTypes() ` + "`CREATE (:Node {str: $str, num: $num, bool: $bool, nothing: $nothing})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -449,7 +449,7 @@ query SetupWithTypes ` + "`CREATE (:Node {str: $str, num: $num, bool: $bool, not
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	setup fixtures.SetupWithTypes($str: "hello", $num: 42.5, $bool: true, $nothing: null)
@@ -517,7 +517,7 @@ func TestRunner_UnknownModuleError(t *testing.T) {
 
 	// Create main module referencing unknown module
 	mainContent := `
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	setup nonexistent.SetupData()
@@ -563,7 +563,7 @@ func TestRunner_UnknownSetupError(t *testing.T) {
 
 	// Create fixture module without the setup we'll reference
 	fixturesContent := `
-query SetupOther ` + "`CREATE (:Other)`" + `
+fn SetupOther() ` + "`CREATE (:Other)`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -576,7 +576,7 @@ query SetupOther ` + "`CREATE (:Other)`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	setup fixtures.SetupNonexistent()
@@ -622,7 +622,7 @@ func TestRunner_GroupLevelSetup(t *testing.T) {
 
 	// Create fixture module
 	fixturesContent := `
-query SetupGroup ` + "`CREATE (:Group {name: $name})`" + `
+fn SetupGroup() ` + "`CREATE (:Group {name: $name})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -635,7 +635,7 @@ query SetupGroup ` + "`CREATE (:Group {name: $name})`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 GetData {
 	group "my group" {
@@ -688,7 +688,7 @@ func TestRunner_MixedInlineAndNamedSetups(t *testing.T) {
 
 	// Create fixture module
 	fixturesContent := `
-query SetupNamed ` + "`CREATE (:Named)`" + `
+fn SetupNamed() ` + "`CREATE (:Named)`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -701,7 +701,7 @@ query SetupNamed ` + "`CREATE (:Named)`" + `
 	mainContent := `
 import fixtures "./fixtures"
 
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 
 setup ` + "`CREATE (:Inline)`" + `
 

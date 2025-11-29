@@ -80,8 +80,8 @@ func (s *Server) findQueryDefinition(doc *Document, pos lexer.Position, tokenCtx
 	// Check if we're on a QueryScope node and the token is the query name
 	if scope, ok := tokenCtx.Node.(*scaf.QueryScope); ok {
 		// Check if the token is the query name (first identifier on the line)
-		if tokenCtx.Token != nil && tokenCtx.Token.Value == scope.QueryName {
-			if q, ok := doc.Analysis.Symbols.Queries[scope.QueryName]; ok {
+		if tokenCtx.Token != nil && tokenCtx.Token.Value == scope.FunctionName {
+			if q, ok := doc.Analysis.Symbols.Queries[scope.FunctionName]; ok {
 				return &protocol.Location{
 					URI:   doc.URI,
 					Range: queryNameRange(q.Node),
@@ -94,9 +94,9 @@ func (s *Server) findQueryDefinition(doc *Document, pos lexer.Position, tokenCtx
 	for _, scope := range doc.Analysis.Suite.Scopes {
 		// Check if position is on the query name part of the scope declaration
 		// The query name starts at the beginning of the line and goes until the '{'
-		if pos.Line == scope.Pos.Line && pos.Column <= len(scope.QueryName)+1 {
+		if pos.Line == scope.Pos.Line && pos.Column <= len(scope.FunctionName)+1 {
 			// Find the query definition
-			if q, ok := doc.Analysis.Symbols.Queries[scope.QueryName]; ok {
+			if q, ok := doc.Analysis.Symbols.Queries[scope.FunctionName]; ok {
 				return &protocol.Location{
 					URI:   doc.URI,
 					Range: queryNameRange(q.Node),
@@ -108,10 +108,10 @@ func (s *Server) findQueryDefinition(doc *Document, pos lexer.Position, tokenCtx
 	return nil
 }
 
-// queryNameRange returns the range of just the query name (not the whole query).
-// The name starts after "query " (6 characters).
-func queryNameRange(q *scaf.Query) protocol.Range {
-	nameStartCol := q.Pos.Column + 6 // "query " = 6 chars
+// queryNameRange returns the range of just the function name (not the whole definition).
+// The name starts after "fn " (3 characters).
+func queryNameRange(q *scaf.Function) protocol.Range {
+	nameStartCol := q.Pos.Column + 3 // "fn " = 3 chars
 	nameEndCol := nameStartCol + len(q.Name)
 
 	return protocol.Range{
@@ -260,12 +260,13 @@ func (s *Server) findParameterDefinition(doc *Document, tokenCtx *analysis.Token
 				return nil
 			}
 
-			// The query body is on the same line after "query Name `"
+			// The query body is on the same line after "fn Name `" or "fn Name(...) `"
 			// Query position: line X, column Y
-			// Body starts at: column Y + len("query ") + len(Name) + len(" `") = Y + 6 + len(Name) + 2
+			// Body starts at: column Y + len("fn ") + len(Name) + len(" `") = Y + 3 + len(Name) + 2
+			// TODO: If the function has parameters, we need to account for their length too
 
 			// For single-line queries, offset the parameter position
-			queryBodyStartCol := queryNode.Pos.Column + 6 + len(q.Name) + 2 // "query " + Name + " `"
+			queryBodyStartCol := queryNode.Pos.Column + 3 + len(q.Name) + 2 // "fn " + Name + " `"
 
 			// The parameter position is relative to the start of the query body
 			// Line is relative to query start (1-indexed in query, query is line 1)
@@ -376,10 +377,11 @@ func (s *Server) findReturnFieldDefinition(doc *Document, tokenCtx *analysis.Tok
 			// If we have position info for the return field, navigate to it precisely
 			if ret.Line > 0 && ret.Column > 0 {
 				// Calculate the position in the document
-				// The query body starts after "query Name `" on the query definition line
-				// Query position: line X, column Y
-				// Body starts at: column Y + len("query ") + len(Name) + len(" `") = Y + 6 + len(Name) + 2
-				queryBodyStartCol := queryNode.Pos.Column + 6 + len(q.Name) + 2 // "query " + Name + " `"
+				// The query body starts after "fn Name `" on the function definition line
+				// Function position: line X, column Y
+				// Body starts at: column Y + len("fn ") + len(Name) + len(" `") = Y + 3 + len(Name) + 2
+				// TODO: If the function has parameters, we need to account for their length too
+				queryBodyStartCol := queryNode.Pos.Column + 3 + len(q.Name) + 2 // "fn " + Name + " `"
 
 				// The return field position is relative to the start of the query body
 				docLine := queryNode.Pos.Line + ret.Line - 1

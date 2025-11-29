@@ -86,9 +86,9 @@ func TestRunner_SimpleTest(t *testing.T) {
 	r := New(WithDatabase(d), WithHandler(h))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "finds user"}}},
 		}},
 	}
@@ -123,9 +123,9 @@ func TestRunner_NestedGroups(t *testing.T) {
 	r := New(WithDatabase(&mockDatabase{}))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "Query", Body: "Q"}},
+		Functions: []*scaf.Query{{Name: "Query", Body: "Q"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "Query",
+			FunctionName: "Query",
 			Items: []*scaf.TestOrGroup{{
 				Group: &scaf.Group{
 					Name: "outer",
@@ -167,9 +167,9 @@ func TestRunner_FailFast(t *testing.T) {
 
 	setup := "SETUP"
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "Query", Body: "Q"}},
+		Functions: []*scaf.Query{{Name: "Query", Body: "Q"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "Query",
+			FunctionName: "Query",
 			Items: []*scaf.TestOrGroup{
 				{Test: &scaf.Test{Name: "test1", Setup: &scaf.SetupClause{Inline: &setup}}},
 				{Test: &scaf.Test{Name: "test2"}},
@@ -192,9 +192,9 @@ func TestRunner_ScopeAndGroupSetup(t *testing.T) {
 	scopeSetup := "SCOPE"
 	groupSetup := "GROUP"
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "Query", Body: "Q"}},
+		Functions: []*scaf.Query{{Name: "Query", Body: "Q"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "Query",
+			FunctionName: "Query",
 			Setup: &scaf.SetupClause{Inline: &scopeSetup},
 			Items: []*scaf.TestOrGroup{{
 				Group: &scaf.Group{
@@ -231,20 +231,18 @@ func TestRunner_AssertPassing(t *testing.T) {
 	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items: []*scaf.TestOrGroup{{
 				Test: &scaf.Test{
 					Name: "user is adult",
 					Asserts: []*scaf.Assert{{
-						Conditions: []*scaf.Expr{{
-							ExprTokens: []*scaf.ExprToken{
-								{Ident: ptr("age")},
-								{Op: ptr(">=")},
-								{Number: ptr("18")},
-							},
-						}},
+						Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+							{Ident: ptr("age")},
+							{Op: ptr(">=")},
+							{Number: ptr("18")},
+						}}),
 					}},
 				},
 			}},
@@ -268,20 +266,18 @@ func TestRunner_AssertFailing(t *testing.T) {
 	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items: []*scaf.TestOrGroup{{
 				Test: &scaf.Test{
 					Name: "user is adult",
 					Asserts: []*scaf.Assert{{
-						Conditions: []*scaf.Expr{{
-							ExprTokens: []*scaf.ExprToken{
-								{Ident: ptr("age")},
-								{Op: ptr(">=")},
-								{Number: ptr("18")},
-							},
-						}},
+						Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+							{Ident: ptr("age")},
+							{Op: ptr(">=")},
+							{Number: ptr("18")},
+						}}),
 					}},
 				},
 			}},
@@ -305,27 +301,27 @@ func TestRunner_AssertMultipleConditions(t *testing.T) {
 	r := New(WithDatabase(d))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items: []*scaf.TestOrGroup{{
 				Test: &scaf.Test{
 					Name: "multiple conditions",
 					Asserts: []*scaf.Assert{{
-						Conditions: []*scaf.Expr{
+						Conditions: makeConditions(
 							// age >= 18
-							{ExprTokens: []*scaf.ExprToken{
+							&scaf.Expr{ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("age")},
 								{Op: ptr(">=")},
 								{Number: ptr("18")},
 							}},
 							// verified == true
-							{ExprTokens: []*scaf.ExprToken{
+							&scaf.Expr{ExprTokens: []*scaf.ExprToken{
 								{Ident: ptr("verified")},
 								{Op: ptr("==")},
 								{Ident: ptr("true")},
 							}},
-						},
+						),
 					}},
 				},
 			}},
@@ -351,9 +347,9 @@ func TestRunner_AssertWithInlineQuery(t *testing.T) {
 	}))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MAIN"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MAIN"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items: []*scaf.TestOrGroup{{
 				Test: &scaf.Test{
 					Name: "with inline query assert",
@@ -361,13 +357,11 @@ func TestRunner_AssertWithInlineQuery(t *testing.T) {
 						Query: &scaf.AssertQuery{
 							Inline: ptr("COUNT"),
 						},
-						Conditions: []*scaf.Expr{{
-							ExprTokens: []*scaf.ExprToken{
-								{Ident: ptr("cnt")},
-								{Op: ptr(">")},
-								{Number: ptr("0")},
-							},
-						}},
+						Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+							{Ident: ptr("cnt")},
+							{Op: ptr(">")},
+							{Number: ptr("0")},
+						}}),
 					}},
 				},
 			}},
@@ -393,12 +387,12 @@ func TestRunner_AssertWithNamedQuery(t *testing.T) {
 	}))
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Query{
 			{Name: "GetUser", Body: "MAIN"},
 			{Name: "CountAll", Body: "COUNTER"},
 		},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Items: []*scaf.TestOrGroup{{
 				Test: &scaf.Test{
 					Name: "with named query assert",
@@ -406,13 +400,11 @@ func TestRunner_AssertWithNamedQuery(t *testing.T) {
 						Query: &scaf.AssertQuery{
 							QueryName: ptr("CountAll"),
 						},
-						Conditions: []*scaf.Expr{{
-							ExprTokens: []*scaf.ExprToken{
-								{Ident: ptr("total")},
-								{Op: ptr("==")},
-								{Number: ptr("10")},
-							},
-						}},
+						Conditions: makeConditions(&scaf.Expr{ExprTokens: []*scaf.ExprToken{
+							{Ident: ptr("total")},
+							{Op: ptr("==")},
+							{Number: ptr("10")},
+						}}),
 					}},
 				},
 			}},
@@ -452,23 +444,51 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+// makeParenExpr creates a ParenExpr from ExprTokens.
+func makeParenExpr(tokens []*scaf.ExprToken) *scaf.ParenExpr {
+	balancedTokens := make([]*scaf.BalancedExprToken, 0, len(tokens))
+	for _, tok := range tokens {
+		balancedTokens = append(balancedTokens, &scaf.BalancedExprToken{
+			Str:    tok.Str,
+			Number: tok.Number,
+			Ident:  tok.Ident,
+			Op:     tok.Op,
+			Dot:    tok.Dot,
+			Colon:  tok.Colon,
+			Comma:  tok.Comma,
+			LBrack: tok.LBrack,
+			RBrack: tok.RBrack,
+		})
+	}
+	return &scaf.ParenExpr{Tokens: balancedTokens}
+}
+
+// makeConditions creates ParenExpr conditions from Expr slices.
+func makeConditions(exprs ...*scaf.Expr) []*scaf.ParenExpr {
+	result := make([]*scaf.ParenExpr, len(exprs))
+	for i, expr := range exprs {
+		result[i] = makeParenExpr(expr.ExprTokens)
+	}
+	return result
+}
+
 func TestRunner_SetupCallWithModules(t *testing.T) {
 	// Create a mock database that tracks executed queries
 	d := &mockDatabase{}
 
 	// Create a module with a setup query
 	fixturesSuite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Query{
 			{Name: "SetupUsers", Body: "CREATE (:User {name: $name})"},
 		},
 	}
 
 	// Create the root module
 	rootSuite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"}},
 		Imports: []*scaf.Import{{Alias: ptr("fixtures"), Path: "./fixtures.scaf"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Setup: &scaf.SetupClause{
 				Call: &scaf.SetupCall{
 					Module: "fixtures",
@@ -520,9 +540,9 @@ func TestRunner_SetupCallWithoutModules(t *testing.T) {
 	r := New(WithDatabase(d)) // No modules configured
 
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
+		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Setup: &scaf.SetupClause{
 				Call: &scaf.SetupCall{
 					Module: "fixtures",
@@ -549,19 +569,19 @@ func TestRunner_SetupModuleReference(t *testing.T) {
 	// Create a fixtures module with a setup clause
 	fixturesSuite := &scaf.Suite{
 		Setup: &scaf.SetupClause{Inline: ptr("CREATE (:TestNode)")},
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Query{
 			{Name: "GetFixtures", Body: "MATCH (n:TestNode) RETURN n"},
 		},
 	}
 
 	// Create suite that references the module's setup
 	suite := &scaf.Suite{
-		Queries: []*scaf.Query{
+		Functions: []*scaf.Query{
 			{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"},
 		},
 		Imports: []*scaf.Import{{Alias: ptr("fixtures"), Path: "./fixtures.scaf"}},
 		Scopes: []*scaf.QueryScope{{
-			QueryName: "GetUser",
+			FunctionName: "GetUser",
 			Setup: &scaf.SetupClause{
 				Module: ptr("fixtures"), // Module reference runs the module's setup clause
 			},

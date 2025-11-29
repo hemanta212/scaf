@@ -1,4 +1,3 @@
-// Package analysis provides semantic analysis for scaf DSL files.
 package analysis
 
 import (
@@ -72,7 +71,7 @@ func GetRecoveryCompletionContext(f *AnalyzedFile, pos lexer.Position) *Recovery
 	ctx := &RecoveryCompletionContext{}
 
 	// Strategy 1: Check for recovered nodes at position using RecoverySuite
-	// RecoverySuite is parsed with recovery enabled, so it may have RecoveredTokens
+	// which is parsed with recovery enabled, so it may have RecoveredTokens
 	if f.RecoverySuite != nil {
 		findRecoveredContext(f.RecoverySuite, pos, ctx)
 	}
@@ -169,7 +168,7 @@ func prevTokenFromSuite(suite *scaf.Suite, pos lexer.Position) *lexer.Token {
 		}
 	}
 
-	for _, q := range suite.Queries {
+	for _, q := range suite.Functions {
 		for i := range q.Tokens {
 			checkToken(&q.Tokens[i])
 		}
@@ -206,13 +205,15 @@ func getErrorPosition(err error) lexer.Position {
 	var recoveryErr *participle.RecoveryError
 	if errors.As(err, &recoveryErr) && len(recoveryErr.Errors) > 0 {
 		// Get position from first error
-		if perr, ok := recoveryErr.Errors[0].(participle.Error); ok {
+		var perr participle.Error
+		if errors.As(recoveryErr.Errors[0], &perr) {
 			return perr.Position()
 		}
 	}
 	
 	// Check for single participle error
-	if perr, ok := err.(participle.Error); ok {
+	var perr participle.Error
+	if errors.As(err, &perr) {
 		return perr.Position()
 	}
 	
@@ -289,7 +290,7 @@ func analyzeTokenContext(ctx *RecoveryCompletionContext, pos lexer.Position, sui
 	// Determine context from surrounding structure
 	for _, scope := range suite.Scopes {
 		if containsPosition(scope.Span(), pos) {
-			ctx.QueryScope = scope.QueryName
+			ctx.QueryScope = scope.FunctionName
 			
 			// Check if we're in setup context (after "setup" keyword)
 			if ctx.PrevToken.Type == scaf.TokenSetup {
@@ -340,7 +341,7 @@ func findRecoveredContext(suite *scaf.Suite, pos lexer.Position, ctx *RecoveryCo
 	}
 
 	// Check queries
-	for _, q := range suite.Queries {
+	for _, q := range suite.Functions {
 		if q.WasRecovered() && positionInRecoverySpan(q.RecoveredSpan, q.RecoveredEnd, pos) {
 			ctx.RecoveredNode = q
 			ctx.RecoveredTokens = q.RecoveredTokens
@@ -368,12 +369,12 @@ func findRecoveredInScope(scope *scaf.QueryScope, pos lexer.Position, ctx *Recov
 	if scope.WasRecovered() && positionInRecoverySpan(scope.RecoveredSpan, scope.RecoveredEnd, pos) {
 		ctx.RecoveredNode = scope
 		ctx.RecoveredTokens = scope.RecoveredTokens
-		ctx.QueryScope = scope.QueryName
+		ctx.QueryScope = scope.FunctionName
 	}
 
 	// Track query scope context
 	if containsPosition(scope.Span(), pos) {
-		ctx.QueryScope = scope.QueryName
+		ctx.QueryScope = scope.FunctionName
 	}
 
 	// Check setup in scope
@@ -689,6 +690,7 @@ func extractPrefixAfterDot(tokens []lexer.Token) string {
 	for _, tok := range tokens {
 		if tok.Type == scaf.TokenDot {
 			foundDot = true
+
 			continue
 		}
 		if foundDot && tok.Type == scaf.TokenIdent {
@@ -704,6 +706,7 @@ func extractSetupPrefix(tokens []lexer.Token) string {
 	for _, tok := range tokens {
 		if tok.Type == scaf.TokenSetup {
 			foundSetup = true
+
 			continue
 		}
 		if foundSetup && tok.Type == scaf.TokenIdent {

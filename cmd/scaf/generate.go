@@ -19,7 +19,13 @@ import (
 	_ "github.com/rlch/scaf/adapters/neogo"
 )
 
-var ErrNoScafFilesForGenerate = errors.New("no .scaf files found")
+// Generate command errors.
+var (
+	ErrNoScafFilesForGenerate = errors.New("no .scaf files found")
+	ErrUnknownLanguage        = errors.New("unknown language")
+	ErrLanguageNoAdapters     = errors.New("language does not support code generation with adapters")
+	ErrUnknownAdapter         = errors.New("unknown adapter")
+)
 
 func generateCommand() *cli.Command {
 	return &cli.Command{
@@ -123,11 +129,8 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		}
 
 		// Fall back to dialect-based inference
-		if adapterName == "" {
-			switch dialectName {
-			case scaf.DialectCypher:
-				adapterName = scaf.AdapterNeogo
-			}
+		if adapterName == "" && dialectName == scaf.DialectCypher {
+			adapterName = scaf.AdapterNeogo
 		}
 	}
 
@@ -159,20 +162,20 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	// Get language
 	lang := language.Get(langName)
 	if lang == nil {
-		return fmt.Errorf("unknown language: %s (available: %v)", langName, language.RegisteredLanguages())
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnknownLanguage, langName, language.RegisteredLanguages())
 	}
 
 	// Validate adapter support for the language
 	goLang, ok := lang.(*golang.GoLanguage)
 	if !ok {
-		return fmt.Errorf("language %q does not support code generation with adapters", langName)
+		return fmt.Errorf("%w: %s", ErrLanguageNoAdapters, langName)
 	}
 
 	var binding golang.Binding
 	if adapterName != "" {
 		binding = golang.GetBinding(adapterName)
 		if binding == nil {
-			return fmt.Errorf("unknown adapter %q for language %q (available: %v)", adapterName, langName, golang.RegisteredBindings())
+			return fmt.Errorf("%w: %s for language %s (available: %v)", ErrUnknownAdapter, adapterName, langName, golang.RegisteredBindings())
 		}
 	}
 

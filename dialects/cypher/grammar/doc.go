@@ -1,21 +1,26 @@
-// Package cyphergrammar provides an ANTLR-generated parser for Cypher queries.
+// Package cyphergrammar provides a parser for Cypher queries built with participle.
 //
-// This package contains the lexer and parser generated from CypherLexer.g4 and
-// CypherParser.g4, which implement the openCypher query language grammar.
+// This package contains the lexer, AST types, and parser for the openCypher query
+// language. It replaces the previous ANTLR-based parser to fix grammar ambiguities
+// and provide better integration with Go code.
 //
-// # Regenerating the Parser
+// # Key Features
 //
-// To regenerate the Go files from the grammar files, you need ANTLR 4.13.2+:
+//   - Proper disambiguation of list literals vs list comprehensions
+//   - Case-insensitive keyword matching
+//   - Support for Neo4j and APOC functions
+//   - Type-safe AST with lexer.Position tracking
 //
-//	cd dialects/cypher/grammar
-//	java -jar antlr-4.13.2-complete.jar -Dlanguage=Go -package cyphergrammar CypherLexer.g4 CypherParser.g4
+// # Usage
 //
-// Note: After regeneration, ensure the package declaration is `cyphergrammar`
-// (not `cypher`) in all generated .go files.
+//	ast, err := cyphergrammar.Parse("MATCH (u:User) RETURN u.name")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// Work with ast...
 //
 // # Grammar Origin
 //
-// The grammar is based on the openCypher grammar specification, originally from:
-// https://github.com/zhguchev/cypher-antlr4
-// Licensed under BSD-3-Clause license.
+// The grammar is based on the openCypher specification:
+// https://github.com/opencypher/openCypher
 package cyphergrammar

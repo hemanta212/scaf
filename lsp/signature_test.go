@@ -17,8 +17,8 @@ func TestServer_SignatureHelp(t *testing.T) {
 
 	// Create fixtures.scaf with a query that has parameters
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
-query SimpleSetup ` + "`CREATE (:Marker)`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
+fn SimpleSetup() ` + "`CREATE (:Marker)`" + `
 `
 	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
@@ -28,7 +28,7 @@ query SimpleSetup ` + "`CREATE (:Marker)`" + `
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "Alice", $age: 30)
@@ -99,14 +99,14 @@ func TestServer_SignatureHelp_SecondParameter(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := `query CreateUser ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
+	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
 `
 	_ = os.WriteFile(fixturesPath, []byte(fixturesContent), 0644)
 
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`Q`" + `
+fn GetUser() ` + "`Q`" + `
 
 GetUser {
 	setup fixtures.CreateUser($name: "Alice", 
@@ -167,7 +167,7 @@ func TestServer_SignatureHelp_NotInCall(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text: `query Q ` + "`Q`" + `
+			Text: `fn Q() ` + "`Q`" + `
 Q { test "t" {} }
 `,
 		},

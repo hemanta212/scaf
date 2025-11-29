@@ -1,9 +1,9 @@
 package cypher
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
 	cyphergrammar "github.com/rlch/scaf/dialects/cypher/grammar"
@@ -34,14 +34,31 @@ type variableBinding struct {
 
 // queryContext holds context during query analysis.
 type queryContext struct {
-	bindings map[string]*variableBinding // variable name -> binding
+	bindings map[string]*variableBinding // variable name -> binding (from MATCH)
+	locals   map[string]*analysis.Type   // local variable types (from list comprehensions, UNWIND, etc.)
 	schema   *analysis.TypeSchema
 }
 
 func newQueryContext(schema *analysis.TypeSchema) *queryContext {
 	return &queryContext{
 		bindings: make(map[string]*variableBinding),
+		locals:   make(map[string]*analysis.Type),
 		schema:   schema,
+	}
+}
+
+// withLocal returns a new queryContext with an additional local variable binding.
+// This is used for scoped bindings like list comprehension variables.
+func (qctx *queryContext) withLocal(name string, typ *analysis.Type) *queryContext {
+	newLocals := make(map[string]*analysis.Type, len(qctx.locals)+1)
+	for k, v := range qctx.locals {
+		newLocals[k] = v
+	}
+	newLocals[name] = typ
+	return &queryContext{
+		bindings: qctx.bindings,
+		locals:   newLocals,
+		schema:   qctx.schema,
 	}
 }
 
@@ -58,9 +75,14 @@ func (a *Analyzer) AnalyzeQueryWithSchema(query string, schema *analysis.TypeSch
 
 // analyzeQueryInternal is the shared implementation for query analysis.
 func (a *Analyzer) analyzeQueryInternal(query string, schema *analysis.TypeSchema) (*scaf.QueryMetadata, error) {
-	tree, err := parseCypherQuery(query)
+	ast, err := cyphergrammar.Parse(query)
 	if err != nil {
-		return nil, err
+		// Return partial results even on parse errors - we still want completion
+		// for partially valid queries
+		return &scaf.QueryMetadata{
+			Parameters: []scaf.ParameterInfo{},
+			Returns:    []scaf.ReturnInfo{},
+		}, nil
 	}
 
 	ctx := newQueryContext(schema)
@@ -70,173 +92,185 @@ func (a *Analyzer) analyzeQueryInternal(query string, schema *analysis.TypeSchem
 	}
 
 	// First pass: extract variable bindings from MATCH clauses
-	extractBindings(tree, ctx)
+	extractBindings(ast, ctx)
 
 	// Extract parameters with type inference
-	extractParameters(tree, result, ctx)
+	extractParameters(ast, result, ctx)
 
 	// Extract return items with type inference
-	extractReturns(tree, result, ctx)
+	extractReturns(ast, result, ctx)
 
 	// Check for unique field filters if schema is provided
 	if schema != nil {
-		result.ReturnsOne = checkUniqueFilter(tree, schema)
+		result.ReturnsOne = checkUniqueFilter(ast, schema)
 	}
 
 	return result, nil
 }
 
-// parseCypherQuery parses a Cypher query string and returns the parse tree.
-//
-//nolint:unparam,ireturn // error is always nil; antlr.ParseTree is required interface return
-func parseCypherQuery(query string) (antlr.ParseTree, error) {
-	input := antlr.NewInputStream(query)
-	lexer := cyphergrammar.NewCypherLexer(input)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	parser := cyphergrammar.NewCypherParser(stream)
-
-	// Set error listeners to track parsing errors
-	errorListener := &parseErrorListener{}
-
-	parser.RemoveErrorListeners()
-	parser.AddErrorListener(errorListener)
-
-	// Parse the script
-	tree := parser.Script()
-
-	if len(errorListener.errors) > 0 {
-		// Return partial results even on parse errors - we still want completion
-		// for partially valid queries
-		return tree, nil
+// extractBindings walks the AST to find variable bindings from node patterns.
+// E.g., MATCH (u:User) binds variable "u" to label "User".
+func extractBindings(ast *cyphergrammar.Script, ctx *queryContext) {
+	if ast == nil || ast.Query == nil {
+		return
 	}
 
-	return tree, nil
+	// Handle regular query
+	if rq := ast.Query.RegularQuery; rq != nil {
+		extractBindingsFromRegularQuery(rq, ctx)
+	}
 }
 
-// parseErrorListener tracks parse errors.
-type parseErrorListener struct {
-	errors []string
-}
+func extractBindingsFromRegularQuery(rq *cyphergrammar.RegularQuery, ctx *queryContext) {
+	if rq == nil || rq.SingleQuery == nil {
+		return
+	}
 
-func (pel *parseErrorListener) SyntaxError(_ antlr.Recognizer, _ any, _, _ int, msg string, _ antlr.RecognitionException) {
-	pel.errors = append(pel.errors, msg)
-}
-
-func (pel *parseErrorListener) ReportAmbiguity(_ antlr.Parser, _ *antlr.DFA, _, _ int, _ bool, _ *antlr.BitSet, _ *antlr.ATNConfigSet) {
-}
-
-func (pel *parseErrorListener) ReportAttemptingFullContext(_ antlr.Parser, _ *antlr.DFA, _, _ int, _ *antlr.BitSet, _ *antlr.ATNConfigSet) {
-}
-
-func (pel *parseErrorListener) ReportContextSensitivity(_ antlr.Parser, _ *antlr.DFA, _, _, _ int, _ *antlr.ATNConfigSet) {
-}
-
-// extractBindings walks the tree to find variable bindings from node patterns.
-// E.g., MATCH (u:User) binds variable "u" to label "User".
-func extractBindings(tree antlr.ParseTree, ctx *queryContext) {
-	var walk func(node antlr.Tree)
-
-	walk = func(node antlr.Tree) {
-		if nodeCtx, ok := node.(*cyphergrammar.NodePatternContext); ok {
-			extractNodeBinding(nodeCtx, ctx)
+	for _, clause := range rq.SingleQuery.Clauses {
+		if clause.Reading != nil && clause.Reading.Match != nil {
+			extractBindingsFromPattern(clause.Reading.Match.Pattern, ctx)
 		}
+	}
 
-		// Recursively walk children
-		if ruleCtx, ok := node.(antlr.RuleContext); ok {
-			for i := 0; i < ruleCtx.GetChildCount(); i++ {
-				if child := ruleCtx.GetChild(i); child != nil {
-					walk(child)
+	// Also check union queries
+	for _, union := range rq.Unions {
+		if union.Query != nil {
+			for _, clause := range union.Query.Clauses {
+				if clause.Reading != nil && clause.Reading.Match != nil {
+					extractBindingsFromPattern(clause.Reading.Match.Pattern, ctx)
 				}
 			}
 		}
 	}
-
-	walk(tree)
 }
 
-// extractNodeBinding extracts variable binding from a node pattern.
-func extractNodeBinding(nodeCtx *cyphergrammar.NodePatternContext, ctx *queryContext) {
-	// Get variable name
-	var varName string
-	if symbolCtx := nodeCtx.Symbol(); symbolCtx != nil {
-		varName = symbolCtx.GetText()
-	}
-
-	if varName == "" {
+func extractBindingsFromPattern(pattern *cyphergrammar.Pattern, ctx *queryContext) {
+	if pattern == nil {
 		return
 	}
 
-	// Get labels
-	var labels []string
-	if labelsCtx := nodeCtx.NodeLabels(); labelsCtx != nil {
-		for _, nameCtx := range labelsCtx.AllName() {
-			if nameCtx != nil {
-				labels = append(labels, nameCtx.GetText())
-			}
+	for _, part := range pattern.Parts {
+		if part.Element != nil {
+			extractBindingsFromPatternElement(part.Element, ctx)
 		}
 	}
+}
 
-	ctx.bindings[varName] = &variableBinding{
-		variable: varName,
+func extractBindingsFromPatternElement(elem *cyphergrammar.PatternElement, ctx *queryContext) {
+	if elem == nil {
+		return
+	}
+
+	// Handle parenthesized pattern
+	if elem.Paren != nil {
+		extractBindingsFromPatternElement(elem.Paren, ctx)
+		return
+	}
+
+	// Extract from node pattern
+	if elem.Node != nil {
+		extractNodeBinding(elem.Node, ctx)
+	}
+
+	// Extract from chain
+	for _, chain := range elem.Chain {
+		if chain.Node != nil {
+			extractNodeBinding(chain.Node, ctx)
+		}
+	}
+}
+
+func extractNodeBinding(node *cyphergrammar.NodePattern, ctx *queryContext) {
+	if node == nil || node.Variable == "" {
+		return
+	}
+
+	var labels []string
+	if node.Labels != nil {
+		labels = node.Labels.Labels
+	}
+
+	ctx.bindings[node.Variable] = &variableBinding{
+		variable: node.Variable,
 		labels:   labels,
 	}
 }
 
-// extractParameters walks the tree to find all $parameters.
-func extractParameters(tree antlr.ParseTree, result *scaf.QueryMetadata, ctx *queryContext) {
-	indexByKey := make(map[string]int) // map name -> index in Parameters slice
+// walkAddSubExprSimple walks an AddSubExpr to find atoms containing parameters.
+func walkAddSubExprSimple(add *cyphergrammar.AddSubExpr, propName string, labels []string, walkAtom func(*cyphergrammar.Atom, string, []string)) {
+	if add == nil {
+		return
+	}
 
-	var walk func(node antlr.Tree, parentPropName string, parentLabels []string)
-
-	walk = func(node antlr.Tree, parentPropName string, parentLabels []string) {
-		// Check if this is a map pair (property: $param)
-		if mapPairCtx, ok := node.(*cyphergrammar.MapPairContext); ok {
-			propName := ""
-			if nameCtx := mapPairCtx.Name(); nameCtx != nil {
-				propName = nameCtx.GetText()
+	var walkMult func(*cyphergrammar.MultDivExpr)
+	walkMult = func(mult *cyphergrammar.MultDivExpr) {
+		if mult == nil {
+			return
+		}
+		var walkPow func(*cyphergrammar.PowerExpr)
+		walkPow = func(pow *cyphergrammar.PowerExpr) {
+			if pow == nil {
+				return
 			}
-
-			// Get labels from parent node pattern
-			labels := getParentNodeLabels(mapPairCtx, ctx)
-
-			// Walk children with property context
-			if ruleCtx, ok := node.(antlr.RuleContext); ok {
-				for i := 0; i < ruleCtx.GetChildCount(); i++ {
-					if child := ruleCtx.GetChild(i); child != nil {
-						walk(child, propName, labels)
-					}
+			var walkUnary func(*cyphergrammar.UnaryExpr)
+			walkUnary = func(unary *cyphergrammar.UnaryExpr) {
+				if unary == nil || unary.Expr == nil {
+					return
 				}
+				walkAtom(unary.Expr.Atom, propName, labels)
+				// Note: we don't recurse into suffixes here to avoid infinite loops
 			}
+			walkUnary(pow.Left)
+			for _, t := range pow.Right {
+				walkUnary(t.Expr)
+			}
+		}
+		walkPow(mult.Left)
+		for _, t := range mult.Right {
+			walkPow(t.Expr)
+		}
+	}
 
+	walkMult(add.Left)
+	for _, t := range add.Right {
+		walkMult(t.Expr)
+	}
+}
+
+// extractParameters walks the AST to find all $parameters.
+func extractParameters(ast *cyphergrammar.Script, result *scaf.QueryMetadata, ctx *queryContext) {
+	if ast == nil {
+		return
+	}
+
+	indexByKey := make(map[string]int)
+
+	var walkExpr func(expr *cyphergrammar.Expression, propName string, labels []string)
+	var walkAtom func(atom *cyphergrammar.Atom, propName string, labels []string)
+
+	walkAtom = func(atom *cyphergrammar.Atom, propName string, labels []string) {
+		if atom == nil {
 			return
 		}
 
-		if paramCtx, ok := node.(*cyphergrammar.ParameterContext); ok {
-			// Extract parameter name from Symbol() or NumLit()
-			var paramName string
-
-			startToken := paramCtx.GetStart()
-			position := startToken.GetStart()
-			line := startToken.GetLine()
-			column := startToken.GetColumn() + 1 // ANTLR is 0-based, we want 1-based
-
-			if symbol := paramCtx.Symbol(); symbol != nil {
-				paramName = symbol.GetText()
-			} else if numLit := paramCtx.NumLit(); numLit != nil {
-				paramName = numLit.GetText()
-			}
+		// Check for parameter
+		if atom.Parameter != nil {
+			param := atom.Parameter
+			paramName := param.Name
 
 			if paramName != "" {
-				// Length includes the $ prefix
-				length := len(paramName) + 1
+				// Get position info
+				line := param.Pos.Line
+				column := param.Pos.Column
+				position := param.Pos.Offset
+				length := len(paramName) + 1 // +1 for $
 
-				// Infer type from schema if we know the property and model
-				paramType := inferParameterType(parentPropName, parentLabels, ctx)
+				// Infer type from schema
+				paramType := inferParameterType(propName, labels, ctx)
 
 				if idx, exists := indexByKey[paramName]; exists {
 					result.Parameters[idx].Count++
-					// Update type if we found one and didn't have one before
-					if paramType != "" && result.Parameters[idx].Type == "" {
+					if paramType != nil && result.Parameters[idx].Type == nil {
 						result.Parameters[idx].Type = paramType
 					}
 				} else {
@@ -254,51 +288,317 @@ func extractParameters(tree antlr.ParseTree, result *scaf.QueryMetadata, ctx *qu
 			}
 		}
 
-		// Recursively walk children
-		if ruleCtx, ok := node.(antlr.RuleContext); ok {
-			for i := 0; i < ruleCtx.GetChildCount(); i++ {
-				if child := ruleCtx.GetChild(i); child != nil {
-					walk(child, parentPropName, parentLabels)
+		// Walk nested expressions
+		if atom.Literal != nil {
+			if atom.Literal.List != nil {
+				for _, item := range atom.Literal.List.Items {
+					walkExpr(item, propName, labels)
+				}
+			}
+			if atom.Literal.Map != nil {
+				for _, pair := range atom.Literal.Map.Pairs {
+					walkExpr(pair.Value, pair.Key, labels)
+				}
+			}
+		}
+
+		if atom.ListComprehension != nil {
+			walkExpr(atom.ListComprehension.Source, propName, labels)
+			if atom.ListComprehension.Mapping != nil {
+				walkExpr(atom.ListComprehension.Mapping, propName, labels)
+			}
+		}
+
+		if atom.FunctionCall != nil {
+			for _, arg := range atom.FunctionCall.Args {
+				walkExpr(arg, propName, labels)
+			}
+		}
+
+		if atom.Parenthesized != nil {
+			walkExpr(atom.Parenthesized, propName, labels)
+		}
+
+		if atom.CaseExpr != nil {
+			if atom.CaseExpr.Input != nil {
+				walkExpr(atom.CaseExpr.Input, propName, labels)
+			}
+			for _, when := range atom.CaseExpr.Whens {
+				walkExpr(when.When, propName, labels)
+				walkExpr(when.Then, propName, labels)
+			}
+			if atom.CaseExpr.Else != nil {
+				walkExpr(atom.CaseExpr.Else, propName, labels)
+			}
+		}
+	}
+
+	walkExpr = func(expr *cyphergrammar.Expression, propName string, labels []string) {
+		if expr == nil {
+			return
+		}
+
+		// Walk through the expression tree
+		walkXorExpr := func(xor *cyphergrammar.XorExpr) {
+			if xor == nil {
+				return
+			}
+
+			walkAndExpr := func(and *cyphergrammar.AndExpr) {
+				if and == nil {
+					return
+				}
+
+				walkNotExpr := func(not *cyphergrammar.NotExpr) {
+					if not == nil || not.Expr == nil {
+						return
+					}
+
+					walkCompExpr := func(comp *cyphergrammar.ComparisonExpr) {
+						if comp == nil {
+							return
+						}
+
+						walkAddSubExpr := func(add *cyphergrammar.AddSubExpr) {
+							if add == nil {
+								return
+							}
+
+							walkMultDivExpr := func(mult *cyphergrammar.MultDivExpr) {
+								if mult == nil {
+									return
+								}
+
+								walkPowerExpr := func(pow *cyphergrammar.PowerExpr) {
+									if pow == nil {
+										return
+									}
+
+									walkUnaryExpr := func(unary *cyphergrammar.UnaryExpr) {
+										if unary == nil || unary.Expr == nil {
+											return
+										}
+
+										walkAtom(unary.Expr.Atom, propName, labels)
+
+										// Walk suffixes - use walkExpr since we need to handle nested AddSubExpr
+										for _, suffix := range unary.Expr.Suffixes {
+											if suffix.Index != nil {
+												walkExpr(suffix.Index.Start, propName, labels)
+												walkExpr(suffix.Index.End, propName, labels)
+											}
+											// For IN and StringPred, the expressions are AddSubExpr
+											// We need to walk them but they're not full Expressions
+											// For simplicity, we'll convert manually
+											if suffix.In != nil && suffix.In.Expr != nil {
+												walkAddSubExprSimple(suffix.In.Expr, propName, labels, walkAtom)
+											}
+											if suffix.StringPred != nil {
+												if suffix.StringPred.StartsWith != nil {
+													walkAddSubExprSimple(suffix.StringPred.StartsWith, propName, labels, walkAtom)
+												}
+												if suffix.StringPred.EndsWith != nil {
+													walkAddSubExprSimple(suffix.StringPred.EndsWith, propName, labels, walkAtom)
+												}
+												if suffix.StringPred.Contains != nil {
+													walkAddSubExprSimple(suffix.StringPred.Contains, propName, labels, walkAtom)
+												}
+											}
+										}
+									}
+
+									walkUnaryExpr(pow.Left)
+									for _, term := range pow.Right {
+										walkUnaryExpr(term.Expr)
+									}
+								}
+
+								walkPowerExpr(mult.Left)
+								for _, term := range mult.Right {
+									walkPowerExpr(term.Expr)
+								}
+							}
+
+							walkMultDivExpr(add.Left)
+							for _, term := range add.Right {
+								walkMultDivExpr(term.Expr)
+							}
+						}
+
+						walkAddSubExpr(comp.Left)
+						for _, term := range comp.Right {
+							walkAddSubExpr(term.Expr)
+						}
+					}
+
+					walkCompExpr(not.Expr)
+				}
+
+				walkNotExpr(and.Left)
+				for _, term := range and.Right {
+					walkNotExpr(term.Expr)
+				}
+			}
+
+			walkAndExpr(xor.Left)
+			for _, term := range xor.Right {
+				walkAndExpr(term.Expr)
+			}
+		}
+
+		walkXorExpr(expr.Left)
+		for _, term := range expr.Right {
+			walkXorExpr(term.Expr)
+		}
+	}
+
+	// Walk map literals in node patterns to get property context
+	var walkNodePattern func(node *cyphergrammar.NodePattern)
+	walkNodePattern = func(node *cyphergrammar.NodePattern) {
+		if node == nil || node.Properties == nil {
+			return
+		}
+
+		var labels []string
+		if node.Labels != nil {
+			labels = node.Labels.Labels
+		}
+
+		if node.Properties.Map != nil {
+			for _, pair := range node.Properties.Map.Pairs {
+				walkExpr(pair.Value, pair.Key, labels)
+			}
+		}
+		if node.Properties.Param != nil {
+			// Parameter as properties
+			param := node.Properties.Param
+			paramName := param.Name
+			if paramName != "" {
+				if idx, exists := indexByKey[paramName]; exists {
+					result.Parameters[idx].Count++
+				} else {
+					indexByKey[paramName] = len(result.Parameters)
+					result.Parameters = append(result.Parameters, scaf.ParameterInfo{
+						Name:     paramName,
+						Position: param.Pos.Offset,
+						Line:     param.Pos.Line,
+						Column:   param.Pos.Column,
+						Length:   len(paramName) + 1,
+						Count:    1,
+					})
 				}
 			}
 		}
 	}
 
-	walk(tree, "", nil)
-}
-
-// getParentNodeLabels finds the labels from a parent node pattern.
-func getParentNodeLabels(node antlr.Tree, ctx *queryContext) []string {
-	// Walk up the tree to find NodePatternContext
-	current := node
-	for current != nil {
-		if nodeCtx, ok := current.(*cyphergrammar.NodePatternContext); ok {
-			var labels []string
-			if labelsCtx := nodeCtx.NodeLabels(); labelsCtx != nil {
-				for _, nameCtx := range labelsCtx.AllName() {
-					if nameCtx != nil {
-						labels = append(labels, nameCtx.GetText())
+	// Walk the entire AST
+	if ast.Query != nil {
+		if rq := ast.Query.RegularQuery; rq != nil && rq.SingleQuery != nil {
+			for _, clause := range rq.SingleQuery.Clauses {
+				if clause.Reading != nil {
+					if clause.Reading.Match != nil && clause.Reading.Match.Pattern != nil {
+						for _, part := range clause.Reading.Match.Pattern.Parts {
+							if part.Element != nil {
+								walkPatternElement(part.Element, walkNodePattern)
+							}
+						}
+						if clause.Reading.Match.Where != nil {
+							walkExpr(clause.Reading.Match.Where.Expr, "", nil)
+						}
+					}
+					if clause.Reading.Unwind != nil {
+						walkExpr(clause.Reading.Unwind.Expr, "", nil)
+					}
+				}
+				if clause.Updating != nil {
+					if clause.Updating.Create != nil && clause.Updating.Create.Pattern != nil {
+						for _, part := range clause.Updating.Create.Pattern.Parts {
+							if part.Element != nil {
+								walkPatternElement(part.Element, walkNodePattern)
+							}
+						}
+					}
+					if clause.Updating.Merge != nil && clause.Updating.Merge.Pattern != nil {
+						if clause.Updating.Merge.Pattern.Element != nil {
+							walkPatternElement(clause.Updating.Merge.Pattern.Element, walkNodePattern)
+						}
+						for _, action := range clause.Updating.Merge.Actions {
+							if action.Set != nil {
+								for _, item := range action.Set.Items {
+									walkSetItem(item, walkExpr)
+								}
+							}
+						}
+					}
+					if clause.Updating.Delete != nil {
+						for _, expr := range clause.Updating.Delete.Exprs {
+							walkExpr(expr, "", nil)
+						}
+					}
+					if clause.Updating.Set != nil {
+						for _, item := range clause.Updating.Set.Items {
+							walkSetItem(item, walkExpr)
+						}
+					}
+					// REMOVE clause doesn't typically contain parameters
+				}
+				if clause.Return != nil && clause.Return.Body != nil {
+					if clause.Return.Body.Items != nil {
+						for _, item := range clause.Return.Body.Items.Items {
+							walkExpr(item.Expr, "", nil)
+						}
+					}
+				}
+				if clause.With != nil && clause.With.Body != nil {
+					if clause.With.Body.Items != nil {
+						for _, item := range clause.With.Body.Items.Items {
+							walkExpr(item.Expr, "", nil)
+						}
+					}
+					if clause.With.Where != nil {
+						walkExpr(clause.With.Where.Expr, "", nil)
 					}
 				}
 			}
-			return labels
-		}
-
-		// Try to get parent
-		if ruleCtx, ok := current.(antlr.RuleContext); ok {
-			current = ruleCtx.GetParent()
-		} else {
-			break
 		}
 	}
+}
 
-	return nil
+func walkPatternElement(elem *cyphergrammar.PatternElement, walkNode func(*cyphergrammar.NodePattern)) {
+	if elem == nil {
+		return
+	}
+	if elem.Paren != nil {
+		walkPatternElement(elem.Paren, walkNode)
+		return
+	}
+	if elem.Node != nil {
+		walkNode(elem.Node)
+	}
+	for _, chain := range elem.Chain {
+		if chain.Node != nil {
+			walkNode(chain.Node)
+		}
+	}
+}
+
+// walkSetItem walks a SET item to find expressions that may contain parameters.
+func walkSetItem(item *cyphergrammar.SetItem, walkExpr func(*cyphergrammar.Expression, string, []string)) {
+	if item == nil {
+		return
+	}
+	if item.PropertyExpr != nil {
+		walkExpr(item.PropertyExpr, "", nil)
+	}
+	if item.VarExpr != nil {
+		walkExpr(item.VarExpr, "", nil)
+	}
 }
 
 // inferParameterType looks up the type of a property in the schema.
-func inferParameterType(propName string, labels []string, ctx *queryContext) string {
+func inferParameterType(propName string, labels []string, ctx *queryContext) *analysis.Type {
 	if ctx.schema == nil || propName == "" {
-		return ""
+		return nil
 	}
 
 	// Try each label
@@ -306,115 +606,81 @@ func inferParameterType(propName string, labels []string, ctx *queryContext) str
 		if model, ok := ctx.schema.Models[label]; ok {
 			for _, field := range model.Fields {
 				if field.Name == propName && field.Type != nil {
-					return field.Type.String()
+					return field.Type
 				}
 			}
 		}
 	}
 
-	return ""
+	return nil
 }
 
-// extractReturns walks the tree to find RETURN clause items.
-func extractReturns(tree antlr.ParseTree, result *scaf.QueryMetadata, ctx *queryContext) {
-	var walk func(node antlr.Tree)
+// extractReturns walks the AST to find RETURN clause items.
+func extractReturns(ast *cyphergrammar.Script, result *scaf.QueryMetadata, ctx *queryContext) {
+	if ast == nil || ast.Query == nil {
+		return
+	}
 
-	walk = func(node antlr.Tree) {
-		if returnCtx, ok := node.(*cyphergrammar.ReturnStContext); ok {
-			extractReturnInfo(returnCtx, result, ctx)
-		}
-
-		// Recursively walk children
-		if ruleCtx, ok := node.(antlr.RuleContext); ok {
-			for i := 0; i < ruleCtx.GetChildCount(); i++ {
-				if child := ruleCtx.GetChild(i); child != nil {
-					walk(child)
-				}
+	if rq := ast.Query.RegularQuery; rq != nil && rq.SingleQuery != nil {
+		for _, clause := range rq.SingleQuery.Clauses {
+			if clause.Return != nil {
+				extractReturnInfo(clause.Return, result, ctx)
 			}
 		}
 	}
-
-	walk(tree)
 }
 
-// extractReturnInfo processes a ReturnStContext to extract return items.
-func extractReturnInfo(returnCtx *cyphergrammar.ReturnStContext, result *scaf.QueryMetadata, ctx *queryContext) {
-	projBody := returnCtx.ProjectionBody()
-	if projBody == nil {
+func extractReturnInfo(ret *cyphergrammar.ReturnClause, result *scaf.QueryMetadata, ctx *queryContext) {
+	if ret == nil || ret.Body == nil || ret.Body.Items == nil {
 		return
 	}
 
-	projItems := projBody.ProjectionItems()
-	if projItems == nil {
-		return
-	}
+	items := ret.Body.Items
 
-	// Check for RETURN * (wildcard)
-	if projItems.MULT() != nil {
+	// Check for RETURN *
+	if items.Star {
 		result.Returns = append(result.Returns, scaf.ReturnInfo{
 			Name:       "*",
 			Expression: "*",
 			IsWildcard: true,
 		})
-
 		return
 	}
 
-	// Iterate through each projection item
-	for _, itemCtx := range projItems.AllProjectionItem() {
-		if projItemCtx, ok := itemCtx.(*cyphergrammar.ProjectionItemContext); ok {
-			extractProjectionItem(projItemCtx, result, ctx)
-		}
+	// Process each projection item
+	for _, item := range items.Items {
+		extractProjectionItem(item, result, ctx)
 	}
 }
 
-// extractProjectionItem processes a single ProjectionItemContext.
-func extractProjectionItem(itemCtx *cyphergrammar.ProjectionItemContext, result *scaf.QueryMetadata, ctx *queryContext) {
-	if itemCtx == nil {
+func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.QueryMetadata, ctx *queryContext) {
+	if item == nil || item.Expr == nil {
 		return
 	}
 
-	exprCtx := itemCtx.Expression()
-	if exprCtx == nil {
-		return
-	}
+	expression := expressionToString(item.Expr)
 
-	expression := exprCtx.GetText()
+	// Get position info
+	line := item.Pos.Line
+	column := item.Pos.Column
+	length := len(expression)
 
-	// Get position info from the expression's start token
-	var line, column, length int
-	if ruleCtx, ok := exprCtx.(antlr.ParserRuleContext); ok {
-		startToken := ruleCtx.GetStart()
-		if startToken != nil {
-			line = startToken.GetLine()
-			column = startToken.GetColumn() + 1 // ANTLR is 0-based, we want 1-based
-			length = len(expression)
-		}
-	}
+	alias := item.Alias
 
-	// Check for alias (AS keyword)
-	var alias string
-
-	if itemCtx.AS() != nil {
-		if symbolCtx := itemCtx.Symbol(); symbolCtx != nil {
-			alias = symbolCtx.GetText()
-		}
-	}
-
-	// Determine the name to use for completion
+	// Determine the name
 	name := alias
 	if name == "" {
 		name = inferNameFromExpression(expression)
 	}
 
-	// Check for aggregate function
-	isAggregate := isAggregateExpression(exprCtx)
+	// Check for aggregate
+	isAggregate := isAggregateExpression(item.Expr)
 
-	// Check for wildcard patterns like n.*
+	// Check for wildcard
 	isWildcard := expression == "*" || strings.HasSuffix(expression, ".*")
 
-	// Infer type from schema
-	returnType := inferReturnType(expression, ctx)
+	// Infer type
+	returnType := inferExpressionType(item.Expr, ctx)
 
 	result.Returns = append(result.Returns, scaf.ReturnInfo{
 		Name:        name,
@@ -429,187 +695,569 @@ func extractProjectionItem(itemCtx *cyphergrammar.ProjectionItemContext, result 
 	})
 }
 
-// inferReturnType infers the type of a return expression from the schema.
-func inferReturnType(expression string, ctx *queryContext) string {
-	if ctx.schema == nil {
+// expressionToString converts an Expression AST back to a string representation.
+func expressionToString(expr *cyphergrammar.Expression) string {
+	if expr == nil {
 		return ""
 	}
 
-	// Parse property access: "u.name" -> variable="u", property="name"
-	if idx := strings.Index(expression, "."); idx > 0 {
-		varName := expression[:idx]
-		propName := expression[idx+1:]
+	var sb strings.Builder
+	xorToString(&sb, expr.Left)
+	for _, term := range expr.Right {
+		sb.WriteString(" OR ")
+		xorToString(&sb, term.Expr)
+	}
+	return sb.String()
+}
 
-		// Handle nested property access (e.g., "u.address.city") - just get first property for now
-		if nestedIdx := strings.Index(propName, "."); nestedIdx > 0 {
-			propName = propName[:nestedIdx]
+func xorToString(sb *strings.Builder, xor *cyphergrammar.XorExpr) {
+	if xor == nil {
+		return
+	}
+	andToString(sb, xor.Left)
+	for _, term := range xor.Right {
+		sb.WriteString(" XOR ")
+		andToString(sb, term.Expr)
+	}
+}
+
+func andToString(sb *strings.Builder, and *cyphergrammar.AndExpr) {
+	if and == nil {
+		return
+	}
+	notToString(sb, and.Left)
+	for _, term := range and.Right {
+		sb.WriteString(" AND ")
+		notToString(sb, term.Expr)
+	}
+}
+
+func notToString(sb *strings.Builder, not *cyphergrammar.NotExpr) {
+	if not == nil {
+		return
+	}
+	if not.Not {
+		sb.WriteString("NOT ")
+	}
+	compToString(sb, not.Expr)
+}
+
+func compToString(sb *strings.Builder, comp *cyphergrammar.ComparisonExpr) {
+	if comp == nil {
+		return
+	}
+	addSubToString(sb, comp.Left)
+	for _, term := range comp.Right {
+		sb.WriteString(" ")
+		sb.WriteString(term.Op)
+		sb.WriteString(" ")
+		addSubToString(sb, term.Expr)
+	}
+}
+
+func addSubToString(sb *strings.Builder, add *cyphergrammar.AddSubExpr) {
+	if add == nil {
+		return
+	}
+	multDivToString(sb, add.Left)
+	for _, term := range add.Right {
+		sb.WriteString(" ")
+		sb.WriteString(term.Op)
+		sb.WriteString(" ")
+		multDivToString(sb, term.Expr)
+	}
+}
+
+func multDivToString(sb *strings.Builder, mult *cyphergrammar.MultDivExpr) {
+	if mult == nil {
+		return
+	}
+	powerToString(sb, mult.Left)
+	for _, term := range mult.Right {
+		sb.WriteString(" ")
+		sb.WriteString(term.Op)
+		sb.WriteString(" ")
+		powerToString(sb, term.Expr)
+	}
+}
+
+func powerToString(sb *strings.Builder, pow *cyphergrammar.PowerExpr) {
+	if pow == nil {
+		return
+	}
+	unaryToString(sb, pow.Left)
+	for _, term := range pow.Right {
+		sb.WriteString(" ^ ")
+		unaryToString(sb, term.Expr)
+	}
+}
+
+func unaryToString(sb *strings.Builder, unary *cyphergrammar.UnaryExpr) {
+	if unary == nil {
+		return
+	}
+	if unary.Op != "" {
+		sb.WriteString(unary.Op)
+	}
+	postfixToString(sb, unary.Expr)
+}
+
+func postfixToString(sb *strings.Builder, post *cyphergrammar.PostfixExpr) {
+	if post == nil {
+		return
+	}
+	atomToString(sb, post.Atom)
+	for _, suffix := range post.Suffixes {
+		if suffix.Property != "" {
+			sb.WriteString(".")
+			sb.WriteString(suffix.Property)
 		}
-
-		// Look up the variable binding
-		if binding, ok := ctx.bindings[varName]; ok {
-			for _, label := range binding.labels {
-				if model, ok := ctx.schema.Models[label]; ok {
-					for _, field := range model.Fields {
-						if field.Name == propName && field.Type != nil {
-							return field.Type.String()
-						}
-					}
-				}
+		if suffix.Index != nil {
+			sb.WriteString("[")
+			if suffix.Index.Start != nil {
+				sb.WriteString(expressionToString(suffix.Index.Start))
+			}
+			if suffix.Index.Range {
+				sb.WriteString("..")
+			}
+			if suffix.Index.End != nil {
+				sb.WriteString(expressionToString(suffix.Index.End))
+			}
+			sb.WriteString("]")
+		}
+		if suffix.IsNull != nil {
+			sb.WriteString(" IS ")
+			if suffix.IsNull.Not {
+				sb.WriteString("NOT ")
+			}
+			sb.WriteString("NULL")
+		}
+		if suffix.In != nil {
+			sb.WriteString(" IN ")
+			addSubToString(sb, suffix.In.Expr)
+		}
+		if suffix.StringPred != nil {
+			if suffix.StringPred.StartsWith != nil {
+				sb.WriteString(" STARTS WITH ")
+				addSubToString(sb, suffix.StringPred.StartsWith)
+			}
+			if suffix.StringPred.EndsWith != nil {
+				sb.WriteString(" ENDS WITH ")
+				addSubToString(sb, suffix.StringPred.EndsWith)
+			}
+			if suffix.StringPred.Contains != nil {
+				sb.WriteString(" CONTAINS ")
+				addSubToString(sb, suffix.StringPred.Contains)
 			}
 		}
 	}
+}
 
-	// Check if it's a plain variable (returning whole node)
-	if binding, ok := ctx.bindings[expression]; ok {
-		// Return the model name as the type (e.g., "*User")
-		if len(binding.labels) > 0 {
-			return "*" + binding.labels[0]
-		}
+func atomToString(sb *strings.Builder, atom *cyphergrammar.Atom) {
+	if atom == nil {
+		return
 	}
 
-	return ""
+	if atom.Literal != nil {
+		literalToString(sb, atom.Literal)
+		return
+	}
+	if atom.Parameter != nil {
+		sb.WriteString("$")
+		sb.WriteString(atom.Parameter.Name)
+		return
+	}
+	if atom.CountAll {
+		sb.WriteString("count(*)")
+		return
+	}
+	if atom.ListComprehension != nil {
+		sb.WriteString("[")
+		sb.WriteString(atom.ListComprehension.Variable)
+		sb.WriteString(" IN ")
+		sb.WriteString(expressionToString(atom.ListComprehension.Source))
+		if atom.ListComprehension.Where != nil {
+			sb.WriteString(" WHERE ")
+			sb.WriteString(expressionToString(atom.ListComprehension.Where.Expr))
+		}
+		if atom.ListComprehension.Mapping != nil {
+			sb.WriteString(" | ")
+			sb.WriteString(expressionToString(atom.ListComprehension.Mapping))
+		}
+		sb.WriteString("]")
+		return
+	}
+	if atom.FunctionCall != nil {
+		sb.WriteString(atom.FunctionCall.Name.String())
+		sb.WriteString("(")
+		if atom.FunctionCall.Distinct {
+			sb.WriteString("DISTINCT ")
+		}
+		for i, arg := range atom.FunctionCall.Args {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(expressionToString(arg))
+		}
+		sb.WriteString(")")
+		return
+	}
+	if atom.Parenthesized != nil {
+		sb.WriteString("(")
+		sb.WriteString(expressionToString(atom.Parenthesized))
+		sb.WriteString(")")
+		return
+	}
+	if atom.CaseExpr != nil {
+		sb.WriteString("CASE")
+		if atom.CaseExpr.Input != nil {
+			sb.WriteString(" ")
+			sb.WriteString(expressionToString(atom.CaseExpr.Input))
+		}
+		for _, when := range atom.CaseExpr.Whens {
+			sb.WriteString(" WHEN ")
+			sb.WriteString(expressionToString(when.When))
+			sb.WriteString(" THEN ")
+			sb.WriteString(expressionToString(when.Then))
+		}
+		if atom.CaseExpr.Else != nil {
+			sb.WriteString(" ELSE ")
+			sb.WriteString(expressionToString(atom.CaseExpr.Else))
+		}
+		sb.WriteString(" END")
+		return
+	}
+	if atom.Variable != "" {
+		sb.WriteString(atom.Variable)
+		return
+	}
+}
+
+func literalToString(sb *strings.Builder, lit *cyphergrammar.Literal) {
+	if lit == nil {
+		return
+	}
+
+	if lit.Null {
+		sb.WriteString("null")
+		return
+	}
+	if lit.True {
+		sb.WriteString("true")
+		return
+	}
+	if lit.False {
+		sb.WriteString("false")
+		return
+	}
+	if lit.Int != nil {
+		sb.WriteString(fmt.Sprintf("%d", *lit.Int))
+		return
+	}
+	if lit.Float != nil {
+		sb.WriteString(fmt.Sprintf("%g", *lit.Float))
+		return
+	}
+	if lit.String != nil {
+		sb.WriteString(*lit.String)
+		return
+	}
+	if lit.List != nil {
+		sb.WriteString("[")
+		for i, item := range lit.List.Items {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(expressionToString(item))
+		}
+		sb.WriteString("]")
+		return
+	}
+	if lit.Map != nil {
+		sb.WriteString("{")
+		for i, pair := range lit.Map.Pairs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(pair.Key)
+			sb.WriteString(": ")
+			sb.WriteString(expressionToString(pair.Value))
+		}
+		sb.WriteString("}")
+		return
+	}
 }
 
 // inferNameFromExpression infers a usable name from an expression.
-// For "u.name" returns "name", for "u" returns "u", for "count(*)" returns "count".
 func inferNameFromExpression(expr string) string {
-	// If it contains a dot (property access), use the last part
 	if idx := strings.LastIndex(expr, "."); idx >= 0 && idx < len(expr)-1 {
 		return expr[idx+1:]
 	}
-
-	// If it looks like a function call, extract the function name
 	if idx := strings.Index(expr, "("); idx > 0 {
 		return expr[:idx]
 	}
-
 	return expr
 }
 
-// isAggregateExpression checks if an expression is an aggregate function.
-func isAggregateExpression(exprCtx cyphergrammar.IExpressionContext) bool {
-	if exprCtx == nil {
+// isAggregateExpression checks if an expression contains an aggregate function.
+func isAggregateExpression(expr *cyphergrammar.Expression) bool {
+	if expr == nil {
 		return false
 	}
 
-	var check func(antlr.Tree) bool
-
-	check = func(node antlr.Tree) bool {
-		// Check for CountAllContext (count(*))
-		if _, ok := node.(*cyphergrammar.CountAllContext); ok {
+	var check func(*cyphergrammar.Atom) bool
+	check = func(atom *cyphergrammar.Atom) bool {
+		if atom == nil {
+			return false
+		}
+		if atom.CountAll {
 			return true
 		}
-
-		// Check if this is a function call context
-		if funcCtx, ok := node.(*cyphergrammar.FunctionInvocationContext); ok {
-			funcName := strings.ToLower(funcCtx.GetText())
-
+		if atom.FunctionCall != nil {
+			name := strings.ToLower(atom.FunctionCall.Name.String())
 			aggregates := []string{"count", "sum", "avg", "min", "max", "collect", "percentile", "stddev"}
 			for _, agg := range aggregates {
-				if strings.HasPrefix(funcName, agg) {
+				if strings.HasPrefix(name, agg) {
+					return true
+				}
+			}
+			// Check arguments recursively
+			for _, arg := range atom.FunctionCall.Args {
+				if isAggregateExpression(arg) {
 					return true
 				}
 			}
 		}
+		if atom.Parenthesized != nil {
+			return isAggregateExpression(atom.Parenthesized)
+		}
+		if atom.ListComprehension != nil {
+			if isAggregateExpression(atom.ListComprehension.Source) {
+				return true
+			}
+			if atom.ListComprehension.Mapping != nil && isAggregateExpression(atom.ListComprehension.Mapping) {
+				return true
+			}
+		}
+		return false
+	}
 
-		// Recursively check children
-		if ruleCtx, ok := node.(antlr.RuleContext); ok {
-			for i := 0; i < ruleCtx.GetChildCount(); i++ {
-				if child := ruleCtx.GetChild(i); child != nil {
-					if check(child) {
+	// Walk the expression tree to find atoms
+	var walkExpr func(*cyphergrammar.Expression) bool
+	walkExpr = func(e *cyphergrammar.Expression) bool {
+		if e == nil {
+			return false
+		}
+
+		var walkXor func(*cyphergrammar.XorExpr) bool
+		walkXor = func(x *cyphergrammar.XorExpr) bool {
+			if x == nil {
+				return false
+			}
+
+			var walkAnd func(*cyphergrammar.AndExpr) bool
+			walkAnd = func(a *cyphergrammar.AndExpr) bool {
+				if a == nil {
+					return false
+				}
+
+				var walkNot func(*cyphergrammar.NotExpr) bool
+				walkNot = func(n *cyphergrammar.NotExpr) bool {
+					if n == nil || n.Expr == nil {
+						return false
+					}
+
+					var walkComp func(*cyphergrammar.ComparisonExpr) bool
+					walkComp = func(c *cyphergrammar.ComparisonExpr) bool {
+						if c == nil {
+							return false
+						}
+
+						var walkAdd func(*cyphergrammar.AddSubExpr) bool
+						walkAdd = func(as *cyphergrammar.AddSubExpr) bool {
+							if as == nil {
+								return false
+							}
+
+							var walkMult func(*cyphergrammar.MultDivExpr) bool
+							walkMult = func(m *cyphergrammar.MultDivExpr) bool {
+								if m == nil {
+									return false
+								}
+
+								var walkPow func(*cyphergrammar.PowerExpr) bool
+								walkPow = func(p *cyphergrammar.PowerExpr) bool {
+									if p == nil {
+										return false
+									}
+
+									var walkUnary func(*cyphergrammar.UnaryExpr) bool
+									walkUnary = func(u *cyphergrammar.UnaryExpr) bool {
+										if u == nil || u.Expr == nil {
+											return false
+										}
+										return check(u.Expr.Atom)
+									}
+
+									if walkUnary(p.Left) {
+										return true
+									}
+									for _, t := range p.Right {
+										if walkUnary(t.Expr) {
+											return true
+										}
+									}
+									return false
+								}
+
+								if walkPow(m.Left) {
+									return true
+								}
+								for _, t := range m.Right {
+									if walkPow(t.Expr) {
+										return true
+									}
+								}
+								return false
+							}
+
+							if walkMult(as.Left) {
+								return true
+							}
+							for _, t := range as.Right {
+								if walkMult(t.Expr) {
+									return true
+								}
+							}
+							return false
+						}
+
+						if walkAdd(c.Left) {
+							return true
+						}
+						for _, t := range c.Right {
+							if walkAdd(t.Expr) {
+								return true
+							}
+						}
+						return false
+					}
+
+					return walkComp(n.Expr)
+				}
+
+				if walkNot(a.Left) {
+					return true
+				}
+				for _, t := range a.Right {
+					if walkNot(t.Expr) {
 						return true
 					}
 				}
+				return false
 			}
+
+			if walkAnd(x.Left) {
+				return true
+			}
+			for _, t := range x.Right {
+				if walkAnd(t.Expr) {
+					return true
+				}
+			}
+			return false
 		}
 
+		if walkXor(e.Left) {
+			return true
+		}
+		for _, t := range e.Right {
+			if walkXor(t.Expr) {
+				return true
+			}
+		}
 		return false
 	}
 
-	return check(exprCtx)
+	return walkExpr(expr)
 }
 
-// checkUniqueFilter walks the parse tree to find MATCH clauses with property filters
-// and checks if any filter is on a unique field.
-func checkUniqueFilter(tree antlr.ParseTree, schema *analysis.TypeSchema) bool {
-	var found bool
+// checkUniqueFilter checks if the query filters on a unique field.
+func checkUniqueFilter(ast *cyphergrammar.Script, schema *analysis.TypeSchema) bool {
+	if ast == nil || ast.Query == nil || schema == nil {
+		return false
+	}
 
-	var walk func(node antlr.Tree)
-	walk = func(node antlr.Tree) {
-		// Look for node patterns with properties like (u:User {id: $userId})
-		if nodeCtx, ok := node.(*cyphergrammar.NodePatternContext); ok {
-			if checkNodePatternForUnique(nodeCtx, schema) {
-				found = true
-				return
-			}
-		}
-
-		// Recursively walk children
-		if ruleCtx, ok := node.(antlr.RuleContext); ok {
-			for i := 0; i < ruleCtx.GetChildCount(); i++ {
-				if child := ruleCtx.GetChild(i); child != nil {
-					walk(child)
-					if found {
-						return
-					}
+	if rq := ast.Query.RegularQuery; rq != nil && rq.SingleQuery != nil {
+		for _, clause := range rq.SingleQuery.Clauses {
+			if clause.Reading != nil && clause.Reading.Match != nil {
+				if checkPatternForUnique(clause.Reading.Match.Pattern, schema) {
+					return true
 				}
 			}
 		}
 	}
-
-	walk(tree)
-	return found
+	return false
 }
 
-// checkNodePatternForUnique checks if a node pattern filters on a unique field.
-// Pattern like (u:User {id: $userId}) - checks if "id" is unique on "User".
-func checkNodePatternForUnique(nodeCtx *cyphergrammar.NodePatternContext, schema *analysis.TypeSchema) bool {
-	// Get the label(s) from the node pattern
-	labels := nodeCtx.NodeLabels()
-	if labels == nil {
+func checkPatternForUnique(pattern *cyphergrammar.Pattern, schema *analysis.TypeSchema) bool {
+	if pattern == nil {
 		return false
 	}
 
-	// Get all label names - NodeLabels has AllName() returning []INameContext
-	var labelNames []string
-	for _, nameCtx := range labels.AllName() {
-		if nameCtx != nil {
-			labelNames = append(labelNames, nameCtx.GetText())
+	for _, part := range pattern.Parts {
+		if part.Element != nil && checkPatternElementForUnique(part.Element, schema) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkPatternElementForUnique(elem *cyphergrammar.PatternElement, schema *analysis.TypeSchema) bool {
+	if elem == nil {
+		return false
+	}
+
+	if elem.Paren != nil {
+		return checkPatternElementForUnique(elem.Paren, schema)
+	}
+
+	if elem.Node != nil && checkNodePatternForUnique(elem.Node, schema) {
+		return true
+	}
+
+	for _, chain := range elem.Chain {
+		if chain.Node != nil && checkNodePatternForUnique(chain.Node, schema) {
+			return true
 		}
 	}
 
-	if len(labelNames) == 0 {
+	return false
+}
+
+func checkNodePatternForUnique(node *cyphergrammar.NodePattern, schema *analysis.TypeSchema) bool {
+	if node == nil || node.Labels == nil || node.Properties == nil {
 		return false
 	}
 
-	// Get the properties from the node pattern
-	props := nodeCtx.Properties()
-	if props == nil {
+	labels := node.Labels.Labels
+	if len(labels) == 0 {
 		return false
 	}
 
-	mapLit := props.MapLit()
-	if mapLit == nil {
-		return false
-	}
-
-	// Get property names being filtered - MapLit has AllMapPair() returning []IMapPairContext
 	var propNames []string
-	for _, pairCtx := range mapLit.AllMapPair() {
-		if pair, ok := pairCtx.(*cyphergrammar.MapPairContext); ok {
-			if nameCtx := pair.Name(); nameCtx != nil {
-				propNames = append(propNames, nameCtx.GetText())
-			}
+	if node.Properties.Map != nil {
+		for _, pair := range node.Properties.Map.Pairs {
+			propNames = append(propNames, pair.Key)
 		}
 	}
 
-	// Check if any property is unique on any of the labels
-	for _, label := range labelNames {
+	// Check if any property is unique on any label
+	for _, label := range labels {
 		model, ok := schema.Models[label]
 		if !ok {
 			continue
 		}
-
 		for _, propName := range propNames {
 			for _, field := range model.Fields {
 				if field.Name == propName && field.Unique {

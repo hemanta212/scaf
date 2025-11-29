@@ -53,12 +53,6 @@ func (f structLexerField) RecoveryTag() string {
 	return f.Tag.Get("recover")
 }
 
-// LabelTag returns the label tag for this field, if any.
-// Labels are used for better error messages during recovery.
-func (f structLexerField) LabelTag() string {
-	return f.Tag.Get("label")
-}
-
 // Field returns the field associated with the current token.
 func (s *structLexer) Field() structLexerField {
 	return s.GetField(s.field)

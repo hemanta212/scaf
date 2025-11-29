@@ -17,9 +17,9 @@ func ExtractSignatures(suite *scaf.Suite, analyzer scaf.QueryAnalyzer, schema *a
 		return nil, nil
 	}
 
-	signatures := make([]*FuncSignature, 0, len(suite.Queries))
+	signatures := make([]*FuncSignature, 0, len(suite.Functions))
 
-	for _, query := range suite.Queries {
+	for _, query := range suite.Functions {
 		sig, err := ExtractSignature(query, analyzer, schema)
 		if err != nil {
 			return nil, fmt.Errorf("query %s: %w", query.Name, err)
@@ -32,7 +32,7 @@ func ExtractSignatures(suite *scaf.Suite, analyzer scaf.QueryAnalyzer, schema *a
 }
 
 // ExtractSignature extracts a function signature from a single query.
-func ExtractSignature(query *scaf.Query, analyzer scaf.QueryAnalyzer, schema *analysis.TypeSchema) (*FuncSignature, error) {
+func ExtractSignature(query *scaf.Function, analyzer scaf.QueryAnalyzer, schema *analysis.TypeSchema) (*FuncSignature, error) {
 	sig := &FuncSignature{
 		Name:         toExportedName(query.Name),
 		Query:        query.Body,
@@ -42,8 +42,35 @@ func ExtractSignature(query *scaf.Query, analyzer scaf.QueryAnalyzer, schema *an
 		ReturnsSlice: true, // Default to slice (safe)
 	}
 
-	// If no analyzer, we can only provide basic signature
+	// Build explicit type map from function parameters (precedence: explicit > schema > any)
+	// FnParam names include $ prefix (e.g., "$id"), but metadata param names don't.
+	explicitTypes := make(map[string]string)
+	for _, p := range query.Params {
+		if p != nil && p.Type != nil {
+			// Convert scaf type expr to Go type string
+			// Strip $ prefix from param name to match analyzer's parameter names
+			name := strings.TrimPrefix(p.Name, "$")
+			explicitTypes[name] = p.Type.ToGoType()
+		}
+	}
+
+	// If no analyzer, use explicit types only
 	if analyzer == nil {
+		for _, p := range query.Params {
+			if p == nil {
+				continue
+			}
+			name := strings.TrimPrefix(p.Name, "$")
+			paramType := "any"
+			if t, ok := explicitTypes[name]; ok {
+				paramType = t
+			}
+			sig.Params = append(sig.Params, FuncParam{
+				Name:     name,
+				Type:     paramType,
+				Required: true,
+			})
+		}
 		return sig, nil
 	}
 
@@ -68,11 +95,18 @@ func ExtractSignature(query *scaf.Query, analyzer scaf.QueryAnalyzer, schema *an
 	// Set cardinality from metadata
 	sig.ReturnsSlice = !metadata.ReturnsOne
 
-	// Convert parameters
+	// Convert parameters - explicit types take precedence
 	for _, param := range metadata.Parameters {
+		// Priority: explicit annotation > schema inference > "any"
+		var paramType string
+		if t, ok := explicitTypes[param.Name]; ok {
+			paramType = t
+		} else {
+			paramType = inferParamType(param, schema)
+		}
 		funcParam := FuncParam{
 			Name:     param.Name,
-			Type:     inferParamType(param, schema),
+			Type:     paramType,
 			Required: true, // Parameters are required by default
 		}
 		sig.Params = append(sig.Params, funcParam)
@@ -198,16 +232,15 @@ func isAcronym(s string) bool {
 // Uses the analyzer's type (from schema-aware analysis) or falls back to schema lookup.
 func inferParamType(param scaf.ParameterInfo, schema *analysis.TypeSchema) string {
 	// If the analyzer already inferred the type from schema, use it directly
-	// (The Cypher analyzer returns Go type strings like "string", "int", "[]string")
-	if param.Type != "" {
-		return param.Type
+	if param.Type != nil {
+		return TypeToGoString(param.Type)
 	}
 
 	// Fallback: try to find the type from the schema by looking up fields with matching names
 	// This is a best-effort approach when the analyzer couldn't determine the model context
 	if schema != nil {
 		if fieldType := lookupFieldType(param.Name, schema); fieldType != nil {
-			return fieldType.String()
+			return TypeToGoString(fieldType)
 		}
 	}
 
@@ -218,16 +251,15 @@ func inferParamType(param scaf.ParameterInfo, schema *analysis.TypeSchema) strin
 // Uses the analyzer's type (from schema-aware analysis) or falls back to schema lookup.
 func inferReturnType(ret scaf.ReturnInfo, schema *analysis.TypeSchema) string {
 	// If the analyzer already inferred the type from schema, use it directly
-	// (The Cypher analyzer returns Go type strings like "string", "int", "*User")
-	if ret.Type != "" {
-		return ret.Type
+	if ret.Type != nil {
+		return TypeToGoString(ret.Type)
 	}
 
 	// Fallback: try to find the type from the schema using the parsed name
 	// (The analyzer already extracts the field name from expressions like "u.name")
 	if schema != nil {
 		if fieldType := lookupFieldType(ret.Name, schema); fieldType != nil {
-			return fieldType.String()
+			return TypeToGoString(fieldType)
 		}
 	}
 

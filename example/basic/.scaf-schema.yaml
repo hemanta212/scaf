@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rlch/scaf/refs/heads/master/.scaf-type.schema.json
+
+models:
+  ActedIn:
+    fields:
+      roles:
+        type: "[]string"
+        required: true
+
+  Directed: {}
+
+  Follows:
+    fields:
+      since:
+        type: int
+        required: true
+
+  Movie:
+    fields:
+      id:
+        type: string
+        required: true
+      title:
+        type: string
+        required: true
+      released:
+        type: int
+        required: true
+      tagline:
+        type: string
+        required: true
+
+  Person:
+    fields:
+      id:
+        type: string
+        required: true
+      name:
+        type: string
+        required: true
+      born:
+        type: int
+        required: true
+    relationships:
+      Reviewed:
+        rel_type: REVIEWED
+        target: Movie
+        many: true
+        direction: outgoing
+      Follows:
+        rel_type: FOLLOWS
+        target: Person
+        many: true
+        direction: outgoing
+      ActedIn:
+        rel_type: ACTED_IN
+        target: Movie
+        many: true
+        direction: outgoing
+      Directed:
+        rel_type: DIRECTED
+        target: Movie
+        many: true
+        direction: outgoing
+
+  Review:
+    fields:
+      summary:
+        type: string
+        required: true
+      rating:
+        type: int
+        required: true

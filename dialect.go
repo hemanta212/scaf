@@ -123,8 +123,8 @@ type ParameterInfo struct {
 	// Name is the parameter name (without $ prefix).
 	Name string
 
-	// Type is the inferred type, if known (e.g., "string", "int").
-	Type string
+	// Type is the inferred type, if known.
+	Type *Type
 
 	// Position is the character offset in the query.
 	Position int
@@ -148,7 +148,7 @@ type ReturnInfo struct {
 	Name string
 
 	// Type is the inferred type, if known.
-	Type string
+	Type *Type
 
 	// Expression is the original expression text.
 	Expression string

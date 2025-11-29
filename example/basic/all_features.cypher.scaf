@@ -8,17 +8,17 @@ import fixtures "./shared/fixtures"
 // ============================================================================
 // Query Definitions
 // ============================================================================
-query GetUser `
+fn GetUser(userId) `
 MATCH (u:User {id: $userId})
 RETURN u.name, u.email, u.age, u.verified
 `
 
-query CreatePost `
+fn CreatePost(title, authorId) `
 CREATE (p:Post {title: $title, authorId: $authorId, views: 0})
 RETURN p.title, p.authorId, p.views
 `
 
-query CountNodes `
+fn CountNodes() `
 MATCH (n)
 RETURN count(n) as total
 `
@@ -86,8 +86,8 @@ GetUser {
 			u.name: "Alice"
 
 			assert {
-				u.age >= 18;
-				u.verified == true
+				(u.age >= 18)
+				(u.verified == true)
 			}
 		}
 
@@ -95,8 +95,8 @@ GetUser {
 			$userId: 1
 
 			assert {
-				u.email contains "@";
-				len(u.email) > 5
+				(u.email contains "@")
+				(len(u.email) > 5)
 			}
 		}
 
@@ -107,7 +107,7 @@ GetUser {
 
 			u.name: "Bob"
 
-			assert { u.age > 20 && u.age < 30 }
+			assert (u.age > 20 && u.age < 30)
 		}
 	}
 
@@ -117,22 +117,22 @@ GetUser {
 
 			u.name: "Alice"
 
-			assert `MATCH (n) RETURN count(n) as c` { c > 0 }
+			assert `MATCH (n) RETURN count(n) as c` { (c > 0) }
 		}
 
 		test "verify with named query" {
 			$userId: 1
 
-			assert CountNodes() { total >= 3 }
+			assert CountNodes() { (total >= 3) }
 		}
 
 		test "create and verify post" {
 			$userId: 1
 
 			assert CreatePost($title: "New Post", $authorId: 1) {
-				p.title == "New Post";
-				p.authorId == 1;
-				p.views == 0
+				(p.title == "New Post")
+				(p.authorId == 1)
+				(p.views == 0)
 			}
 		}
 	}
@@ -164,13 +164,13 @@ CreatePost {
 
 		p.title: "Temp Post"
 
-		assert `MATCH (p:Post {title: "Temp Post"}) RETURN count(p) as c` { c == 1 }
+		assert `MATCH (p:Post {title: "Temp Post"}) RETURN count(p) as c` { (c == 1) }
 	}
 }
 
 CountNodes {
 	test "counts all nodes" {
-		assert { total >= 3 }
+		assert (total >= 3)
 	}
 
 	test "count with test setup" {
@@ -179,6 +179,6 @@ CountNodes {
 		CREATE (:TempNode)
 		`
 
-		assert { total >= 5 }
+		assert (total >= 5)
 	}
 }

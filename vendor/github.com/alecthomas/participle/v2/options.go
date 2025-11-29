@@ -112,8 +112,6 @@ func Union[T any](members ...T) Option {
 	}
 }
 
-
-
 // ParseOption modifies how an individual parse is applied.
 type ParseOption func(p *parseContext)
 
@@ -169,32 +167,5 @@ func MaxRecoveryErrors(max int) ParseOption {
 			p.recovery = &recoveryConfig{}
 		}
 		p.recovery.maxErrors = max
-	}
-}
-
-// TraceRecovery enables detailed tracing of recovery attempts to the given writer.
-// This is useful for debugging recovery strategies and understanding why
-// certain inputs fail to recover properly.
-//
-// Output includes:
-//   - When recovery is attempted and why
-//   - Which strategies are tried
-//   - What tokens are skipped
-//   - Whether recovery succeeds or fails
-//
-// Example usage:
-//
-//	ast, err := parser.ParseString("", input,
-//	    participle.Recover(participle.SkipUntil(";")),
-//	    participle.TraceRecovery(os.Stderr),
-//	)
-func TraceRecovery(w io.Writer) ParseOption {
-	return func(p *parseContext) {
-		if p.recovery == nil {
-			p.recovery = &recoveryConfig{
-				maxErrors: 100,
-			}
-		}
-		p.recovery.traceWriter = w
 	}
 }

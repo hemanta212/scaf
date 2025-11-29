@@ -1,3 +1,4 @@
+// Package analysis provides semantic analysis for scaf DSL files.
 package analysis
 
 import (
@@ -19,6 +20,11 @@ type Analyzer struct {
 	// resolver is used for cross-file validation (e.g., checking setup call targets).
 	// Can be nil if cross-file validation is not needed.
 	resolver CrossFileResolver
+
+	// queryAnalyzer is the dialect-specific query analyzer.
+	// Used to extract parameters from query bodies.
+	// Can be nil if no dialect analyzer is available.
+	queryAnalyzer scaf.QueryAnalyzer
 
 	// rules is the set of semantic checks to run.
 	rules []*Rule
@@ -62,6 +68,17 @@ func NewAnalyzerWithResolver(loader FileLoader, resolver CrossFileResolver) *Ana
 	}
 }
 
+// NewAnalyzerWithQueryAnalyzer creates an analyzer with a dialect-specific query analyzer.
+// The query analyzer is used to extract parameters from query bodies for validation.
+func NewAnalyzerWithQueryAnalyzer(loader FileLoader, resolver CrossFileResolver, queryAnalyzer scaf.QueryAnalyzer) *Analyzer {
+	return &Analyzer{
+		loader:        loader,
+		resolver:      resolver,
+		queryAnalyzer: queryAnalyzer,
+		rules:         DefaultRules(),
+	}
+}
+
 // NewAnalyzerWithRules creates an analyzer with custom rules.
 func NewAnalyzerWithRules(loader FileLoader, rules []*Rule) *Analyzer {
 	return &Analyzer{
@@ -75,10 +92,11 @@ func NewAnalyzerWithRules(loader FileLoader, rules []*Rule) *Analyzer {
 // LSP features like completion and hover continue to work.
 func (a *Analyzer) Analyze(path string, content []byte) *AnalyzedFile {
 	result := &AnalyzedFile{
-		Path:        path,
-		Diagnostics: []Diagnostic{},
-		Symbols:     NewSymbolTable(),
-		Resolver:    a.resolver,
+		Path:          path,
+		Diagnostics:   []Diagnostic{},
+		Symbols:       NewSymbolTable(),
+		Resolver:      a.resolver,
+		QueryAnalyzer: a.queryAnalyzer,
 	}
 
 	// Parse the file - returns partial AST even on error.
@@ -105,15 +123,17 @@ func (a *Analyzer) Analyze(path string, content []byte) *AnalyzedFile {
 	// Build symbol table from partial or complete AST.
 	// Symbols defined before the error location will still be available.
 	if suite != nil {
-		buildSymbols(result)
+		buildSymbols(result, a.queryAnalyzer)
 	} else if err != nil {
 		// Fallback: if Participle returned nil AST, use regex extraction
 		extractPartialSymbols(result, content)
 	}
 
-	// Run semantic rules only on complete parses to avoid spurious errors.
-	// Partial ASTs may have nil fields that rules don't expect.
-	if result.ParseError == nil {
+	// Run semantic rules even on partial parses.
+	// Rules check for nil Suite/fields at the start, so this is safe.
+	// This ensures users get semantic diagnostics (type errors, unused imports, etc.)
+	// even when there's a syntax error elsewhere in the file.
+	if suite != nil {
 		for _, rule := range a.rules {
 			rule.Run(result)
 		}
@@ -182,7 +202,7 @@ func singleErrorToDiagnostic(err error) Diagnostic {
 // buildSymbols extracts all symbol definitions from the AST.
 // Handles partial ASTs gracefully - symbols defined before parse errors
 // will still be extracted.
-func buildSymbols(f *AnalyzedFile) {
+func buildSymbols(f *AnalyzedFile, queryAnalyzer scaf.QueryAnalyzer) {
 	if f.Suite == nil {
 		return
 	}
@@ -211,30 +231,36 @@ func buildSymbols(f *AnalyzedFile) {
 	}
 
 	// Extract queries.
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		if q == nil || q.Name == "" {
 			continue // Skip incomplete queries in partial AST
 		}
 
 		params := extractQueryParams(q.Body)
+		declaredParams := extractDeclaredParams(q)
+		typedParams := extractTypedParams(q)
+		queryBodyParams := extractQueryBodyParams(q.Body, queryAnalyzer)
 		f.Symbols.Queries[q.Name] = &QuerySymbol{
 			Symbol: Symbol{
 				Name: q.Name,
 				Span: q.Span(),
 				Kind: SymbolKindQuery,
 			},
-			Body:   q.Body,
-			Params: params,
-			Node:   q,
+			Body:            q.Body,
+			Params:          params,
+			QueryBodyParams: queryBodyParams,
+			DeclaredParams:  declaredParams,
+			TypedParams:     typedParams,
+			Node:            q,
 		}
 	}
 
 	// Extract tests from scopes.
 	for _, scope := range f.Suite.Scopes {
-		if scope == nil || scope.QueryName == "" {
+		if scope == nil || scope.FunctionName == "" {
 			continue // Skip incomplete scopes in partial AST
 		}
-		extractTestSymbols(f, scope.QueryName, "", scope.Items)
+		extractTestSymbols(f, scope.FunctionName, "", scope.Items)
 	}
 }
 
@@ -325,8 +351,8 @@ func extractPartialSymbols(f *AnalyzedFile, content []byte) {
 		}
 	}
 
-	// Extract queries: query Name `body`
-	queryRegex := regexp.MustCompile("(?m)^query\\s+(\\w+)\\s+`([^`]*)`")
+	// Extract queries: fn Name() `body`
+	queryRegex := regexp.MustCompile("(?m)^fn\\s+(\\w+)\\s*\\(\\)\\s*`([^`]*)`")
 	for _, match := range queryRegex.FindAllStringSubmatch(text, -1) {
 		if len(match) >= 3 {
 			name := match[1]
@@ -363,6 +389,70 @@ func extractQueryParams(body string) []string {
 	}
 
 	return params
+}
+
+// extractQueryBodyParams extracts parameters from the query body using the dialect analyzer.
+// Returns nil if no analyzer is available or if analysis fails.
+func extractQueryBodyParams(body string, queryAnalyzer scaf.QueryAnalyzer) []scaf.ParameterInfo {
+	if queryAnalyzer == nil || body == "" {
+		return nil
+	}
+
+	metadata, err := queryAnalyzer.AnalyzeQuery(body)
+	if err != nil || metadata == nil {
+		return nil
+	}
+
+	return metadata.Parameters
+}
+
+// extractDeclaredParams extracts all parameter names from a function definition.
+// Returns a map of parameter name (without $) to true, including both typed and untyped params.
+// Returns nil if no params are declared.
+func extractDeclaredParams(q *scaf.Query) map[string]bool {
+	if q == nil || len(q.Params) == 0 {
+		return nil
+	}
+
+	result := make(map[string]bool)
+	for _, p := range q.Params {
+		if p != nil && p.Name != "" {
+			// Strip $ prefix if present (for backward compat, though new syntax doesn't use $)
+			name := strings.TrimPrefix(p.Name, "$")
+			result[name] = true
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
+// extractTypedParams extracts typed parameter annotations from a function definition.
+// Returns a map of parameter name (without $) to its TypeExpr.
+// Only includes parameters that have explicit type annotations.
+// Returns nil if no typed params are defined.
+func extractTypedParams(q *scaf.Query) map[string]*scaf.TypeExpr {
+	if q == nil || len(q.Params) == 0 {
+		return nil
+	}
+
+	result := make(map[string]*scaf.TypeExpr)
+	for _, p := range q.Params {
+		if p != nil && p.Name != "" && p.Type != nil {
+			// Strip $ prefix if present (for backward compat, though new syntax doesn't use $)
+			name := strings.TrimPrefix(p.Name, "$")
+			result[name] = p.Type
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
 }
 
 // buildTestPath constructs a full test path.

@@ -17,7 +17,7 @@ func TestServer_DocumentLink(t *testing.T) {
 
 	// Create fixtures.scaf
 	fixturesPath := tmpDir + "/fixtures.scaf"
-	fixturesContent := `query SetupUsers ` + "`CREATE (u:User) RETURN u`" + `
+	fixturesContent := `fn SetupUsers() ` + "`CREATE (u:User) RETURN u`" + `
 `
 	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
@@ -27,7 +27,7 @@ func TestServer_DocumentLink(t *testing.T) {
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures.SetupUsers()
@@ -91,13 +91,13 @@ func TestServer_DocumentLink_WithAlias(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	_ = os.WriteFile(tmpDir+"/shared.scaf", []byte(`query Q `+"`Q`"+`
+	_ = os.WriteFile(tmpDir+"/shared.scaf", []byte(`fn Q() `+"`Q`"+`
 `), 0644)
 
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import f "./shared"
 
-query GetUser ` + "`Q`" + `
+fn GetUser() ` + "`Q`" + `
 GetUser { test "t" {} }
 `
 	_ = os.WriteFile(mainPath, []byte(mainContent), 0644)
@@ -152,7 +152,7 @@ func TestServer_DocumentLink_NoImports(t *testing.T) {
 		TextDocument: protocol.TextDocumentItem{
 			URI:     "file:///test.scaf",
 			Version: 1,
-			Text:    `query Q ` + "`Q`" + ` Q { test "t" {} }`,
+			Text:    `fn Q() ` + "`Q`" + ` Q { test "t" {} }`,
 		},
 	})
 

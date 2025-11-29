@@ -29,6 +29,7 @@ var cmpIgnoreAST = cmp.Options{
 	cmpopts.IgnoreFields(scaf.Assert{}, "Close"),
 	// Ignore recovery metadata (from embedded RecoveryMeta)
 	cmpopts.IgnoreFields(scaf.Statement{}, "RecoveredSpan"),
+	cmpopts.IgnoreFields(scaf.StatementValue{}, "RecoveredSpan"),
 }
 
 // ptr returns a pointer to the given value.
@@ -40,4 +41,40 @@ func ptr[T any](v T) *T {
 func boolPtr(v bool) *scaf.Boolean {
 	b := scaf.Boolean(v)
 	return &b
+}
+
+// makeParenExpr creates a ParenExpr from ExprTokens.
+// This is a test helper to convert the old Expr-based syntax to the new ParenExpr syntax.
+func makeParenExpr(tokens []*scaf.ExprToken) *scaf.ParenExpr {
+	balancedTokens := make([]*scaf.BalancedExprToken, 0, len(tokens))
+	for _, tok := range tokens {
+		balancedTokens = append(balancedTokens, exprTokenToBalanced(tok))
+	}
+	return &scaf.ParenExpr{Tokens: balancedTokens}
+}
+
+// exprTokenToBalanced converts an ExprToken to a BalancedExprToken.
+func exprTokenToBalanced(tok *scaf.ExprToken) *scaf.BalancedExprToken {
+	return &scaf.BalancedExprToken{
+		Str:    tok.Str,
+		Number: tok.Number,
+		Ident:  tok.Ident,
+		Op:     tok.Op,
+		Dot:    tok.Dot,
+		Colon:  tok.Colon,
+		Comma:  tok.Comma,
+		LBrack: tok.LBrack,
+		RBrack: tok.RBrack,
+		// Note: LParen/RParen from ExprToken become NestedParen in BalancedExprToken
+		// For simplicity in tests, we skip nested paren handling here
+	}
+}
+
+// makeConditions creates ParenExpr conditions from Expr slices for test compatibility.
+func makeConditions(exprs ...*scaf.Expr) []*scaf.ParenExpr {
+	result := make([]*scaf.ParenExpr, len(exprs))
+	for i, expr := range exprs {
+		result[i] = makeParenExpr(expr.ExprTokens)
+	}
+	return result
 }

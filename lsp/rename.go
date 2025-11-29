@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.lsp.dev/protocol"
@@ -9,6 +10,17 @@ import (
 
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
+)
+
+// Rename validation errors.
+var (
+	ErrEmptyName                   = errors.New("new name cannot be empty")
+	ErrParamMustStartWithDollar    = errors.New("parameter name must start with $")
+	ErrNameMustStartWithLetter     = errors.New("name must start with a letter or underscore")
+	ErrParamNameAfterDollar        = errors.New("parameter name must start with a letter or underscore after $")
+	ErrInvalidNameChars            = errors.New("name can only contain letters, digits, underscores, and dots")
+	ErrQueryAlreadyExists          = errors.New("query already exists")
+	ErrImportAliasAlreadyExists    = errors.New("import alias already exists")
 )
 
 // RenameKind identifies what kind of symbol is being renamed.
@@ -110,7 +122,7 @@ func (s *Server) getRenameContext(doc *Document, tokenCtx *analysis.TokenContext
 
 	case *scaf.QueryScope:
 		ctx.Kind = RenameKindQuery
-		ctx.OldName = node.QueryName
+		ctx.OldName = node.FunctionName
 
 	case *scaf.Import:
 		ctx.Kind = RenameKindImport
@@ -212,7 +224,7 @@ func (s *Server) getRenameRange(doc *Document, tokenCtx *analysis.TokenContext, 
 // validateNewName validates that the new name is valid for the symbol type.
 func (s *Server) validateNewName(newName string, ctx RenameContext) error {
 	if newName == "" {
-		return fmt.Errorf("new name cannot be empty")
+		return ErrEmptyName
 	}
 
 	// Check for valid identifier characters
@@ -221,25 +233,25 @@ func (s *Server) validateNewName(newName string, ctx RenameContext) error {
 			// Parameters start with $
 			if ctx.Kind == RenameKindParameter {
 				if r != '$' {
-					return fmt.Errorf("parameter name must start with $")
+					return ErrParamMustStartWithDollar
 				}
 				continue
 			}
 			// First char must be letter or underscore
 			if !isLetter(r) && r != '_' {
-				return fmt.Errorf("name must start with a letter or underscore")
+				return ErrNameMustStartWithLetter
 			}
 		} else {
 			// For parameters, skip the $ when validating
 			if ctx.Kind == RenameKindParameter && i == 1 {
 				if !isLetter(r) && r != '_' {
-					return fmt.Errorf("parameter name must start with a letter or underscore after $")
+					return ErrParamNameAfterDollar
 				}
 				continue
 			}
 			// Subsequent chars can be letter, digit, or underscore
 			if !isLetter(r) && !isDigit(r) && r != '_' && r != '.' {
-				return fmt.Errorf("name can only contain letters, digits, underscores, and dots")
+				return ErrInvalidNameChars
 			}
 		}
 	}
@@ -261,13 +273,13 @@ func (s *Server) checkRenameConflicts(doc *Document, newName string, ctx RenameC
 	case RenameKindQuery:
 		// Check if query name already exists
 		if _, exists := doc.Analysis.Symbols.Queries[newName]; exists {
-			return fmt.Errorf("query %q already exists", newName)
+			return fmt.Errorf("%w: %s", ErrQueryAlreadyExists, newName)
 		}
 
 	case RenameKindImport:
 		// Check if import alias already exists
 		if _, exists := doc.Analysis.Symbols.Imports[newName]; exists {
-			return fmt.Errorf("import alias %q already exists", newName)
+			return fmt.Errorf("%w: %s", ErrImportAliasAlreadyExists, newName)
 		}
 
 	case RenameKindParameter:
@@ -311,7 +323,7 @@ func (s *Server) generateQueryRenameEdits(doc *Document, oldName, newName string
 	var docEdits []protocol.TextEdit
 
 	// Rename the query definition
-	for _, q := range doc.Analysis.Suite.Queries {
+	for _, q := range doc.Analysis.Suite.Functions {
 		if q.Name == oldName {
 			docEdits = append(docEdits, protocol.TextEdit{
 				Range:   queryNameRange(q),
@@ -323,7 +335,7 @@ func (s *Server) generateQueryRenameEdits(doc *Document, oldName, newName string
 
 	// Rename all query scope references
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName == oldName {
+		if scope.FunctionName == oldName {
 			docEdits = append(docEdits, protocol.TextEdit{
 				Range:   scopeNameRange(scope),
 				NewText: newName,
@@ -466,7 +478,7 @@ func (s *Server) generateParameterRenameEdits(doc *Document, queryScope, oldName
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 		s.collectParamEdits(scope.Items, oldName, newName, &docEdits)
@@ -506,7 +518,7 @@ func (s *Server) generateReturnFieldRenameEdits(doc *Document, queryScope, oldNa
 
 	// Find the scope
 	for _, scope := range doc.Analysis.Suite.Scopes {
-		if scope.QueryName != queryScope {
+		if scope.FunctionName != queryScope {
 			continue
 		}
 		s.collectFieldEdits(scope.Items, oldName, newName, &docEdits)

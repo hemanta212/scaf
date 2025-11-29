@@ -13,6 +13,7 @@ import (
 // DocumentSymbol handles textDocument/documentSymbol requests.
 // Returns a hierarchical tree of symbols for the outline view.
 func (s *Server) DocumentSymbol(_ context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
+	defer s.traceHandler("DocumentSymbol")()
 	s.logger.Debug("DocumentSymbol",
 		zap.String("uri", string(params.TextDocument.URI)))
 
@@ -52,7 +53,7 @@ func (s *Server) buildDocumentSymbols(f *analysis.AnalyzedFile) []protocol.Docum
 	}
 
 	// Add queries
-	for _, q := range f.Suite.Queries {
+	for _, q := range f.Suite.Functions {
 		symbols = append(symbols, protocol.DocumentSymbol{
 			Name:           q.Name,
 			Kind:           protocol.SymbolKindFunction,
@@ -78,7 +79,7 @@ func (s *Server) buildDocumentSymbols(f *analysis.AnalyzedFile) []protocol.Docum
 // buildScopeSymbol creates a symbol for a query scope with nested children.
 func (s *Server) buildScopeSymbol(scope *scaf.QueryScope) protocol.DocumentSymbol {
 	sym := protocol.DocumentSymbol{
-		Name:           scope.QueryName,
+		Name:           scope.FunctionName,
 		Kind:           protocol.SymbolKindClass,
 		Range:          spanToRange(scope.Span()),
 		SelectionRange: scopeNameRange(scope),
@@ -207,7 +208,7 @@ func scopeNameRange(scope *scaf.QueryScope) protocol.Range {
 		},
 		End: protocol.Position{
 			Line:      uint32(scope.Pos.Line - 1),
-			Character: uint32(scope.Pos.Column - 1 + len(scope.QueryName)),
+			Character: uint32(scope.Pos.Column - 1 + len(scope.FunctionName)),
 		},
 	}
 }

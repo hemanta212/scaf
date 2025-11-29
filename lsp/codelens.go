@@ -12,6 +12,7 @@ import (
 // CodeLens handles textDocument/codeLens requests.
 // Returns code lenses for running tests, groups, and query scopes.
 func (s *Server) CodeLens(_ context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
+	defer s.traceHandler("CodeLens")()
 	s.logger.Debug("CodeLens",
 		zap.String("uri", string(params.TextDocument.URI)))
 
@@ -21,7 +22,7 @@ func (s *Server) CodeLens(_ context.Context, params *protocol.CodeLensParams) ([
 	}
 
 	filePath := URIToPath(params.TextDocument.URI)
-	var lenses []protocol.CodeLens
+	lenses := make([]protocol.CodeLens, 0, len(doc.Analysis.Suite.Scopes))
 
 	// Walk through all query scopes
 	for _, scope := range doc.Analysis.Suite.Scopes {
@@ -31,12 +32,12 @@ func (s *Server) CodeLens(_ context.Context, params *protocol.CodeLensParams) ([
 			Command: &protocol.Command{
 				Title:     "▶ Run All",
 				Command:   "scaf.runScope",
-				Arguments: []interface{}{filePath, scope.QueryName},
+				Arguments: []any{filePath, scope.FunctionName},
 			},
 		})
 
 		// Walk through tests and groups in this scope
-		lenses = append(lenses, s.collectItemLenses(filePath, scope.QueryName, "", scope.Items)...)
+		lenses = append(lenses, s.collectItemLenses(filePath, scope.FunctionName, "", scope.Items)...)
 	}
 
 	return lenses, nil
@@ -44,7 +45,7 @@ func (s *Server) CodeLens(_ context.Context, params *protocol.CodeLensParams) ([
 
 // collectItemLenses recursively collects code lenses for tests and groups.
 func (s *Server) collectItemLenses(filePath, queryScope, groupPath string, items []*scaf.TestOrGroup) []protocol.CodeLens {
-	var lenses []protocol.CodeLens
+	lenses := make([]protocol.CodeLens, 0, len(items))
 
 	for _, item := range items {
 		if item == nil {
@@ -58,7 +59,7 @@ func (s *Server) collectItemLenses(filePath, queryScope, groupPath string, items
 				Command: &protocol.Command{
 					Title:     "▶ Run Test",
 					Command:   "scaf.runTest",
-					Arguments: []interface{}{filePath, testFullPath},
+					Arguments: []any{filePath, testFullPath},
 				},
 			})
 		}
@@ -70,7 +71,7 @@ func (s *Server) collectItemLenses(filePath, queryScope, groupPath string, items
 				Command: &protocol.Command{
 					Title:     "▶ Run Group",
 					Command:   "scaf.runGroup",
-					Arguments: []interface{}{filePath, groupFullPath},
+					Arguments: []any{filePath, groupFullPath},
 				},
 			})
 
@@ -79,8 +80,8 @@ func (s *Server) collectItemLenses(filePath, queryScope, groupPath string, items
 			if newGroupPath != "" {
 				newGroupPath += "/"
 			}
-			newGroupPath += item.Group.Name
 
+			newGroupPath += item.Group.Name
 			lenses = append(lenses, s.collectItemLenses(filePath, queryScope, newGroupPath, item.Group.Items)...)
 		}
 	}
@@ -94,6 +95,8 @@ func buildPath(queryScope, groupPath, name string) string {
 	if groupPath != "" {
 		path += "/" + groupPath
 	}
+
 	path += "/" + name
+
 	return path
 }

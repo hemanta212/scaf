@@ -92,18 +92,24 @@ type CompletableNode interface {
 // Top-level AST nodes
 // =============================================================================
 
-// Suite represents a complete test file with queries, setup, teardown, and test scopes.
-type Suite struct {
+// File represents a complete scaf file with functions, setup, teardown, and test scopes.
+// (Renamed from Suite for clarity - a file contains function definitions and tests)
+type File struct {
 	NodeMeta
 	CommentMeta
 	RecoveryMeta
 
-	Imports  []*Import     `parser:"@@*"`
-	Queries  []*Query      `parser:"@@*"`
-	Setup    *SetupClause  `parser:"('setup' @@)?"`
-	Teardown *string       `parser:"('teardown' @RawString)?"`
-	Scopes   []*QueryScope `parser:"@@*"`
+	Imports   []*Import        `parser:"@@*"`
+	Functions []*Function      `parser:"@@*"`
+	Setup     *SetupClause     `parser:"('setup' @@)?"`
+	Teardown  *string          `parser:"('teardown' @RawString)?"`
+	Scopes    []*FunctionScope `parser:"@@*"`
 }
+
+// Suite is an alias for File for backward compatibility.
+//
+// Deprecated: Use File instead.
+type Suite = File
 
 // Import represents a module import statement.
 // Examples:
@@ -119,13 +125,93 @@ type Import struct {
 	Path  string  `parser:"@String"`
 }
 
-// Query defines a named database query.
-type Query struct {
+// Function defines a named database query function with typed parameters.
+// Examples:
+//
+//	fn GetUser(id: string) `MATCH (u:User {id: $id}) RETURN u`
+//	fn CreateUser(name: string, age: int?) `CREATE (u:User {name: $name, age: $age}) RETURN u`
+type Function struct {
 	NodeMeta
 	CommentMeta
 	RecoveryMeta
-	Name string `parser:"'query' @Ident"`
-	Body string `parser:"@RawString"`
+
+	Name          string     `parser:"'fn' @Ident '('"`
+	Params        []*FnParam `parser:"(@@ (Comma @@)*)?"`
+	TrailingComma bool       `parser:"@Comma? ')'"`
+	Body          string     `parser:"@RawString"`
+}
+
+// Query is an alias for Function for backward compatibility.
+//
+// Deprecated: Use Function instead.
+type Query = Function
+
+// FnParam represents a parameter in a function definition.
+// Type annotations are optional - if omitted, the type is inferred as "any".
+// Parameter names don't use $ prefix (the $ is used in the query body to reference them).
+// Examples:
+//
+//	id                // untyped (inferred as any)
+//	id: string        // simple type
+//	name: string?     // nullable type
+//	ids: [int]        // array type
+//	data: {string: int}  // map type
+type FnParam struct {
+	NodeMeta
+	RecoveryMeta
+
+	Name string    `parser:"@Ident"`
+	Type *TypeExpr `parser:"(Colon @@)?"`
+}
+
+// TypeExpr represents a type expression in the scaf DSL.
+// Supports simple primitive types, arrays, maps, and nullable types.
+type TypeExpr struct {
+	NodeMeta
+	RecoveryMeta
+
+	// Simple is a simple type name like "string", "int", "bool", "float64", "any".
+	Simple *string `parser:"( @Ident"`
+	// Array is an array/slice type like "[string]" meaning []string.
+	Array *TypeExpr `parser:"| '[' @@ ']'"`
+	// Map is a map type like "{string: int}" meaning map[string]int.
+	Map *MapTypeExpr `parser:"| @@ )"`
+	// Nullable indicates the type is nullable (postfix ?).
+	// This is set after parsing the base type.
+	Nullable bool `parser:"@'?'?"`
+}
+
+// MapTypeExpr represents a map type expression like {string: int}.
+type MapTypeExpr struct {
+	NodeMeta
+	RecoveryMeta
+	Key   *TypeExpr `parser:"'{' @@"`
+	Value *TypeExpr `parser:"Colon @@ '}'"`
+}
+
+// ToGoType converts a TypeExpr to a Go type string.
+func (t *TypeExpr) ToGoType() string {
+	if t == nil {
+		return "any"
+	}
+
+	var base string
+	switch {
+	case t.Simple != nil:
+		base = *t.Simple
+	case t.Array != nil:
+		base = "[]" + t.Array.ToGoType()
+	case t.Map != nil:
+		base = "map[" + t.Map.Key.ToGoType() + "]" + t.Map.Value.ToGoType()
+	default:
+		base = "any"
+	}
+
+	if t.Nullable {
+		// For nullable types, we use pointers in Go
+		return "*" + base
+	}
+	return base
 }
 
 // =============================================================================
@@ -171,9 +257,10 @@ type SetupItem struct {
 type SetupCall struct {
 	NodeMeta
 	RecoveryMeta
-	Module string        `parser:"@Ident Dot"`
-	Query  string        `parser:"@Ident '('"`
-	Params []*SetupParam `parser:"(@@ (Comma @@)*)? ')'"`
+	Module        string        `parser:"@Ident Dot"`
+	Query         string        `parser:"@Ident '('"`
+	Params        []*SetupParam `parser:"(@@ (Comma @@)*)?"`
+	TrailingComma bool          `parser:"@Comma? ')'"`
 }
 
 // IsComplete returns true if the setup call has all required parts.
@@ -246,20 +333,25 @@ func (p *ParamValue) String() string {
 // Scope and Test nodes
 // =============================================================================
 
-// QueryScope groups tests that target a specific query.
-type QueryScope struct {
+// FunctionScope groups tests that target a specific function.
+type FunctionScope struct {
 	NodeMeta
 	CommentMeta
 	RecoveryMeta
-	QueryName string         `parser:"@Ident '{'"`
-	Setup     *SetupClause   `parser:"('setup' @@)?"`
-	Teardown  *string        `parser:"('teardown' @RawString)?"`
-	Items     []*TestOrGroup `parser:"@@*"`
-	Close     string         `parser:"@'}'"`
+	FunctionName string         `parser:"@Ident '{'"`
+	Setup        *SetupClause   `parser:"('setup' @@)?"`
+	Teardown     *string        `parser:"('teardown' @RawString)?"`
+	Items        []*TestOrGroup `parser:"@@*"`
+	Close        string         `parser:"@'}'"`
 }
 
-// IsComplete returns true if the query scope has a closing brace.
-func (q *QueryScope) IsComplete() bool {
+// QueryScope is an alias for FunctionScope for backward compatibility.
+//
+// Deprecated: Use FunctionScope instead.
+type QueryScope = FunctionScope
+
+// IsComplete returns true if the function scope has a closing brace.
+func (q *FunctionScope) IsComplete() bool {
 	return q.Close != ""
 }
 
@@ -312,18 +404,183 @@ func (t *Test) IsComplete() bool {
 
 // Assert represents an assertion block with optional query.
 // Expressions are captured as tokens and reconstructed as strings for expr.Compile().
+// Each condition is wrapped in parentheses - no semicolons needed.
+// Supports shorthand form for single conditions without braces.
 // Examples:
 //
-//	assert { u.age > 18 }                                    // standalone expr
-//	assert { x > 0; y < 10; z == 5 }                         // multiple exprs
-//	assert CreatePost($title: "x") { p.title == "x" }        // named query with conditions
-//	assert `MATCH (n) RETURN count(n) as cnt` { cnt > 0 }    // inline query with conditions
+//	assert (u.age >= 18)                                     // shorthand single condition (no braces)
+//	assert { (u.age > 18) }                                  // single condition
+//	assert { (x > 0) (y < 10) (z == 5) }                     // multiple conditions
+//	assert CreatePost($title: "x") { (p.title == "x") }      // named query with conditions
+//	assert `MATCH (n) RETURN count(n) as cnt` { (cnt > 0) }  // inline query with conditions
 type Assert struct {
 	NodeMeta
 	RecoveryMeta
-	Query      *AssertQuery `parser:"'assert' @@? '{'"`
-	Conditions []*Expr      `parser:"(@@ Semi?)*"`
-	Close      string       `parser:"@'}'"`
+	// Shorthand is a single parenthesized condition without braces: assert (expr)
+	// When present, Query and Conditions should be nil/empty.
+	Shorthand *ParenExpr `parser:"'assert' ( @@"`
+	// Query is the optional query before the conditions block.
+	Query *AssertQuery `parser:"| @@? '{'"`
+	// Conditions are the parenthesized expressions inside the braces.
+	Conditions []*ParenExpr `parser:"@@*"`
+	// Close is the closing brace (empty for shorthand form).
+	Close string `parser:"@'}' )"`
+}
+
+// IsShorthand returns true if this assertion uses the shorthand form (no braces).
+func (a *Assert) IsShorthand() bool {
+	return a.Shorthand != nil
+}
+
+// AllConditions returns all conditions, whether from shorthand or block form.
+func (a *Assert) AllConditions() []*ParenExpr {
+	if a.Shorthand != nil {
+		return []*ParenExpr{a.Shorthand}
+	}
+	return a.Conditions
+}
+
+// ParenExpr is an expression wrapped in parentheses.
+// Used for assert conditions and statement expressions where the parens delimit the expression.
+// Uses BalancedExprToken to properly handle nested parentheses.
+type ParenExpr struct {
+	NodeMeta
+	RecoveryMeta
+	Tokens []*BalancedExprToken `parser:"'(' @@* ')'"`
+}
+
+// String returns the expression string without the surrounding parentheses.
+func (p *ParenExpr) String() string {
+	if p == nil || len(p.Tokens) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+
+	for i, tok := range p.Tokens {
+		if i > 0 {
+			prev := p.Tokens[i-1]
+			// Add space between tokens except:
+			// - around dots (u.name)
+			// - after open brackets and nested parens in function call position
+			// - before close brackets
+			// - after commas (handled separately)
+			// - between identifier and nested paren (function calls: len(x))
+			needsSpace := !prev.IsDot() && !prev.IsOpenBracket() && !prev.Comma &&
+				!tok.IsDot() && !tok.IsCloseBracket() &&
+				(!prev.IsIdent() || (!tok.IsOpenBracket() && !tok.IsNestedParen()))
+			if needsSpace {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(tok.String())
+		if tok.Comma {
+			b.WriteByte(' ')
+		}
+	}
+
+	return b.String()
+}
+
+// BalancedExprToken captures individual tokens in a balanced parenthesis context.
+// Unlike ExprToken, this does NOT capture top-level ) - only nested ones through NestedParen.
+type BalancedExprToken struct {
+	NodeMeta
+	RecoveryMeta
+	Str         *string            `parser:"@String"`
+	Number      *string            `parser:"| @Number"`
+	Ident       *string            `parser:"| @Ident"`
+	Op          *string            `parser:"| @Op"`
+	Dot         bool               `parser:"| @Dot"`
+	Colon       bool               `parser:"| @Colon"`
+	Comma       bool               `parser:"| @Comma"`
+	NestedParen *BalancedParenExpr `parser:"| @@"`
+	LBrack      bool               `parser:"| @'['"`
+	RBrack      bool               `parser:"| @']'"`
+}
+
+// BalancedParenExpr is a nested parenthesized expression within a BalancedExprToken.
+type BalancedParenExpr struct {
+	NodeMeta
+	RecoveryMeta
+	Tokens []*BalancedExprToken `parser:"'(' @@* ')'"`
+}
+
+// String returns the string representation of a BalancedExprToken.
+func (t *BalancedExprToken) String() string {
+	switch {
+	case t.Str != nil:
+		return fmt.Sprintf("%q", *t.Str)
+	case t.Number != nil:
+		return *t.Number
+	case t.Ident != nil:
+		return *t.Ident
+	case t.Op != nil:
+		return *t.Op
+	case t.Dot:
+		return "."
+	case t.Colon:
+		return ":"
+	case t.Comma:
+		return ","
+	case t.NestedParen != nil:
+		return t.NestedParen.String()
+	case t.LBrack:
+		return "["
+	case t.RBrack:
+		return "]"
+	default:
+		return ""
+	}
+}
+
+// String returns the string representation of a BalancedParenExpr.
+func (p *BalancedParenExpr) String() string {
+	var b strings.Builder
+	b.WriteString("(")
+	for i, tok := range p.Tokens {
+		if i > 0 {
+			prev := p.Tokens[i-1]
+			needsSpace := !prev.IsDot() && !prev.IsOpenBracket() && !prev.Comma &&
+				!tok.IsDot() && !tok.IsCloseBracket() &&
+				(!prev.IsIdent() || (!tok.IsOpenBracket() && !tok.IsNestedParen()))
+			if needsSpace {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(tok.String())
+		if tok.Comma {
+			b.WriteByte(' ')
+		}
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
+// IsDot returns true if this token is a dot.
+func (t *BalancedExprToken) IsDot() bool {
+	return t.Dot
+}
+
+// IsOpenBracket returns true if this token is an opening bracket.
+// Note: NestedParen is NOT considered an open bracket because it includes both ( and ).
+func (t *BalancedExprToken) IsOpenBracket() bool {
+	return t.LBrack
+}
+
+// IsNestedParen returns true if this token is a nested parenthesized expression.
+func (t *BalancedExprToken) IsNestedParen() bool {
+	return t.NestedParen != nil
+}
+
+// IsCloseBracket returns true if this token is a closing bracket.
+func (t *BalancedExprToken) IsCloseBracket() bool {
+	return t.RBrack // Note: nested parens don't need this - they include their own close
+}
+
+// IsIdent returns true if this token is an identifier.
+func (t *BalancedExprToken) IsIdent() bool {
+	return t.Ident != nil
 }
 
 // IsComplete returns true if the assert has a closing brace.
@@ -339,8 +596,9 @@ type AssertQuery struct {
 	// Inline query (raw string)
 	Inline *string `parser:"@RawString"`
 	// Or named query reference with required parentheses
-	QueryName *string       `parser:"| @Ident '('"`
-	Params    []*SetupParam `parser:"(@@ (Comma @@)*)? ')'"`
+	QueryName     *string       `parser:"| @Ident '('"`
+	Params        []*SetupParam `parser:"(@@ (Comma @@)*)?"`
+	TrailingComma bool          `parser:"@Comma? ')'"`
 }
 
 // =============================================================================
@@ -478,13 +736,164 @@ func (d *DottedIdent) String() string {
 // Statement represents a key-value pair for inputs ($var) or expected outputs.
 // Examples:
 //
-//	$userId: 1                                    // input parameter
+//	$userId: 1                                    // input parameter (literal)
+//	$userId: (2 * 4)                              // input parameter (expression)
+//	$userId: (rand()) where (userId > 0)          // expression with constraint
+//	$limit: 10 where (limit <= maxLimit)          // literal with constraint
 //	u.name: "Alice"                               // expected output (equality)
 type Statement struct {
 	NodeMeta
 	RecoveryMeta
-	KeyParts *DottedIdent `parser:"@@"`
-	Value    *Value       `parser:"Colon @@"`
+	KeyParts *DottedIdent    `parser:"@@"`
+	Value    *StatementValue `parser:"Colon @@"`
+}
+
+// StatementValue represents the value in a statement - literal or expression with optional constraint.
+// All expressions are wrapped in parentheses for unambiguous parsing.
+// Examples:
+//
+//	1                                 // literal value
+//	(2 * 4)                           // parenthesized expression
+//	(rand()) where (x > 0)            // expression with where constraint
+//	"Alice" where (len(name) > 3)     // literal with where constraint
+type StatementValue struct {
+	NodeMeta
+	RecoveryMeta
+	// Literal is a simple literal value: 1, "hello", [1, 2, 3], {key: "value"}
+	Literal *Value `parser:"( @@"`
+	// Expr is a parenthesized expression: (2 * 4), (len(items))
+	Expr *ParenExpr `parser:"| @@ )"`
+	// Where is an optional constraint expression: where (x > 0)
+	Where *ParenExpr `parser:"('where' @@)?"`
+}
+
+// IsExpr returns true if this statement value is an expression (not a literal).
+func (sv *StatementValue) IsExpr() bool {
+	return sv.Expr != nil
+}
+
+// HasWhere returns true if this statement value has a where constraint.
+func (sv *StatementValue) HasWhere() bool {
+	return sv.Where != nil
+}
+
+// ToValue returns the literal value, or nil if this is an expression.
+// For backward compatibility with code that expects *Value.
+func (sv *StatementValue) ToValue() *Value {
+	return sv.Literal
+}
+
+// ToGo converts the literal value to a native Go type.
+// Returns nil if this is an expression (expressions are evaluated at runtime).
+func (sv *StatementValue) ToGo() any {
+	if sv == nil || sv.Literal == nil {
+		return nil
+	}
+	return sv.Literal.ToGo()
+}
+
+// ExprString returns the expression as a string for evaluation.
+// Returns empty string if this is a literal value.
+func (sv *StatementValue) ExprString() string {
+	if sv == nil || sv.Expr == nil {
+		return ""
+	}
+	return sv.Expr.String()
+}
+
+// WhereString returns the where constraint as a string for evaluation.
+// Returns empty string if there is no where constraint.
+func (sv *StatementValue) WhereString() string {
+	if sv == nil || sv.Where == nil {
+		return ""
+	}
+	return sv.Where.String()
+}
+
+// ToExpr converts the ParenExpr to an Expr for backward compatibility.
+// Returns nil if this is not an expression.
+func (sv *StatementValue) ToExpr() *Expr {
+	if sv == nil || sv.Expr == nil {
+		return nil
+	}
+	// Convert balanced tokens to regular expr tokens
+	return parenExprToExpr(sv.Expr)
+}
+
+// parenExprToExpr converts a ParenExpr to a regular Expr.
+func parenExprToExpr(p *ParenExpr) *Expr {
+	if p == nil || len(p.Tokens) == 0 {
+		return nil
+	}
+	tokens := make([]*ExprToken, 0, len(p.Tokens))
+	for _, bt := range p.Tokens {
+		tokens = append(tokens, balancedTokenToExprTokens(bt)...)
+	}
+	return &Expr{ExprTokens: tokens}
+}
+
+// balancedTokenToExprTokens converts a BalancedExprToken to ExprTokens.
+func balancedTokenToExprTokens(bt *BalancedExprToken) []*ExprToken {
+	switch {
+	case bt.Str != nil:
+		return []*ExprToken{{Str: bt.Str}}
+	case bt.Number != nil:
+		return []*ExprToken{{Number: bt.Number}}
+	case bt.Ident != nil:
+		return []*ExprToken{{Ident: bt.Ident}}
+	case bt.Op != nil:
+		return []*ExprToken{{Op: bt.Op}}
+	case bt.Dot:
+		return []*ExprToken{{Dot: true}}
+	case bt.Colon:
+		return []*ExprToken{{Colon: true}}
+	case bt.Comma:
+		return []*ExprToken{{Comma: true}}
+	case bt.LBrack:
+		return []*ExprToken{{LBrack: true}}
+	case bt.RBrack:
+		return []*ExprToken{{RBrack: true}}
+	case bt.NestedParen != nil:
+		// Recursively convert nested paren contents
+		result := []*ExprToken{{LParen: true}}
+		for _, nested := range bt.NestedParen.Tokens {
+			result = append(result, balancedTokenToExprTokens(nested)...)
+		}
+		result = append(result, &ExprToken{RParen: true})
+		return result
+	default:
+		return nil
+	}
+}
+
+// String returns a string representation of the StatementValue.
+func (sv *StatementValue) String() string {
+	if sv == nil {
+		return "null"
+	}
+
+	var b strings.Builder
+
+	// Value part
+	switch {
+	case sv.IsExpr():
+		b.WriteString("(")
+		b.WriteString(sv.Expr.String())
+		b.WriteString(")")
+	case sv.Literal != nil:
+		b.WriteString(sv.Literal.String())
+	default:
+		b.WriteString("null")
+	}
+
+	// Where clause
+	if sv.HasWhere() {
+		b.WriteString(" where (")
+		b.WriteString(sv.Where.String())
+		b.WriteString(")")
+	}
+
+	return b.String()
 }
 
 // Key returns the statement key as a dot-joined string.
@@ -505,7 +914,33 @@ func NewStatement(key string, value *Value) *Statement {
 
 	return &Statement{
 		KeyParts: &DottedIdent{Parts: parts},
-		Value:    value,
+		Value:    &StatementValue{Literal: value},
+	}
+}
+
+// NewStatementExpr creates a Statement with an expression value.
+// This is a convenience constructor for testing and programmatic AST construction.
+//
+//nolint:funcorder
+func NewStatementExpr(key string, expr *ParenExpr) *Statement {
+	parts := strings.Split(key, ".")
+
+	return &Statement{
+		KeyParts: &DottedIdent{Parts: parts},
+		Value:    &StatementValue{Expr: expr},
+	}
+}
+
+// NewStatementWithWhere creates a Statement with a where constraint.
+// This is a convenience constructor for testing and programmatic AST construction.
+//
+//nolint:funcorder
+func NewStatementWithWhere(key string, value *Value, where *ParenExpr) *Statement {
+	parts := strings.Split(key, ".")
+
+	return &Statement{
+		KeyParts: &DottedIdent{Parts: parts},
+		Value:    &StatementValue{Literal: value, Where: where},
 	}
 }
 
@@ -535,7 +970,8 @@ type Value struct {
 type Map struct {
 	NodeMeta
 	RecoveryMeta
-	Entries []*MapEntry `parser:"'{' (@@ (Comma @@)*)? '}'"`
+	Entries       []*MapEntry `parser:"'{' (@@ (Comma @@)*)?"`
+	TrailingComma bool        `parser:"@Comma? '}'"`
 }
 
 // MapEntry represents a single entry in a map literal.
@@ -550,7 +986,8 @@ type MapEntry struct {
 type List struct {
 	NodeMeta
 	RecoveryMeta
-	Values []*Value `parser:"'[' (@@ (Comma @@)*)? ']'"`
+	Values        []*Value `parser:"'[' (@@ (Comma @@)*)?"`
+	TrailingComma bool     `parser:"@Comma? ']'"`
 }
 
 // ToGo converts a Value to a native Go type.

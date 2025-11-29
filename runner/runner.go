@@ -19,6 +19,10 @@ var (
 	ErrFieldNotFound = errors.New("field not found in scope")
 	// ErrFieldNotMap is returned when attempting to access a field on a non-map value.
 	ErrFieldNotMap = errors.New("cannot access field on non-map value")
+	// ErrNoModuleContext is returned when a module context is required but not set.
+	ErrNoModuleContext = errors.New("module context required for module setup")
+	// ErrModuleNoSetup is returned when a referenced module has no setup clause.
+	ErrModuleNoSetup = errors.New("module has no setup clause")
 )
 
 // Runner executes scaf test suites.
@@ -142,7 +146,7 @@ func (r *Runner) Run(ctx context.Context, suite *scaf.Suite, suitePath string) (
 
 	// Build query lookup map
 	queries := make(map[string]string)
-	for _, q := range suite.Queries {
+	for _, q := range suite.Functions {
 		queries[q.Name] = q.Body
 	}
 
@@ -192,22 +196,22 @@ func (r *Runner) runQueryScope(
 	handler Handler,
 	result *Result,
 ) error {
-	queryBody, ok := queries[scope.QueryName]
+	queryBody, ok := queries[scope.FunctionName]
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrUnknownQuery, scope.QueryName)
+		return fmt.Errorf("%w: %s", ErrUnknownQuery, scope.FunctionName)
 	}
 
 	// Execute scope setup
 	if scope.Setup != nil {
 		err := r.executeSetup(ctx, r.database, scope.Setup)
 		if err != nil {
-			return fmt.Errorf("scope %s setup: %w", scope.QueryName, err)
+			return fmt.Errorf("scope %s setup: %w", scope.FunctionName, err)
 		}
 	}
 
 	// Run all items
 	for _, item := range scope.Items {
-		path := []string{scope.QueryName}
+		path := []string{scope.FunctionName}
 
 		var err error
 
@@ -232,7 +236,7 @@ func (r *Runner) runQueryScope(
 	if scope.Teardown != nil {
 		err := r.executeQuery(ctx, r.database, *scope.Teardown, nil)
 		if err != nil {
-			return fmt.Errorf("scope %s teardown: %w", scope.QueryName, err)
+			return fmt.Errorf("scope %s teardown: %w", scope.FunctionName, err)
 		}
 	}
 
@@ -551,7 +555,7 @@ func (r *Runner) executeModuleSetup(ctx context.Context, exec executor, moduleAl
 	// Get and execute the module's setup clause
 	modSetup := mod.GetSetup()
 	if modSetup == nil {
-		return fmt.Errorf("module %q has no setup clause", moduleAlias)
+		return fmt.Errorf("%w: %s", ErrModuleNoSetup, moduleAlias)
 	}
 
 	// Recursively execute the module's setup

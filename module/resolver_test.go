@@ -18,7 +18,7 @@ func TestResolver_Resolve(t *testing.T) {
 	// root.scaf imports fixtures, which imports utils
 
 	utilsContent := `
-query CreateUtils ` + "`CREATE (:Utils)`" + `
+fn CreateUtils() ` + "`CREATE (:Utils)`" + `
 `
 	utilsPath := filepath.Join(tmpDir, "utils.scaf")
 
@@ -29,7 +29,7 @@ query CreateUtils ` + "`CREATE (:Utils)`" + `
 
 	fixturesContent := `
 import "./utils"
-query CreateFixtures ` + "`CREATE (:Fixture {n: $n})`" + `
+fn CreateFixtures() ` + "`CREATE (:Fixture {n: $n})`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -40,8 +40,8 @@ query CreateFixtures ` + "`CREATE (:Fixture {n: $n})`" + `
 
 	rootContent := `
 import fixtures "./fixtures"
-query GetUser ` + "`MATCH (u) RETURN u`" + `
-query CreateRoot ` + "`CREATE (:Root)`" + `
+fn GetUser() ` + "`MATCH (u) RETURN u`" + `
+fn CreateRoot() ` + "`CREATE (:Root)`" + `
 
 GetUser {
 	test "basic" {}
@@ -142,7 +142,7 @@ func TestResolver_CycleDetection(t *testing.T) {
 
 	aContent := `
 import "./b"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	aPath := filepath.Join(tmpDir, "a.scaf")
 
@@ -153,7 +153,7 @@ query Q ` + "`Q`" + `
 
 	bContent := `
 import "./c"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	bPath := filepath.Join(tmpDir, "b.scaf")
 
@@ -164,7 +164,7 @@ query Q ` + "`Q`" + `
 
 	cContent := `
 import "./a"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	cPath := filepath.Join(tmpDir, "c.scaf")
 
@@ -200,7 +200,7 @@ func TestResolver_SelfCycle(t *testing.T) {
 	// Create self-referential module
 	content := `
 import "./self"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	selfPath := filepath.Join(tmpDir, "self.scaf")
 
@@ -231,7 +231,7 @@ func TestResolver_DiamondDependency(t *testing.T) {
 	// This is NOT a cycle and should work fine
 
 	commonContent := `
-query CreateCommon ` + "`CREATE (:Common)`" + `
+fn CreateCommon() ` + "`CREATE (:Common)`" + `
 `
 	commonPath := filepath.Join(tmpDir, "common.scaf")
 
@@ -242,7 +242,7 @@ query CreateCommon ` + "`CREATE (:Common)`" + `
 
 	aContent := `
 import "./common"
-query CreateA ` + "`CREATE (:A)`" + `
+fn CreateA() ` + "`CREATE (:A)`" + `
 `
 	aPath := filepath.Join(tmpDir, "a.scaf")
 
@@ -253,7 +253,7 @@ query CreateA ` + "`CREATE (:A)`" + `
 
 	bContent := `
 import "./common"
-query CreateB ` + "`CREATE (:B)`" + `
+fn CreateB() ` + "`CREATE (:B)`" + `
 `
 	bPath := filepath.Join(tmpDir, "b.scaf")
 
@@ -265,7 +265,7 @@ query CreateB ` + "`CREATE (:B)`" + `
 	rootContent := `
 import "./a"
 import "./b"
-query CreateRoot ` + "`CREATE (:Root)`" + `
+fn CreateRoot() ` + "`CREATE (:Root)`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
 
@@ -300,7 +300,7 @@ func TestResolver_MissingImport(t *testing.T) {
 
 	content := `
 import "./nonexistent"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
 
@@ -343,7 +343,7 @@ func TestResolver_NestedDirectories(t *testing.T) {
 	}
 
 	helpersContent := `
-query CreateHelpers ` + "`CREATE (:Helper)`" + `
+fn CreateHelpers() ` + "`CREATE (:Helper)`" + `
 `
 	helpersPath := filepath.Join(libDir, "helpers.scaf")
 
@@ -354,7 +354,7 @@ query CreateHelpers ` + "`CREATE (:Helper)`" + `
 
 	fixturesContent := `
 import "./lib/helpers"
-query CreateFixtures ` + "`CREATE (:Fixture)`" + `
+fn CreateFixtures() ` + "`CREATE (:Fixture)`" + `
 `
 	fixturesPath := filepath.Join(sharedDir, "fixtures.scaf")
 
@@ -365,7 +365,7 @@ query CreateFixtures ` + "`CREATE (:Fixture)`" + `
 
 	rootContent := `
 import fixtures "./shared/fixtures"
-query GetData ` + "`MATCH (n) RETURN n`" + `
+fn GetData() ` + "`MATCH (n) RETURN n`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
 
@@ -414,7 +414,7 @@ func TestResolver_QueryWithMultipleParams(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	content := `
-query CreateUserWithDetails ` + "`CREATE (:User {name: $name, email: $email, age: $age, active: $active})`" + `
+fn CreateUserWithDetails() ` + "`CREATE (:User {name: $name, email: $email, age: $age, active: $active})`" + `
 `
 	modulePath := filepath.Join(tmpDir, "fixtures.scaf")
 
@@ -448,7 +448,7 @@ func TestResolver_AliasCollision(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create two different modules
-	mod1Content := `query CreateMod1 ` + "`CREATE (:Mod1)`" + `
+	mod1Content := `fn CreateMod1() ` + "`CREATE (:Mod1)`" + `
 `
 	mod1Path := filepath.Join(tmpDir, "mod1.scaf")
 
@@ -457,7 +457,7 @@ func TestResolver_AliasCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mod2Content := `query CreateMod2 ` + "`CREATE (:Mod2)`" + `
+	mod2Content := `fn CreateMod2() ` + "`CREATE (:Mod2)`" + `
 `
 	mod2Path := filepath.Join(tmpDir, "mod2.scaf")
 
@@ -470,7 +470,7 @@ func TestResolver_AliasCollision(t *testing.T) {
 	rootContent := `
 import shared "./mod1"
 import shared "./mod2"
-query Q ` + "`Q`" + `
+fn Q() ` + "`Q`" + `
 `
 	rootPath := filepath.Join(tmpDir, "root.scaf")
 
@@ -497,7 +497,7 @@ func TestResolver_ResolveFromSuite(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a fixture module
-	fixturesContent := `query CreateData ` + "`CREATE (:Data)`" + `
+	fixturesContent := `fn CreateData() ` + "`CREATE (:Data)`" + `
 `
 	fixturesPath := filepath.Join(tmpDir, "fixtures.scaf")
 

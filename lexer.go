@@ -31,26 +31,29 @@ const (
 	TokenLBrace                                   // {
 	TokenRBrace                                   // }
 	TokenWhitespace                               // spaces, tabs, newlines
-	// Structural keywords - distinct token types so grammar can distinguish from identifiers
-	TokenQuery    // query
+	// TokenFn and other structural keywords are distinct token types so grammar can distinguish from identifiers.
+	TokenFn       // fn (function definition)
 	TokenImport   // import
 	TokenSetup    // setup
 	TokenTeardown // teardown
 	TokenTest     // test
 	TokenGroup    // group
 	TokenAssert   // assert
+	TokenWhere    // where (constraint clause)
+	TokenQuestion // ? (nullability marker)
 )
 
 // keywords maps keyword strings to their token types.
 // Only structural keywords are here - literals like true/false/null remain as identifiers.
 var keywords = map[string]lexer.TokenType{
-	"query":    TokenQuery,
+	"fn":       TokenFn,
 	"import":   TokenImport,
 	"setup":    TokenSetup,
 	"teardown": TokenTeardown,
 	"test":     TokenTest,
 	"group":    TokenGroup,
 	"assert":   TokenAssert,
+	"where":    TokenWhere,
 }
 
 // Lexer errors.
@@ -115,14 +118,16 @@ func newDSLLexer() *dslDefinition {
 			"]": TokenRBracket,
 			"{": TokenLBrace,
 			"}": TokenRBrace,
+			"?": TokenQuestion,
 			// Structural keywords
-			"query":    TokenQuery,
+			"fn":       TokenFn,
 			"import":   TokenImport,
 			"setup":    TokenSetup,
 			"teardown": TokenTeardown,
 			"test":     TokenTest,
 			"group":    TokenGroup,
 			"assert":   TokenAssert,
+			"where":    TokenWhere,
 		},
 	}
 }
@@ -319,10 +324,12 @@ func (l *lexerState) Next() (lexer.Token, error) {
 		return l.token(TokenLBrace, start), nil
 	case '}':
 		return l.token(TokenRBrace, start), nil
+	case '?':
+		return l.token(TokenQuestion, start), nil
 	}
 
-	// Single-character operators
-	if strings.ContainsRune("+-*/%^&|!<>=?#~", r) {
+	// Single-character operators (note: ? is handled separately for type syntax)
+	if strings.ContainsRune("+-*/%^&|!<>=#~", r) {
 		return l.token(TokenOp, start), nil
 	}
 
@@ -525,13 +532,14 @@ func (l *lexerState) scanNumber(start lexer.Position) lexer.Token {
 
 // IsKeywordToken returns true if the token type is a structural keyword.
 func IsKeywordToken(typ lexer.TokenType) bool {
-	return typ == TokenQuery ||
+	return typ == TokenFn ||
 		typ == TokenImport ||
 		typ == TokenSetup ||
 		typ == TokenTeardown ||
 		typ == TokenTest ||
 		typ == TokenGroup ||
-		typ == TokenAssert
+		typ == TokenAssert ||
+		typ == TokenWhere
 }
 
 // Character helpers.

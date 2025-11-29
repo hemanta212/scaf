@@ -3,6 +3,7 @@ package neo4j
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -42,15 +43,7 @@ func TestDatabase_ImplementsInterface(_ *testing.T) {
 func TestDatabase_Registration(t *testing.T) {
 	databases := scaf.RegisteredDatabases()
 
-	found := false
-	for _, name := range databases {
-		if name == scaf.DatabaseNeo4j {
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if !slices.Contains(databases, scaf.DatabaseNeo4j) {
 		t.Error("neo4j database not registered")
 	}
 }

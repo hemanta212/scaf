@@ -21,24 +21,24 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		wantType  lexer.TokenType
 	}{
 		{
-			name:      "after query keyword",
-			input:     "query GetUser `MATCH (u) RETURN u`\n",
+			name:      "after fn keyword",
+			input:     "fn GetUser() `MATCH (u) RETURN u`\n",
 			line:      1,
-			col:       7, // right after "query " (at position of 'G' in GetUser)
-			wantValue: "query",
-			wantType:  scaf.TokenQuery,
+			col:       4, // right after "fn " (at position of 'G' in GetUser)
+			wantValue: "fn",
+			wantType:  scaf.TokenFn,
 		},
 		{
-			name:      "after query name",
-			input:     "query GetUser `MATCH (u) RETURN u`\n",
+			name:      "after function name",
+			input:     "fn GetUser() `MATCH (u) RETURN u`\n",
 			line:      1,
-			col:       15, // right after "GetUser " (at position of backtick)
-			wantValue: "GetUser",
-			wantType:  scaf.TokenIdent,
+			col:       14, // right after "GetUser() " (at position of backtick)
+			wantValue: ")",
+			wantType:  scaf.TokenRParen,
 		},
 		{
 			name: "after setup keyword with inline query",
-			input: "query Q `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
+			input: "fn Q() `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
 			line:      3,
 			col:       8, // right after "setup " (at position of backtick)
 			wantValue: "setup",
@@ -46,7 +46,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after dot in module reference",
-			input: "import fixtures \"./fixtures\"\nquery Q `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
+			input: "import fixtures \"./fixtures\"\nfn Q() `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
 			line:      4,
 			col:       17, // right after "fixtures." (at position of 'C')
 			wantValue: ".",
@@ -62,7 +62,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after test keyword",
-			input: "query Q `Q`\nQ {\n\ttest \"my test\" {\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\ttest \"my test\" {\n\t}\n}\n",
 			line:      3,
 			col:       7, // right after "test " (at position of quote)
 			wantValue: "test",
@@ -70,7 +70,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after group keyword",
-			input: "query Q `Q`\nQ {\n\tgroup \"my group\" {\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\tgroup \"my group\" {\n\t}\n}\n",
 			line:      3,
 			col:       8, // right after "group " (at position of quote)
 			wantValue: "group",
@@ -78,7 +78,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after assert keyword",
-			input: "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { true }\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { (true) }\n\t}\n}\n",
 			line:      4,
 			col:       10, // right after "assert " (at position of '{')
 			wantValue: "assert",
@@ -86,7 +86,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after open brace in test",
-			input: "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       3, // at start of "$id" line
 			wantValue: "{",
@@ -94,7 +94,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after colon in statement",
-			input: "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       8, // right after ": " (at position of '1')
 			wantValue: ":",
@@ -102,7 +102,7 @@ func TestPrevTokenAtPosition(t *testing.T) {
 		},
 		{
 			name: "after parameter name",
-			input: "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       6, // right after "$id" (at position of ':')
 			wantValue: "$id",
@@ -151,24 +151,24 @@ func TestTokenAtPosition(t *testing.T) {
 		wantType  lexer.TokenType
 	}{
 		{
-			name:      "on query keyword",
-			input:     "query GetUser `MATCH (u) RETURN u`\n",
+			name:      "on fn keyword",
+			input:     "fn GetUser() `MATCH (u) RETURN u`\n",
 			line:      1,
-			col:       3, // middle of "query"
-			wantValue: "query",
-			wantType:  scaf.TokenQuery,
+			col:       2, // middle of "fn"
+			wantValue: "fn",
+			wantType:  scaf.TokenFn,
 		},
 		{
 			name:      "on identifier",
-			input:     "query GetUser `MATCH (u) RETURN u`\n",
+			input:     "fn GetUser() `MATCH (u) RETURN u`\n",
 			line:      1,
-			col:       10, // middle of "GetUser"
+			col:       7, // middle of "GetUser"
 			wantValue: "GetUser",
 			wantType:  scaf.TokenIdent,
 		},
 		{
 			name:      "on setup keyword",
-			input:     "query Q `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
+			input:     "fn Q() `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
 			line:      3,
 			col:       4, // on "setup"
 			wantValue: "setup",
@@ -176,7 +176,7 @@ func TestTokenAtPosition(t *testing.T) {
 		},
 		{
 			name:      "on dot",
-			input:     "import fixtures \"./fixtures\"\nquery Q `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
+			input:     "import fixtures \"./fixtures\"\nfn Q() `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
 			line:      4,
 			col:       16, // on the dot
 			wantValue: ".",
@@ -184,7 +184,7 @@ func TestTokenAtPosition(t *testing.T) {
 		},
 		{
 			name:      "on parameter",
-			input:     "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\t$userId: 1\n\t}\n}\n",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$userId: 1\n\t}\n}\n",
 			line:      4,
 			col:       5, // on "$userId"
 			wantValue: "$userId",
@@ -237,15 +237,15 @@ func TestGetTokenContext(t *testing.T) {
 		wantPrevValue  string // expected previous token value (empty if nil expected)
 	}{
 		{
-			name:          "top level after query keyword",
-			input:         "query GetUser `Q`\n",
+			name:          "top level after fn keyword",
+			input:         "fn GetUser() `Q`\n",
 			line:          1,
-			col:           7, // right after "query "
-			wantPrevValue: "query",
+			col:           4, // right after "fn "
+			wantPrevValue: "fn",
 		},
 		{
 			name:           "inside scope with setup",
-			input:          "query Q `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
+			input:          "fn Q() `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
 			line:           3,
 			col:            8, // right after "setup "
 			wantInSetup:    true,
@@ -254,7 +254,7 @@ func TestGetTokenContext(t *testing.T) {
 		},
 		{
 			name:           "inside test body",
-			input:          "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			input:          "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:           4,
 			col:            3, // at start of "$id" line
 			wantInTest:     true,
@@ -263,7 +263,7 @@ func TestGetTokenContext(t *testing.T) {
 		},
 		{
 			name:           "inside test setup",
-			input:          "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\tsetup `CREATE (n)`\n\t}\n}\n",
+			input:          "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\tsetup `CREATE (n)`\n\t}\n}\n",
 			line:           4,
 			col:            9, // right after "setup "
 			wantInTest:     true,
@@ -273,7 +273,7 @@ func TestGetTokenContext(t *testing.T) {
 		},
 		{
 			name:           "inside group but not in test",
-			input:          "query Q `Q`\nQ {\n\tgroup \"g\" {\n\t\ttest \"t\" {}\n\t}\n}\n",
+			input:          "fn Q() `Q`\nQ {\n\tgroup \"g\" {\n\t\ttest \"t\" {}\n\t}\n}\n",
 			line:           3,
 			col:            15, // inside group, on the { after "g"
 			wantInGroup:    true,
@@ -282,9 +282,9 @@ func TestGetTokenContext(t *testing.T) {
 		},
 		{
 			name:           "inside assert",
-			input:          "query Q `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { true }\n\t}\n}\n",
+			input:          "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { (true) }\n\t}\n}\n",
 			line:           4,
-			col:            12, // inside the assert block
+			col:            12, // inside the assert block (on the opening paren)
 			wantInTest:     true,
 			wantInAssert:   true,
 			wantQueryScope: "Q",

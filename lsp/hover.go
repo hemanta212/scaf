@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.lsp.dev/protocol"
@@ -20,6 +21,7 @@ func (s *Server) markdownQueryBlock(queryBody string) string {
 
 // Hover handles textDocument/hover requests.
 func (s *Server) Hover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	defer s.traceHandler("Hover")()
 	s.logger.Debug("Hover",
 		zap.String("uri", string(params.TextDocument.URI)),
 		zap.Uint32("line", params.Position.Line),
@@ -67,11 +69,11 @@ func (s *Server) hoverContent(doc *Document, f *analysis.AnalyzedFile, node scaf
 
 	case *scaf.QueryScope:
 		// When hovering over a scope, show info about the referenced query
-		if q, ok := f.Symbols.Queries[n.QueryName]; ok {
-			return s.hoverQueryRef(q), rangePtr(spanToRange(n.Span()))
+		if q, ok := f.Symbols.Queries[n.FunctionName]; ok {
+			return s.hoverQueryScope(n, q), rangePtr(spanToRange(n.Span()))
 		}
 
-		return fmt.Sprintf("**Query Scope:** `%s` (undefined)", n.QueryName), rangePtr(spanToRange(n.Span()))
+		return fmt.Sprintf("**Query Scope:** `%s` (undefined)", n.FunctionName), rangePtr(spanToRange(n.Span()))
 
 	case *scaf.Test:
 		return s.hoverTest(n), rangePtr(spanToRange(n.Span()))
@@ -99,11 +101,82 @@ func (s *Server) hoverContent(doc *Document, f *analysis.AnalyzedFile, node scaf
 	}
 }
 
+// extractDocComment extracts documentation from leading comments.
+// Returns the documentation text (without // prefix) or empty string if none.
+// Comments that start with "// " (single space) are considered doc comments.
+// Blank lines separate doc comments from regular comments.
+func extractDocComment(leadingComments []string) string {
+	if len(leadingComments) == 0 {
+		return ""
+	}
+
+	var docLines []string
+
+	for _, comment := range leadingComments {
+		// Strip // prefix
+		text := strings.TrimPrefix(comment, "//")
+
+		// Handle "// text" (with space) and "//text" (without space)
+		if trimmed, ok := strings.CutPrefix(text, " "); ok {
+			text = trimmed
+		}
+
+		docLines = append(docLines, text)
+	}
+
+	if len(docLines) == 0 {
+		return ""
+	}
+
+	return strings.Join(docLines, "\n")
+}
+
+// writeDocComment writes a doc comment block to the builder if present.
+func writeDocComment(b *strings.Builder, leadingComments []string) {
+	doc := extractDocComment(leadingComments)
+	if doc != "" {
+		b.WriteString(doc)
+		b.WriteString("\n\n---\n\n")
+	}
+}
+
 // hoverQuery generates hover content for a query definition.
 func (s *Server) hoverQuery(q *scaf.Query) string {
 	var b strings.Builder
 
+	// Show doc comment if present
+	writeDocComment(&b, q.LeadingComments)
+
 	b.WriteString(fmt.Sprintf("**Query:** `%s`\n\n", q.Name))
+	b.WriteString(s.markdownQueryBlock(q.Body))
+
+	return b.String()
+}
+
+// hoverQueryScope generates hover content for a query scope, including its own doc comments.
+func (s *Server) hoverQueryScope(scope *scaf.QueryScope, q *analysis.QuerySymbol) string {
+	var b strings.Builder
+
+	// Show scope's own doc comment if present
+	writeDocComment(&b, scope.LeadingComments)
+
+	// Show query info
+	b.WriteString(fmt.Sprintf("**Query:** `%s`\n\n", q.Name))
+
+	if len(q.Params) > 0 {
+		b.WriteString("**Parameters:** ")
+
+		for i, p := range q.Params {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+
+			b.WriteString("`$" + p + "`")
+		}
+
+		b.WriteString("\n\n")
+	}
+
 	b.WriteString(s.markdownQueryBlock(q.Body))
 
 	return b.String()
@@ -138,6 +211,9 @@ func (s *Server) hoverQueryRef(q *analysis.QuerySymbol) string {
 func (s *Server) hoverImport(imp *scaf.Import) string {
 	var b strings.Builder
 
+	// Show doc comment if present
+	writeDocComment(&b, imp.LeadingComments)
+
 	b.WriteString("**Import**\n\n")
 	b.WriteString(fmt.Sprintf("**Path:** `%s`\n", imp.Path))
 
@@ -151,6 +227,9 @@ func (s *Server) hoverImport(imp *scaf.Import) string {
 // hoverTest generates hover content for a test.
 func (s *Server) hoverTest(t *scaf.Test) string {
 	var b strings.Builder
+
+	// Show doc comment if present
+	writeDocComment(&b, t.LeadingComments)
 
 	b.WriteString(fmt.Sprintf("**Test:** `%s`\n\n", t.Name))
 
@@ -179,6 +258,9 @@ func (s *Server) hoverTest(t *scaf.Test) string {
 // hoverGroup generates hover content for a group.
 func (s *Server) hoverGroup(g *scaf.Group) string {
 	var b strings.Builder
+
+	// Show doc comment if present
+	writeDocComment(&b, g.LeadingComments)
 
 	b.WriteString(fmt.Sprintf("**Group:** `%s`\n\n", g.Name))
 
@@ -258,15 +340,7 @@ func (s *Server) hoverParameter(key string, stmt *scaf.Statement, q *analysis.Qu
 
 	// If we have the query, check if this param exists and show context
 	if q != nil {
-		found := false
-		for _, p := range q.Params {
-			if p == paramName {
-				found = true
-				break
-			}
-		}
-
-		if found {
+		if slices.Contains(q.Params, paramName) {
 			b.WriteString(fmt.Sprintf("Used in query `%s`\n", q.Name))
 		} else {
 			b.WriteString(fmt.Sprintf("⚠️ Parameter not found in query `%s`\n", q.Name))
@@ -278,8 +352,8 @@ func (s *Server) hoverParameter(key string, stmt *scaf.Statement, q *analysis.Qu
 			if err == nil {
 				for _, p := range metadata.Parameters {
 					if p.Name == paramName {
-						if p.Type != "" {
-							b.WriteString(fmt.Sprintf("\n**Type:** `%s`\n", p.Type))
+						if p.Type != nil {
+							b.WriteString(fmt.Sprintf("\n**Type:** `%s`\n", p.Type.String()))
 						}
 						if p.Count > 1 {
 							b.WriteString(fmt.Sprintf("Referenced %d times in query\n", p.Count))
@@ -392,7 +466,7 @@ func (s *Server) hoverSetupCall(doc *Document, f *analysis.AnalyzedFile, call *s
 // hoverSetupCallWithAnalysis generates hover content using a loaded/analyzed file.
 func (s *Server) hoverSetupCallWithAnalysis(call *scaf.SetupCall, importedFile *analysis.AnalyzedFile, b *strings.Builder) string {
 	if importedFile.Symbols == nil {
-		b.WriteString(fmt.Sprintf("⚠️ Module `%s` could not be analyzed\n", call.Module))
+		fmt.Fprintf(b, "⚠️ Module `%s` could not be analyzed\n", call.Module)
 		return b.String()
 	}
 
@@ -420,12 +494,12 @@ func (s *Server) hoverSetupCallWithAnalysis(call *scaf.SetupCall, importedFile *
 		zap.String("queryName", call.Query),
 		zap.Strings("availableQueries", queryNames))
 
-	b.WriteString(fmt.Sprintf("⚠️ Query `%s` not found in module `%s`\n\n", call.Query, call.Module))
+	fmt.Fprintf(b, "⚠️ Query `%s` not found in module `%s`\n\n", call.Query, call.Module)
 
 	if len(queryNames) > 0 {
 		b.WriteString("**Available queries:**\n")
 		for _, name := range queryNames {
-			b.WriteString(fmt.Sprintf("- `%s`\n", name))
+			fmt.Fprintf(b, "- `%s`\n", name)
 		}
 	} else {
 		b.WriteString("_No queries found in this module._\n")

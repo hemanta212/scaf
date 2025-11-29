@@ -9,6 +9,14 @@ import (
 	"github.com/rlch/scaf/dialects/cypher"
 )
 
+// typeStr returns the string representation of a type, or "" if nil.
+func typeStr(t *scaf.Type) string {
+	if t == nil {
+		return ""
+	}
+	return t.String()
+}
+
 func TestAnalyzer_AnalyzeQuery_Parameters(t *testing.T) {
 	t.Parallel()
 
@@ -564,7 +572,7 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 		// Check parameter types
 		paramTypes := make(map[string]string)
 		for _, p := range metadata.Parameters {
-			paramTypes[p.Name] = p.Type
+			paramTypes[p.Name] = typeStr(p.Type)
 		}
 
 		if paramTypes["userId"] != "string" {
@@ -591,7 +599,7 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 		// Check return types
 		returnTypes := make(map[string]string)
 		for _, r := range metadata.Returns {
-			returnTypes[r.Name] = r.Type
+			returnTypes[r.Name] = typeStr(r.Type)
 		}
 
 		if returnTypes["name"] != "string" {
@@ -626,8 +634,9 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 		}
 
 		// Returning whole node should have type "*User"
-		if metadata.Returns[0].Type != "*User" {
-			t.Errorf("return type = %q, want '*User'", metadata.Returns[0].Type)
+		gotType := typeStr(metadata.Returns[0].Type)
+		if gotType != "*User" {
+			t.Errorf("return type = %q, want '*User'", gotType)
 		}
 	})
 
@@ -646,7 +655,7 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 
 		returnTypes := make(map[string]string)
 		for _, r := range metadata.Returns {
-			returnTypes[r.Name] = r.Type
+			returnTypes[r.Name] = typeStr(r.Type)
 		}
 
 		if returnTypes["name"] != "string" {
@@ -677,8 +686,9 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 			t.Fatalf("expected 1 return, got %d", len(metadata.Returns))
 		}
 
-		if metadata.Returns[0].Type != "[]string" {
-			t.Errorf("genres type = %q, want '[]string'", metadata.Returns[0].Type)
+		gotType := typeStr(metadata.Returns[0].Type)
+		if gotType != "[]string" {
+			t.Errorf("genres type = %q, want '[]string'", gotType)
 		}
 	})
 
@@ -699,15 +709,17 @@ func TestAnalyzer_AnalyzeQueryWithSchema_TypeInference(t *testing.T) {
 		if len(metadata.Parameters) != 1 {
 			t.Fatalf("expected 1 parameter, got %d", len(metadata.Parameters))
 		}
-		if metadata.Parameters[0].Type != "" {
-			t.Errorf("parameter type = %q, want empty (unknown model)", metadata.Parameters[0].Type)
+		paramType := typeStr(metadata.Parameters[0].Type)
+		if paramType != "" {
+			t.Errorf("parameter type = %q, want empty (unknown model)", paramType)
 		}
 
 		if len(metadata.Returns) != 1 {
 			t.Fatalf("expected 1 return, got %d", len(metadata.Returns))
 		}
-		if metadata.Returns[0].Type != "" {
-			t.Errorf("return type = %q, want empty (unknown model)", metadata.Returns[0].Type)
+		returnType := typeStr(metadata.Returns[0].Type)
+		if returnType != "" {
+			t.Errorf("return type = %q, want empty (unknown model)", returnType)
 		}
 	})
 }

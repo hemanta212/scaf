@@ -230,9 +230,9 @@ func TestLexer_SingleCharOperators(t *testing.T) {
 		{"&", []tokenExpect{{"Op", "&"}}},
 		{"|", []tokenExpect{{"Op", "|"}}},
 		{"=", []tokenExpect{{"Op", "="}}},
-		{"?", []tokenExpect{{"Op", "?"}}},
 		{"#", []tokenExpect{{"Op", "#"}}},
 		{"~", []tokenExpect{{"Op", "~"}}},
+		// Note: ? is now its own token type for type nullability, not an Op
 	}
 
 	for _, tt := range tests {
@@ -378,10 +378,11 @@ func TestLexer_ComplexExpressions(t *testing.T) {
 			},
 		},
 		{
-			"query definition",
-			"query GetUser `MATCH (u:User) RETURN u`",
+			"fn definition",
+			"fn GetUser() `MATCH (u:User) RETURN u`",
 			[]tokenExpect{
-				{"query", "query"}, {"Ident", "GetUser"},
+				{"fn", "fn"}, {"Ident", "GetUser"},
+				{"(", "("}, {")", ")"},
 				{"RawString", "`MATCH (u:User) RETURN u`"},
 			},
 		},

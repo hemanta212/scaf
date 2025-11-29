@@ -51,6 +51,7 @@ models:
 	for _, f := range user.Fields {
 		if f.Name == "id" {
 			idField = f
+
 			break
 		}
 	}
@@ -474,7 +475,7 @@ func TestTypeStringRoundTrip(t *testing.T) {
 		MapOf(TypeString, SliceOf(TypeBool)),
 		NamedType("time", "Time"),
 		NamedType("uuid", "UUID"),
-		&Type{Kind: TypeKindArray, ArrayLen: 5, Elem: TypeInt},
+		{Kind: TypeKindArray, ArrayLen: 5, Elem: TypeInt},
 	}
 
 	for _, typ := range types {

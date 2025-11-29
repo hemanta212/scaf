@@ -17,7 +17,7 @@ func TestServer_DocumentHighlight_Query(t *testing.T) {
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
 	// Open a file with a query and multiple references
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "finds user" {
@@ -82,7 +82,7 @@ func TestServer_DocumentHighlight_Import(t *testing.T) {
 	// Open a file with an import and usages
 	content := `import fixtures "./fixtures"
 
-query GetUser ` + "`MATCH (u:User) RETURN u`" + `
+fn GetUser() ` + "`MATCH (u:User) RETURN u`" + `
 
 GetUser {
 	setup fixtures
@@ -126,7 +126,7 @@ func TestServer_DocumentHighlight_Parameter(t *testing.T) {
 	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
 	_ = server.Initialized(ctx, &protocol.InitializedParams{})
 
-	content := `query GetUser ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
+	content := `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 
 GetUser {
 	test "test1" {

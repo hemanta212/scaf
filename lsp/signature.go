@@ -29,10 +29,7 @@ func (s *Server) SignatureHelp(_ context.Context, params *protocol.SignatureHelp
 		return nil, nil //nolint:nilnil
 	}
 	lineText := lines[params.Position.Line]
-	col := int(params.Position.Character)
-	if col > len(lineText) {
-		col = len(lineText)
-	}
+	col := min(int(params.Position.Character), len(lineText))
 	textBeforeCursor := lineText[:col]
 
 	// Check if we're inside a setup call's parameter list
@@ -61,7 +58,7 @@ func (s *Server) SignatureHelp(_ context.Context, params *protocol.SignatureHelp
 	importedPath := s.fileLoader.ResolveImportPath(docPath, imp.Path)
 	importedFile, err := s.fileLoader.LoadAndAnalyze(importedPath)
 	if err != nil || importedFile.Symbols == nil {
-		return nil, nil //nolint:nilnil
+		return nil, nil //nolint:nilnil,nilerr // No signature help if imported file cannot be loaded
 	}
 
 	// Find the query in the imported file
@@ -186,8 +183,8 @@ func (s *Server) buildSignatureInfo(module string, query *analysis.QuerySymbol, 
 			paramLabels = nil
 			for _, p := range metadata.Parameters {
 				paramLabel := "$" + p.Name
-				if p.Type != "" {
-					paramLabel += ": " + p.Type
+				if p.Type != nil {
+					paramLabel += ": " + p.Type.String()
 				}
 				paramLabels = append(paramLabels, paramLabel)
 				params = append(params, protocol.ParameterInformation{

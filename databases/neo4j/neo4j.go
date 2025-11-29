@@ -3,6 +3,7 @@ package neo4j
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,12 +13,15 @@ import (
 	"github.com/rlch/scaf/dialects/cypher"
 )
 
+// ErrInvalidConfig is returned when an invalid configuration is provided.
+var ErrInvalidConfig = errors.New("neo4j: expected *scaf.Neo4jConfig")
+
 //nolint:gochecknoinits // Database self-registration pattern
 func init() {
 	scaf.RegisterDatabase(scaf.DatabaseNeo4j, func(cfg any) (scaf.Database, error) {
 		neo4jCfg, ok := cfg.(*scaf.Neo4jConfig)
 		if !ok {
-			return nil, fmt.Errorf("neo4j: expected *scaf.Neo4jConfig, got %T", cfg)
+			return nil, fmt.Errorf("%w, got %T", ErrInvalidConfig, cfg)
 		}
 
 		return New(neo4jCfg)

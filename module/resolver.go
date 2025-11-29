@@ -1,10 +1,14 @@
 package module
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/rlch/scaf"
 )
+
+// ErrAliasCollision is returned when a module alias is already used for a different module.
+var ErrAliasCollision = errors.New("alias collision")
 
 // Resolver handles module dependency resolution and cycle detection.
 type Resolver struct {
@@ -85,7 +89,7 @@ func (r *Resolver) resolveImports( //nolint:funcorder
 			// Same alias pointing to different modules - error
 			return &ResolveError{
 				Module: alias,
-				Cause:  fmt.Errorf("alias %q already used for %s", alias, existing.Path),
+				Cause:  fmt.Errorf("%w: %q already used for %s", ErrAliasCollision, alias, existing.Path),
 			}
 		}
 

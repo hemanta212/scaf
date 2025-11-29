@@ -1,17 +1,17 @@
 // Example demonstrating module imports and named setups
 import fixtures "./shared/fixtures"
 
-query GetUser `
+fn GetUser(userId) `
 MATCH (u:User {id: $userId})
 RETURN u.id, u.name, u.email, u.age, u.verified
 `
 
-query GetUserPosts `
+fn GetUserPosts(authorId) `
 MATCH (p:Post {authorId: $authorId})
 RETURN p.title, p.views
 `
 
-query CountUserPosts `
+fn CountUserPosts(authorId) `
 MATCH (p:Post {authorId: $authorId})
 RETURN count(p) as postCount
 `
@@ -50,18 +50,19 @@ GetUser {
 			u.age: 30
 			u.verified: true
 
-			assert CountUserPosts($authorId: u.id) { postCount == 0 }
+			assert CountUserPosts($authorId: u.id) { (postCount == 0) }
 		}
 	}
 }
 
 // Use field ref: pass u.id from GetUser result to CountUserPosts
 GetUserPosts {
-	setup fixtures.SetupUsers()
+	setup fixtures.CreateUser(id: "aefa", name: "wifjowejfi", email: "awoiejf", age: 32, verified: true)
 
+	// TODO: arg type mismatch diagnostics
 	// Setup using imported fixtures with parameters
 	test "user with post" {
-		setup fixtures.SetupPosts($postId: 0, $title: "Hello World", $authorId: 1)
+		setup fixtures.CreatePost(id: 1, title: "aiwejfoewi", authorId: "sduhfiweuhf")
 
 		$authorId: 1
 

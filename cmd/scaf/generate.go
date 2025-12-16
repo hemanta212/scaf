@@ -15,16 +15,18 @@ import (
 	"github.com/rlch/scaf/language/go"
 	"github.com/urfave/cli/v3"
 
-	// Register bindings.
+	// Register bindings and dialects.
 	_ "github.com/rlch/scaf/adapters/neogo"
+	_ "github.com/rlch/scaf/dialects/cypher"
 )
 
 // Generate command errors.
 var (
-	ErrNoScafFilesForGenerate = errors.New("no .scaf files found")
-	ErrUnknownLanguage        = errors.New("unknown language")
-	ErrLanguageNoAdapters     = errors.New("language does not support code generation with adapters")
-	ErrUnknownAdapter         = errors.New("unknown adapter")
+	ErrNoScafFilesForGenerate   = errors.New("no .scaf files found")
+	ErrUnknownLanguage          = errors.New("unknown language")
+	ErrLanguageNoAdapters       = errors.New("language does not support code generation with adapters")
+	ErrUnknownAdapter           = errors.New("unknown adapter")
+	ErrGenerateDiagnosticErrors = errors.New("scaf files contain errors")
 )
 
 func generateCommand() *cli.Command {
@@ -179,11 +181,41 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	analyzer := scaf.GetAnalyzer(dialectName)
+	queryAnalyzer := scaf.GetAnalyzer(dialectName)
+
+	// Run analysis and check for errors before generating code
+	semanticAnalyzer := analysis.NewAnalyzerWithQueryAnalyzer(nil, nil, queryAnalyzer)
+
+	var hasErrors bool
+	for _, inputFile := range files {
+		data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", inputFile, err)
+		}
+
+		result := semanticAnalyzer.Analyze(inputFile, data)
+		if result.HasErrors() {
+			hasErrors = true
+			// Print errors
+			for _, diag := range result.Errors() {
+				loc := ""
+				if diag.Span.Start.Line > 0 {
+					loc = fmt.Sprintf("%s:%d:%d: ", inputFile, diag.Span.Start.Line, diag.Span.Start.Column)
+				} else {
+					loc = fmt.Sprintf("%s: ", inputFile)
+				}
+				fmt.Fprintf(os.Stderr, "%serror: %s\n", loc, diag.Message)
+			}
+		}
+	}
+
+	if hasErrors {
+		return ErrGenerateDiagnosticErrors
+	}
 
 	opts := &generateOptions{
 		goLang:      goLang,
-		analyzer:    analyzer,
+		analyzer:    queryAnalyzer,
 		binding:     binding,
 		schema:      schema,
 		outputDir:   outputDir,

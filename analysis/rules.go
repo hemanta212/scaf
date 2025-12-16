@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -38,12 +40,14 @@ func DefaultRules() []*Rule {
 		undefinedAssertQueryRule,
 		undefinedSetupQueryRule,    // Cross-file validation
 		paramTypeMismatchRule,      // Type checking for function parameters
+		returnTypeMismatchRule,     // Type checking for return value assertions
 		undeclaredQueryParamRule,   // Parameters used in query body but not declared
 		unknownParameterRule,       // Using a parameter that doesn't exist in the query
 		duplicateTestRule,          // Duplicate test names cause conflicts
 		duplicateGroupRule,         // Duplicate group names cause conflicts
 		missingRequiredParamsRule,  // Missing params will cause runtime failures
 		invalidExpressionRule,      // Expression syntax/type errors (compile-time)
+		invalidTypeAnnotationRule,  // Invalid type names in function signatures
 
 		// Warning-level checks.
 		unusedImportRule,
@@ -311,8 +315,9 @@ func checkItemParams(f *AnalyzedFile, items []*scaf.TestOrGroup, queryParams map
 				key := stmt.Key()
 				if paramName, ok := strings.CutPrefix(key, "$"); ok {
 					if !queryParams[paramName] {
+						// Use statement span for precise highlighting
 						f.Diagnostics = append(f.Diagnostics, Diagnostic{
-							Span:     item.Test.Span(),
+							Span:     stmt.Span(),
 							Severity: SeverityError,
 							Message:  "parameter $" + paramName + " not found in query " + queryName,
 							Code:     "unknown-parameter",
@@ -489,8 +494,9 @@ func checkUndefinedAssertQueries(f *AnalyzedFile) {
 					if assert.Query != nil && assert.Query.QueryName != nil {
 						queryName := *assert.Query.QueryName
 						if _, ok := f.Symbols.Queries[queryName]; !ok {
+							// Use assert span for precise highlighting
 							f.Diagnostics = append(f.Diagnostics, Diagnostic{
-								Span:     item.Test.Span(),
+								Span:     assert.Span(),
 								Severity: SeverityError,
 								Message:  "assert references undefined query: " + queryName,
 								Code:     "undefined-assert-query",
@@ -613,8 +619,18 @@ func checkUnusedDeclaredParams(f *AnalyzedFile) {
 		// Check each declared param is used in the body
 		for paramName := range query.DeclaredParams {
 			if !usedParams[paramName] {
+				// Try to find the specific parameter span for precise highlighting
+				paramSpan := query.Span // Fallback to function span
+				if query.Node != nil {
+					for _, p := range query.Node.Params {
+						if p != nil && p.Name == paramName {
+							paramSpan = p.Span()
+							break
+						}
+					}
+				}
 				f.Diagnostics = append(f.Diagnostics, Diagnostic{
-					Span:     query.Span,
+					Span:     paramSpan,
 					Severity: SeverityWarning,
 					Message:  "declared parameter " + paramName + " is not used in query body",
 					Code:     "unused-declared-param",
@@ -894,7 +910,7 @@ func checkUndeclaredQueryParams(f *AnalyzedFile) {
 
 var paramTypeMismatchRule = &Rule{
 	Name:     "param-type-mismatch",
-	Doc:      "Reports test parameters with values that don't match the function's type annotation.",
+	Doc:      "Reports test parameters with values that don't match the function's type annotation or schema-inferred type.",
 	Severity: SeverityError,
 	Run:      checkParamTypeMismatch,
 }
@@ -906,15 +922,28 @@ func checkParamTypeMismatch(f *AnalyzedFile) {
 
 	for _, scope := range f.Suite.Scopes {
 		query, ok := f.Symbols.Queries[scope.FunctionName]
-		if !ok || query.TypedParams == nil {
-			continue // No type annotations to check against
+		if !ok {
+			continue
 		}
 
-		checkItemParamTypes(f, scope.Items, query.TypedParams, scope.FunctionName)
+		// Build map of inferred types from query body params
+		inferredTypes := make(map[string]*scaf.Type)
+		for _, p := range query.QueryBodyParams {
+			if p.Type != nil {
+				inferredTypes[p.Name] = p.Type
+			}
+		}
+
+		// Skip if no types to check (neither explicit nor inferred)
+		if query.TypedParams == nil && len(inferredTypes) == 0 {
+			continue
+		}
+
+		checkItemParamTypes(f, scope.Items, query.TypedParams, inferredTypes, scope.FunctionName)
 	}
 }
 
-func checkItemParamTypes(f *AnalyzedFile, items []*scaf.TestOrGroup, typedParams map[string]*scaf.TypeExpr, queryName string) {
+func checkItemParamTypes(f *AnalyzedFile, items []*scaf.TestOrGroup, typedParams map[string]*scaf.TypeExpr, inferredTypes map[string]*scaf.Type, queryName string) {
 	for _, item := range items {
 		if item.Test != nil {
 			for _, stmt := range item.Test.Statements {
@@ -924,31 +953,126 @@ func checkItemParamTypes(f *AnalyzedFile, items []*scaf.TestOrGroup, typedParams
 					continue // Not an input parameter
 				}
 
-				expectedType, hasType := typedParams[paramName]
-				if !hasType || expectedType == nil {
-					continue // No type annotation for this parameter
-				}
-
 				if stmt.Value == nil || stmt.Value.Literal == nil {
 					continue // No value to check (expressions are runtime-evaluated)
 				}
 
-				if err := checkValueMatchesType(stmt.Value.Literal, expectedType); err != nil {
-					f.Diagnostics = append(f.Diagnostics, Diagnostic{
-						Span:     stmt.Span(),
-						Severity: SeverityError,
-						Message:  "type mismatch for parameter $" + paramName + ": " + err.Error(),
-						Code:     "param-type-mismatch",
-						Source:   "scaf",
-					})
+				// First check explicit type annotations (higher priority)
+				if expectedType, hasType := typedParams[paramName]; hasType && expectedType != nil {
+					if err := checkValueMatchesType(stmt.Value.Literal, expectedType); err != nil {
+						f.Diagnostics = append(f.Diagnostics, Diagnostic{
+							Span:     stmt.Span(),
+							Severity: SeverityError,
+							Message:  "type mismatch for parameter $" + paramName + ": " + err.Error(),
+							Code:     "param-type-mismatch",
+							Source:   "scaf",
+						})
+					}
+					continue // Skip inferred type check if explicit annotation exists
+				}
+
+				// Then check inferred types from schema-aware analysis
+				if inferredType, hasInferred := inferredTypes[paramName]; hasInferred && inferredType != nil {
+					if err := checkValueMatchesInferredType(stmt.Value.Literal, inferredType); err != nil {
+						f.Diagnostics = append(f.Diagnostics, Diagnostic{
+							Span:     stmt.Span(),
+							Severity: SeverityError,
+							Message:  "type mismatch for parameter $" + paramName + " (inferred from schema): " + err.Error(),
+							Code:     "param-type-mismatch",
+							Source:   "scaf",
+						})
+					}
 				}
 			}
 		}
 
 		if item.Group != nil {
-			checkItemParamTypes(f, item.Group.Items, typedParams, queryName)
+			checkItemParamTypes(f, item.Group.Items, typedParams, inferredTypes, queryName)
 		}
 	}
+}
+
+// checkValueMatchesInferredType checks if a value matches an inferred type (scaf.Type).
+// Returns an error describing the mismatch, or nil if the value is valid.
+func checkValueMatchesInferredType(v *scaf.Value, t *scaf.Type) error {
+	if v == nil || t == nil {
+		return nil
+	}
+
+	// Handle null values
+	if v.Null {
+		// Null might be valid for pointer types
+		if t.Kind == scaf.TypeKindPointer {
+			return nil
+		}
+		return errTypeMismatch(t.String(), "null")
+	}
+
+	switch t.Kind {
+	case scaf.TypeKindPrimitive:
+		return checkValueMatchesPrimitive(v, t.Name)
+	case scaf.TypeKindSlice:
+		if v.List == nil {
+			return errTypeMismatch(t.String(), inferValueType(v))
+		}
+		// Check each element
+		for i, elem := range v.List.Values {
+			if err := checkValueMatchesInferredType(elem, t.Elem); err != nil {
+				return errArrayElemMismatch(i, err)
+			}
+		}
+		return nil
+	case scaf.TypeKindPointer:
+		// Pointer to a type - check the underlying type
+		return checkValueMatchesInferredType(v, t.Elem)
+	case scaf.TypeKindMap:
+		if v.Map == nil {
+			return errTypeMismatch(t.String(), inferValueType(v))
+		}
+		// Check each value (map value type is in Elem field)
+		for _, entry := range v.Map.Entries {
+			if err := checkValueMatchesInferredType(entry.Value, t.Elem); err != nil {
+				return errMapValueMismatch(entry.Key, err)
+			}
+		}
+		return nil
+	case scaf.TypeKindNamed:
+		// Named types (custom types) - allow any value for now
+		return nil
+	}
+
+	return nil
+}
+
+// checkValueMatchesPrimitive checks if a value matches a primitive type name.
+func checkValueMatchesPrimitive(v *scaf.Value, typeName string) error {
+	switch typeName {
+	case "string":
+		if v.Str == nil {
+			return errTypeMismatch("string", inferValueType(v))
+		}
+	case "int", "int64", "int32", "int16", "int8", "uint", "uint64", "uint32", "uint16", "uint8":
+		if v.Number == nil {
+			return errTypeMismatch(typeName, inferValueType(v))
+		}
+		// Check if it's actually an integer
+		if *v.Number != float64(int64(*v.Number)) {
+			return errTypeMismatch(typeName, "float")
+		}
+	case "float64", "float32":
+		if v.Number == nil {
+			return errTypeMismatch(typeName, inferValueType(v))
+		}
+	case "bool":
+		if v.Boolean == nil {
+			return errTypeMismatch("bool", inferValueType(v))
+		}
+	default:
+		// Unknown primitive type - allow any value
+		return nil
+	}
+
+	return nil
 }
 
 // checkValueMatchesType checks if a value matches the expected type.
@@ -1239,10 +1363,24 @@ func checkTestExpressions(f *AnalyzedFile, test *scaf.Test, queryName string) {
 			continue
 		}
 
+		// Determine which environment to use for this assert block:
+		// - If assert has a query (assert SomeQuery() { ... }), use that query's returns
+		// - Otherwise use the parent query's returns
+		assertEnv := env
+		if assert.Query != nil {
+			if assert.Query.QueryName != nil {
+				// Named query reference - use its returns
+				assertEnv = buildExprEnvFromQuery(f, *assert.Query.QueryName)
+			} else if assert.Query.Inline != nil {
+				// Inline query - analyze it directly
+				assertEnv = buildExprEnvFromInlineQuery(f, *assert.Query.Inline)
+			}
+		}
+
 		// Check all conditions (handles both shorthand and block form)
 		for _, cond := range assert.AllConditions() {
 			if cond != nil {
-				checkExpressionAtSpan(f, cond, cond.Span(), "assertion condition", boolOption(), env)
+				checkExpressionAtSpan(f, cond, cond.Span(), "assertion condition", boolOption(), assertEnv)
 			}
 		}
 	}
@@ -1256,6 +1394,11 @@ func boolOption() expr.Option {
 // buildExprEnvFromQuery builds an expr environment map from query return types.
 // The environment tells expr-lang what variables exist and their types.
 // Returns nil if no query analyzer is available or query not found.
+//
+// This function builds typed structs (via reflection) instead of map[string]any
+// to enable proper type checking. For example, if a query returns `u.name` (string),
+// accessing `p.name` in an assertion will be type-checked as string, so
+// `assert (p.name)` will error with "expected bool, but got string".
 func buildExprEnvFromQuery(f *AnalyzedFile, queryName string) map[string]any {
 	if f.QueryAnalyzer == nil {
 		return nil
@@ -1266,15 +1409,58 @@ func buildExprEnvFromQuery(f *AnalyzedFile, queryName string) map[string]any {
 		return nil
 	}
 
-	metadata, err := f.QueryAnalyzer.AnalyzeQuery(query.Body)
-	if err != nil || metadata == nil {
+	metadata := analyzeQueryWithSchemaIfAvailable(f, query.Body)
+	if metadata == nil {
 		return nil
 	}
 
+	return buildExprEnvFromMetadata(metadata)
+}
+
+// buildExprEnvFromInlineQuery builds an expr environment from an inline query string.
+// Used for assert blocks with inline queries like: assert `MATCH (c:Comment) RETURN c` { (c.id > 0) }
+func buildExprEnvFromInlineQuery(f *AnalyzedFile, queryBody string) map[string]any {
+	if f.QueryAnalyzer == nil || queryBody == "" {
+		return nil
+	}
+
+	metadata := analyzeQueryWithSchemaIfAvailable(f, queryBody)
+	if metadata == nil {
+		return nil
+	}
+
+	return buildExprEnvFromMetadata(metadata)
+}
+
+// analyzeQueryWithSchemaIfAvailable analyzes a query using the schema if available.
+// Falls back to basic analysis without schema if schema-aware analysis is not supported.
+func analyzeQueryWithSchemaIfAvailable(f *AnalyzedFile, queryBody string) *scaf.QueryMetadata {
+	// Try schema-aware analysis first if schema is available
+	if f.Schema != nil {
+		if schemaAnalyzer, ok := f.QueryAnalyzer.(SchemaAwareAnalyzer); ok {
+			metadata, err := schemaAnalyzer.AnalyzeQueryWithSchema(queryBody, f.Schema)
+			if err == nil && metadata != nil {
+				return metadata
+			}
+		}
+	}
+
+	// Fall back to basic analysis
+	metadata, err := f.QueryAnalyzer.AnalyzeQuery(queryBody)
+	if err != nil {
+		return nil
+	}
+	return metadata
+}
+
+// buildExprEnvFromMetadata builds an expr environment from query metadata.
+// This is the shared implementation used by both named and inline query environment builders.
+func buildExprEnvFromMetadata(metadata *scaf.QueryMetadata) map[string]any {
 	// Build environment from return fields
 	env := make(map[string]any)
 
 	// Track entity prefixes for property access (e.g., "u" from "u.name")
+	// Maps prefix -> field name -> typed value
 	entityPrefixes := make(map[string]map[string]any)
 
 	for _, ret := range metadata.Returns {
@@ -1309,11 +1495,12 @@ func buildExprEnvFromQuery(f *AnalyzedFile, queryName string) map[string]any {
 		}
 	}
 
-	// Add entity prefixes to the environment
+	// Convert entity prefix maps to typed structs for proper type checking
+	// This enables expr-lang to detect type mismatches like "assert (p.name)" where p.name is string
 	for prefix, props := range entityPrefixes {
 		// Only add if not already in env (don't override explicit returns)
 		if _, exists := env[prefix]; !exists {
-			env[prefix] = props
+			env[prefix] = buildTypedStruct(props)
 		}
 	}
 
@@ -1343,12 +1530,88 @@ func addNestedProperty(m map[string]any, path string, value any) {
 	}
 }
 
+// buildTypedStruct dynamically creates a struct type with the given fields and their types.
+// Each field gets an `expr:"fieldname"` tag to allow lowercase access in expressions.
+// This enables expr-lang to perform proper type checking instead of treating everything as `any`.
+func buildTypedStruct(fields map[string]any) any {
+	if len(fields) == 0 {
+		return struct{}{}
+	}
+
+	// Build struct fields
+	structFields := make([]reflect.StructField, 0, len(fields))
+	for name, value := range fields {
+		// Capitalize first letter for Go export requirement
+		exportedName := capitalizeFirst(name)
+
+		var fieldType reflect.Type
+		if value == nil {
+			// Unknown type - use interface{} which expr-lang will check as "unknown"
+			fieldType = reflect.TypeOf((*any)(nil)).Elem()
+		} else if nestedMap, ok := value.(map[string]any); ok {
+			// Recursive: build nested struct for nested properties
+			nested := buildTypedStruct(nestedMap)
+			fieldType = reflect.TypeOf(nested)
+		} else {
+			fieldType = reflect.TypeOf(value)
+		}
+
+		structFields = append(structFields, reflect.StructField{
+			Name: exportedName,
+			Type: fieldType,
+			// Use expr tag for lowercase access (e.g., `expr:"name"` allows p.name)
+			Tag: reflect.StructTag(fmt.Sprintf(`expr:"%s"`, name)),
+		})
+	}
+
+	// Create the struct type and instance
+	structType := reflect.StructOf(structFields)
+	structValue := reflect.New(structType).Elem()
+
+	// Set values (needed for expr-lang to infer types)
+	for name, value := range fields {
+		field := structValue.FieldByName(capitalizeFirst(name))
+		if field.IsValid() && field.CanSet() {
+			if nestedMap, ok := value.(map[string]any); ok {
+				nested := buildTypedStruct(nestedMap)
+				field.Set(reflect.ValueOf(nested))
+			} else if value != nil {
+				field.Set(reflect.ValueOf(value))
+			}
+		}
+	}
+
+	return structValue.Interface()
+}
+
+// capitalizeFirst returns s with the first character uppercased.
+// Required for Go struct field names which must be exported.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	// Only capitalize if first char is lowercase letter
+	if s[0] >= 'a' && s[0] <= 'z' {
+		return string(s[0]-32) + s[1:]
+	}
+	return s
+}
+
+// unknownTypeMarker is a sentinel value for unknown/untyped fields.
+// Using a non-nil empty interface value allows expr-lang to check as "unknown" type,
+// which is stricter than map[string]any{} (which allows any property access).
+var unknownTypeMarker = any("")
+
 // typeToExprValue converts a Type to a representative value for expr.Env().
 // expr-lang infers types from the values in the environment.
 func typeToExprValue(t *scaf.Type) any {
 	if t == nil {
-		// For unknown types, use any (map) to allow property access
-		return map[string]any{}
+		// For unknown types, return empty string as marker.
+		// This is intentionally NOT map[string]any{} because that would allow
+		// any property access. Using "" means the type is inferred as string,
+		// which will give better error messages than "unknown" or "any".
+		// Note: We use string because most database properties are strings.
+		return unknownTypeMarker
 	}
 
 	switch t.Kind {
@@ -1515,7 +1778,7 @@ func exprErrorToDiagnostic(err error, parenExpr *scaf.ParenExpr, span scaf.Span,
 		return Diagnostic{
 			Span:     adjustedSpan,
 			Severity: SeverityError,
-			Message:  exprErr.Message,
+			Message:  friendlyExprError(exprErr.Message),
 			Code:     "invalid-expression",
 			Source:   "scaf",
 		}
@@ -1525,10 +1788,68 @@ func exprErrorToDiagnostic(err error, parenExpr *scaf.ParenExpr, span scaf.Span,
 	return Diagnostic{
 		Span:     span,
 		Severity: SeverityError,
-		Message:  context + ": " + err.Error(),
+		Message:  context + ": " + friendlyExprError(err.Error()),
 		Code:     "invalid-expression",
 		Source:   "scaf",
 	}
+}
+
+// friendlyExprError transforms common expr-lang error patterns into friendlier messages.
+// This makes error messages more actionable for scaf users.
+func friendlyExprError(msg string) string {
+	// Pattern: "undefined: foo" → "undefined variable 'foo' - check query RETURN clause"
+	if strings.HasPrefix(msg, "undefined: ") {
+		varName := strings.TrimPrefix(msg, "undefined: ")
+		return fmt.Sprintf("undefined variable '%s' - check query RETURN clause", varName)
+	}
+
+	// Pattern: "unknown name foo" → "undefined variable 'foo' - check query RETURN clause"
+	if strings.HasPrefix(msg, "unknown name ") {
+		varName := strings.TrimPrefix(msg, "unknown name ")
+		return fmt.Sprintf("undefined variable '%s' - check query RETURN clause", varName)
+	}
+
+	// Pattern: "invalid operation: <type> <op> <type>" → "cannot compare <type> with <type>"
+	if strings.HasPrefix(msg, "invalid operation: ") {
+		rest := strings.TrimPrefix(msg, "invalid operation: ")
+		// Try to parse patterns like "string > int" or "int == string"
+		for _, op := range []string{" > ", " < ", " >= ", " <= ", " == ", " != ", " + ", " - ", " * ", " / "} {
+			if idx := strings.Index(rest, op); idx > 0 {
+				leftType := rest[:idx]
+				rightType := rest[idx+len(op):]
+				// Check for "(1:1)" style position suffix and remove it
+				if parenIdx := strings.Index(rightType, " ("); parenIdx > 0 {
+					rightType = rightType[:parenIdx]
+				}
+				return fmt.Sprintf("cannot compare %s with %s", leftType, rightType)
+			}
+		}
+		// Fallback if we can't parse
+		return msg
+	}
+
+	// Pattern: "expected bool, but got <type>" → more helpful message
+	if strings.HasPrefix(msg, "expected bool, but got ") {
+		gotType := strings.TrimPrefix(msg, "expected bool, but got ")
+		// Remove any position suffix
+		if parenIdx := strings.Index(gotType, " ("); parenIdx > 0 {
+			gotType = gotType[:parenIdx]
+		}
+		if gotType == "string" {
+			return fmt.Sprintf("assertion must be boolean, got string (e.g., use 'name != \"\"' instead of 'name')")
+		}
+		if gotType == "int" || gotType == "int64" || gotType == "float64" {
+			return fmt.Sprintf("assertion must be boolean, got %s (e.g., use 'count > 0' instead of 'count')", gotType)
+		}
+		return fmt.Sprintf("assertion must be boolean, got %s", gotType)
+	}
+
+	// Pattern: "expected int, but got <type>" for typed parameters
+	if strings.HasPrefix(msg, "expected int, but got ") || strings.HasPrefix(msg, "expected int64, but got ") {
+		return strings.Replace(msg, "expected ", "expression must return ", 1)
+	}
+
+	return msg
 }
 
 // adjustExprErrorSpan calculates the actual source span for an expr-lang error.
@@ -1570,4 +1891,179 @@ func adjustExprErrorSpan(exprErr *exprfile.Error, parenExpr *scaf.ParenExpr, spa
 
 	// No detailed position info, use the full span
 	return span
+}
+
+// ----------------------------------------------------------------------------
+// Rule: invalid-type-annotation
+// ----------------------------------------------------------------------------
+
+var invalidTypeAnnotationRule = &Rule{
+	Name:     "invalid-type-annotation",
+	Doc:      "Reports invalid type names in function parameter annotations.",
+	Severity: SeverityError,
+	Run:      checkInvalidTypeAnnotations,
+}
+
+func checkInvalidTypeAnnotations(f *AnalyzedFile) {
+	if f.Suite == nil {
+		return
+	}
+
+	for _, fn := range f.Suite.Functions {
+		if fn == nil {
+			continue
+		}
+
+		for _, param := range fn.Params {
+			if param == nil || param.Type == nil {
+				continue
+			}
+
+			validateTypeExpr(f, param.Type)
+		}
+	}
+}
+
+// validateTypeExpr validates a type expression recursively.
+// Scaf only allows primitive types, not named types like Go does.
+func validateTypeExpr(f *AnalyzedFile, t *scaf.TypeExpr) {
+	if t == nil {
+		return
+	}
+
+	switch {
+	case t.Simple != nil:
+		if !isValidScafType(*t.Simple) {
+			f.Diagnostics = append(f.Diagnostics, Diagnostic{
+				Span:     t.Span(),
+				Severity: SeverityError,
+				Message:  "unknown type: " + *t.Simple,
+				Code:     "invalid-type-annotation",
+				Source:   "scaf",
+			})
+		}
+
+	case t.Array != nil:
+		validateTypeExpr(f, t.Array)
+
+	case t.Map != nil:
+		validateTypeExpr(f, t.Map.Key)
+		validateTypeExpr(f, t.Map.Value)
+	}
+}
+
+// isValidScafType returns true if typeName is a valid scaf DSL type.
+// Scaf uses a subset of Go primitive types.
+func isValidScafType(typeName string) bool {
+	switch typeName {
+	case "string", "int", "int32", "int64", "float32", "float64", "bool", "any":
+		return true
+	}
+	return false
+}
+
+// ----------------------------------------------------------------------------
+// Rule: return-type-mismatch
+// ----------------------------------------------------------------------------
+
+var returnTypeMismatchRule = &Rule{
+	Name:     "return-type-mismatch",
+	Doc:      "Reports test statements with values that don't match the query's return type from schema inference.",
+	Severity: SeverityError,
+	Run:      checkReturnTypeMismatch,
+}
+
+func checkReturnTypeMismatch(f *AnalyzedFile) {
+	if f.Suite == nil {
+		return
+	}
+
+	for _, scope := range f.Suite.Scopes {
+		query, ok := f.Symbols.Queries[scope.FunctionName]
+		if !ok {
+			continue
+		}
+
+		// Build map of return field types from query analysis
+		// Key is "varName.propName" (e.g., "u.name") -> inferred type
+		returnTypes := buildReturnTypeMap(query.QueryBodyReturns)
+		if len(returnTypes) == 0 {
+			continue
+		}
+
+		checkItemReturnTypes(f, scope.Items, returnTypes, scope.FunctionName)
+	}
+}
+
+// buildReturnTypeMap builds a map from field path (e.g., "u.name") to inferred type.
+// Handles both simple returns (u) and property access returns (u.name).
+func buildReturnTypeMap(returns []scaf.ReturnInfo) map[string]*scaf.Type {
+	result := make(map[string]*scaf.Type)
+
+	for _, ret := range returns {
+		if ret.Type == nil {
+			continue
+		}
+
+		// Expression contains the original expression (e.g., "u.name")
+		// Name contains the inferred column name (e.g., "name" for "u.name", or alias if AS used)
+		// We primarily want to match by Expression since that's how test statements are written
+
+		// Index by expression (e.g., "u.name") - primary key for test statements
+		if ret.Expression != "" {
+			result[ret.Expression] = ret.Type
+		}
+
+		// Also index by alias/name if present (e.g., "userName" for "u.name AS userName")
+		if ret.Alias != "" {
+			result[ret.Alias] = ret.Type
+		}
+	}
+
+	return result
+}
+
+func checkItemReturnTypes(f *AnalyzedFile, items []*scaf.TestOrGroup, returnTypes map[string]*scaf.Type, queryName string) {
+	for _, item := range items {
+		if item.Test != nil {
+			for _, stmt := range item.Test.Statements {
+				key := stmt.Key()
+
+				// Skip input parameters ($param)
+				if strings.HasPrefix(key, "$") {
+					continue
+				}
+
+				// Look up the expected type for this return field
+				expectedType, hasType := returnTypes[key]
+				if !hasType || expectedType == nil {
+					continue // Unknown field, skip
+				}
+
+				if stmt.Value == nil || stmt.Value.Literal == nil {
+					continue // No literal value to check (expressions are runtime-evaluated)
+				}
+
+				// Allow null for any return field - the query might not return rows,
+				// or the field might be nullable in the database
+				if stmt.Value.Literal.Null {
+					continue
+				}
+
+				if err := checkValueMatchesInferredType(stmt.Value.Literal, expectedType); err != nil {
+					f.Diagnostics = append(f.Diagnostics, Diagnostic{
+						Span:     stmt.Span(),
+						Severity: SeverityError,
+						Message:  "type mismatch for " + key + ": " + err.Error(),
+						Code:     "return-type-mismatch",
+						Source:   "scaf",
+					})
+				}
+			}
+		}
+
+		if item.Group != nil {
+			checkItemReturnTypes(f, item.Group.Items, returnTypes, queryName)
+		}
+	}
 }

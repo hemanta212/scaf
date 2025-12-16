@@ -55,19 +55,20 @@ func RegisterAnalyzer(dialectName string, factory QueryAnalyzerFactory) {
 
 // GetAnalyzer returns a QueryAnalyzer for the given dialect name.
 // Returns nil if no analyzer is registered for that dialect.
+// Prefers explicitly registered analyzers over dialect adapters,
+// as they may implement additional interfaces like SchemaAwareAnalyzer.
 func GetAnalyzer(dialectName string) QueryAnalyzer { //nolint:ireturn
-	// First check dialect instances (Dialect implements Analyze which maps to AnalyzeQuery)
+	// First check explicit analyzer registry (may implement more interfaces)
+	if factory, ok := analyzers[dialectName]; ok {
+		return factory()
+	}
+
+	// Fall back to dialect adapter
 	if d := GetDialect(dialectName); d != nil {
 		return &dialectAnalyzerAdapter{d}
 	}
 
-	// Fall back to explicit analyzer registry
-	factory, ok := analyzers[dialectName]
-	if !ok {
-		return nil
-	}
-
-	return factory()
+	return nil
 }
 
 // dialectAnalyzerAdapter adapts a Dialect to the QueryAnalyzer interface.
@@ -110,6 +111,11 @@ type QueryMetadata struct {
 
 	// Returns are the fields returned by the query.
 	Returns []ReturnInfo
+
+	// Bindings maps variable names to their bound types from pattern matching.
+	// E.g., for "MATCH (u:User)", Bindings["u"] = ["User"].
+	// Used for hover information when the variable itself isn't returned.
+	Bindings map[string][]string
 
 	// ReturnsOne indicates the query returns at most one row.
 	// When false (default), the query may return multiple rows (slice).

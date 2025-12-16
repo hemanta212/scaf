@@ -219,7 +219,11 @@ func (s *Server) Moniker(_ context.Context, _ *protocol.MonikerParams) ([]protoc
 	return nil, nil
 }
 
-// Request handles custom requests.
-func (s *Server) Request(_ context.Context, _ string, _ any) (any, error) {
+// Request handles custom requests including textDocument/inlayHint.
+func (s *Server) Request(ctx context.Context, method string, params any) (any, error) {
+	// Handle inlay hints (LSP 3.17+) - not in go.lsp.dev/protocol v0.12.0
+	if method == "textDocument/inlayHint" {
+		return s.handleInlayHintRequest(ctx, params)
+	}
 	return nil, nil //nolint:nilnil // LSP stub returns nil for unimplemented features
 }

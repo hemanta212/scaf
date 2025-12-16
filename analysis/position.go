@@ -20,22 +20,27 @@ func NodeAtPosition(f *AnalyzedFile, pos lexer.Position) scaf.Node {
 
 	// Check imports.
 	for _, imp := range f.Suite.Imports {
-		if containsPosition(imp.Span(), pos) {
+		if ContainsPosition(imp.Span(), pos) {
 			best = imp
 		}
 	}
 
 	// Check queries.
 	for _, q := range f.Suite.Functions {
-		if containsPosition(q.Span(), pos) {
-			best = q
+		if ContainsPosition(q.Span(), pos) {
+			// Check for more specific nodes inside query (parameters)
+			if child := nodeInQuery(q, pos); child != nil {
+				best = child
+			} else {
+				best = q
+			}
 		}
 	}
 
 	// Check global setup clause (Suite.Setup).
-	if f.Suite.Setup != nil && containsPosition(f.Suite.Setup.Span(), pos) {
+	if f.Suite.Setup != nil && ContainsPosition(f.Suite.Setup.Span(), pos) {
 		// Check for call inside
-		if f.Suite.Setup.Call != nil && containsPosition(f.Suite.Setup.Call.Span(), pos) {
+		if f.Suite.Setup.Call != nil && ContainsPosition(f.Suite.Setup.Call.Span(), pos) {
 			best = f.Suite.Setup.Call
 		} else if child := nodeInSetupBlock(f.Suite.Setup, pos); child != nil {
 			best = child
@@ -46,7 +51,7 @@ func NodeAtPosition(f *AnalyzedFile, pos lexer.Position) scaf.Node {
 
 	// Check scopes.
 	for _, scope := range f.Suite.Scopes {
-		if containsPosition(scope.Span(), pos) {
+		if ContainsPosition(scope.Span(), pos) {
 			// Check if we're in a more specific child.
 			if child := nodeInScope(scope, pos); child != nil {
 				best = child
@@ -59,12 +64,25 @@ func NodeAtPosition(f *AnalyzedFile, pos lexer.Position) scaf.Node {
 	return best
 }
 
+// nodeInQuery checks for more specific nodes within a query/function definition.
+//
+//nolint:ireturn // Returning interface is intentional for AST node polymorphism.
+func nodeInQuery(q *scaf.Query, pos lexer.Position) scaf.Node {
+	// Check parameters
+	for _, p := range q.Params {
+		if p != nil && ContainsPosition(p.Span(), pos) {
+			return p
+		}
+	}
+	return nil
+}
+
 //nolint:ireturn // Returning interface is intentional for AST node polymorphism.
 func nodeInScope(scope *scaf.QueryScope, pos lexer.Position) scaf.Node {
 	// Check setup clause first (more specific)
-	if scope.Setup != nil && containsPosition(scope.Setup.Span(), pos) {
+	if scope.Setup != nil && ContainsPosition(scope.Setup.Span(), pos) {
 		// Check for call inside
-		if scope.Setup.Call != nil && containsPosition(scope.Setup.Call.Span(), pos) {
+		if scope.Setup.Call != nil && ContainsPosition(scope.Setup.Call.Span(), pos) {
 			return scope.Setup.Call
 		}
 		// Check for block items
@@ -87,9 +105,9 @@ func nodeInScope(scope *scaf.QueryScope, pos lexer.Position) scaf.Node {
 //nolint:ireturn // Returning interface is intentional for AST node polymorphism.
 func nodeInSetupBlock(setup *scaf.SetupClause, pos lexer.Position) scaf.Node {
 	for _, item := range setup.Block {
-		if containsPosition(item.Span(), pos) {
+		if ContainsPosition(item.Span(), pos) {
 			// Check for call inside the item
-			if item.Call != nil && containsPosition(item.Call.Span(), pos) {
+			if item.Call != nil && ContainsPosition(item.Call.Span(), pos) {
 				return item.Call
 			}
 			return item
@@ -101,7 +119,7 @@ func nodeInSetupBlock(setup *scaf.SetupClause, pos lexer.Position) scaf.Node {
 //nolint:ireturn // Returning interface is intentional for AST node polymorphism.
 func nodeInItems(items []*scaf.TestOrGroup, pos lexer.Position) scaf.Node {
 	for _, item := range items {
-		if item.Test != nil && containsPosition(item.Test.Span(), pos) {
+		if item.Test != nil && ContainsPosition(item.Test.Span(), pos) {
 			// Check for more specific nodes inside test
 			if child := nodeInTest(item.Test, pos); child != nil {
 				return child
@@ -109,10 +127,10 @@ func nodeInItems(items []*scaf.TestOrGroup, pos lexer.Position) scaf.Node {
 			return item.Test
 		}
 
-		if item.Group != nil && containsPosition(item.Group.Span(), pos) {
+		if item.Group != nil && ContainsPosition(item.Group.Span(), pos) {
 			// Check setup in group
-			if item.Group.Setup != nil && containsPosition(item.Group.Setup.Span(), pos) {
-				if item.Group.Setup.Call != nil && containsPosition(item.Group.Setup.Call.Span(), pos) {
+			if item.Group.Setup != nil && ContainsPosition(item.Group.Setup.Span(), pos) {
+				if item.Group.Setup.Call != nil && ContainsPosition(item.Group.Setup.Call.Span(), pos) {
 					return item.Group.Setup.Call
 				}
 				if child := nodeInSetupBlock(item.Group.Setup, pos); child != nil {
@@ -136,8 +154,8 @@ func nodeInItems(items []*scaf.TestOrGroup, pos lexer.Position) scaf.Node {
 //nolint:ireturn // Returning interface is intentional for AST node polymorphism.
 func nodeInTest(test *scaf.Test, pos lexer.Position) scaf.Node {
 	// Check setup
-	if test.Setup != nil && containsPosition(test.Setup.Span(), pos) {
-		if test.Setup.Call != nil && containsPosition(test.Setup.Call.Span(), pos) {
+	if test.Setup != nil && ContainsPosition(test.Setup.Span(), pos) {
+		if test.Setup.Call != nil && ContainsPosition(test.Setup.Call.Span(), pos) {
 			return test.Setup.Call
 		}
 		if child := nodeInSetupBlock(test.Setup, pos); child != nil {
@@ -148,16 +166,16 @@ func nodeInTest(test *scaf.Test, pos lexer.Position) scaf.Node {
 
 	// Check statements
 	for _, stmt := range test.Statements {
-		if containsPosition(stmt.Span(), pos) {
+		if ContainsPosition(stmt.Span(), pos) {
 			return stmt
 		}
 	}
 
 	// Check asserts
 	for _, assert := range test.Asserts {
-		if containsPosition(assert.Span(), pos) {
+		if ContainsPosition(assert.Span(), pos) {
 			// Check if we're on the AssertQuery (more specific)
-			if assert.Query != nil && containsPosition(assert.Query.Span(), pos) {
+			if assert.Query != nil && ContainsPosition(assert.Query.Span(), pos) {
 				return assert.Query
 			}
 			return assert
@@ -167,8 +185,8 @@ func nodeInTest(test *scaf.Test, pos lexer.Position) scaf.Node {
 	return nil
 }
 
-// containsPosition checks if a span contains a position.
-func containsPosition(span scaf.Span, pos lexer.Position) bool {
+// ContainsPosition checks if a span contains a position.
+func ContainsPosition(span scaf.Span, pos lexer.Position) bool {
 	// Check if pos is after start.
 	if pos.Line < span.Start.Line {
 		return false
@@ -225,21 +243,21 @@ func QueryAtPosition(f *AnalyzedFile, pos lexer.Position) *QuerySymbol {
 func SymbolAtPosition(f *AnalyzedFile, pos lexer.Position) *Symbol {
 	// Check queries.
 	for _, q := range f.Symbols.Queries {
-		if containsPosition(q.Span, pos) {
+		if ContainsPosition(q.Span, pos) {
 			return &q.Symbol
 		}
 	}
 
 	// Check imports.
 	for _, imp := range f.Symbols.Imports {
-		if containsPosition(imp.Span, pos) {
+		if ContainsPosition(imp.Span, pos) {
 			return &imp.Symbol
 		}
 	}
 
 	// Check tests.
 	for _, t := range f.Symbols.Tests {
-		if containsPosition(t.Span, pos) {
+		if ContainsPosition(t.Span, pos) {
 			return &t.Symbol
 		}
 	}
@@ -722,25 +740,25 @@ func GetTokenContext(f *AnalyzedFile, pos lexer.Position) *TokenContext {
 
 	// Determine context from node hierarchy
 	for _, scope := range f.Suite.Scopes {
-		if containsPosition(scope.Span(), pos) {
+		if ContainsPosition(scope.Span(), pos) {
 			ctx.QueryScope = scope.FunctionName
 
 			// Check if in setup
-			if scope.Setup != nil && containsPosition(scope.Setup.Span(), pos) {
+			if scope.Setup != nil && ContainsPosition(scope.Setup.Span(), pos) {
 				ctx.InSetup = true
 			}
 
 			// Check items
 			for _, item := range scope.Items {
-				if item.Test != nil && containsPosition(item.Test.Span(), pos) {
+				if item.Test != nil && ContainsPosition(item.Test.Span(), pos) {
 					ctx.InTest = true
 					// Check setup in test
-					if item.Test.Setup != nil && containsPosition(item.Test.Setup.Span(), pos) {
+					if item.Test.Setup != nil && ContainsPosition(item.Test.Setup.Span(), pos) {
 						ctx.InSetup = true
 					}
 					// Check asserts
 					for _, assert := range item.Test.Asserts {
-						if containsPosition(assert.Span(), pos) {
+						if ContainsPosition(assert.Span(), pos) {
 							ctx.InAssert = true
 						}
 					}
@@ -758,24 +776,24 @@ func GetTokenContext(f *AnalyzedFile, pos lexer.Position) *TokenContext {
 
 // checkInGroup recursively checks if position is in a group.
 func checkInGroup(group *scaf.Group, pos lexer.Position, ctx *TokenContext) bool {
-	if !containsPosition(group.Span(), pos) {
+	if !ContainsPosition(group.Span(), pos) {
 		return false
 	}
 
 	ctx.InGroup = true
 
-	if group.Setup != nil && containsPosition(group.Setup.Span(), pos) {
+	if group.Setup != nil && ContainsPosition(group.Setup.Span(), pos) {
 		ctx.InSetup = true
 	}
 
 	for _, item := range group.Items {
-		if item.Test != nil && containsPosition(item.Test.Span(), pos) {
+		if item.Test != nil && ContainsPosition(item.Test.Span(), pos) {
 			ctx.InTest = true
-			if item.Test.Setup != nil && containsPosition(item.Test.Setup.Span(), pos) {
+			if item.Test.Setup != nil && ContainsPosition(item.Test.Setup.Span(), pos) {
 				ctx.InSetup = true
 			}
 			for _, assert := range item.Test.Asserts {
-				if containsPosition(assert.Span(), pos) {
+				if ContainsPosition(assert.Span(), pos) {
 					ctx.InAssert = true
 				}
 			}

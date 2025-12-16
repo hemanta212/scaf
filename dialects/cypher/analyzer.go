@@ -89,10 +89,18 @@ func (a *Analyzer) analyzeQueryInternal(query string, schema *analysis.TypeSchem
 	result := &scaf.QueryMetadata{
 		Parameters: []scaf.ParameterInfo{},
 		Returns:    []scaf.ReturnInfo{},
+		Bindings:   make(map[string][]string),
 	}
 
 	// First pass: extract variable bindings from MATCH clauses
 	extractBindings(ast, ctx)
+
+	// Export bindings to result for hover/completion
+	for varName, binding := range ctx.bindings {
+		if len(binding.labels) > 0 {
+			result.Bindings[varName] = binding.labels
+		}
+	}
 
 	// Extract parameters with type inference
 	extractParameters(ast, result, ctx)
@@ -127,8 +135,17 @@ func extractBindingsFromRegularQuery(rq *cyphergrammar.RegularQuery, ctx *queryC
 	}
 
 	for _, clause := range rq.SingleQuery.Clauses {
+		// Extract from MATCH clauses
 		if clause.Reading != nil && clause.Reading.Match != nil {
 			extractBindingsFromPattern(clause.Reading.Match.Pattern, ctx)
+		}
+		// Extract from CREATE clauses
+		if clause.Updating != nil && clause.Updating.Create != nil && clause.Updating.Create.Pattern != nil {
+			extractBindingsFromPattern(clause.Updating.Create.Pattern, ctx)
+		}
+		// Extract from MERGE clauses
+		if clause.Updating != nil && clause.Updating.Merge != nil && clause.Updating.Merge.Pattern != nil {
+			extractBindingsFromPatternElement(clause.Updating.Merge.Pattern.Element, ctx)
 		}
 	}
 
@@ -138,6 +155,12 @@ func extractBindingsFromRegularQuery(rq *cyphergrammar.RegularQuery, ctx *queryC
 			for _, clause := range union.Query.Clauses {
 				if clause.Reading != nil && clause.Reading.Match != nil {
 					extractBindingsFromPattern(clause.Reading.Match.Pattern, ctx)
+				}
+				if clause.Updating != nil && clause.Updating.Create != nil && clause.Updating.Create.Pattern != nil {
+					extractBindingsFromPattern(clause.Updating.Create.Pattern, ctx)
+				}
+				if clause.Updating != nil && clause.Updating.Merge != nil && clause.Updating.Merge.Pattern != nil {
+					extractBindingsFromPatternElement(clause.Updating.Merge.Pattern.Element, ctx)
 				}
 			}
 		}
@@ -359,7 +382,8 @@ func extractParameters(ast *cyphergrammar.Script, result *scaf.QueryMetadata, ct
 							return
 						}
 
-						walkAddSubExpr := func(add *cyphergrammar.AddSubExpr) {
+						// Helper to walk an AddSubExpr with given type context
+						walkAddSubExprWithCtx := func(add *cyphergrammar.AddSubExpr, ctxProp string, ctxLabels []string) {
 							if add == nil {
 								return
 							}
@@ -379,29 +403,26 @@ func extractParameters(ast *cyphergrammar.Script, result *scaf.QueryMetadata, ct
 											return
 										}
 
-										walkAtom(unary.Expr.Atom, propName, labels)
+										walkAtom(unary.Expr.Atom, ctxProp, ctxLabels)
 
-										// Walk suffixes - use walkExpr since we need to handle nested AddSubExpr
+										// Walk suffixes
 										for _, suffix := range unary.Expr.Suffixes {
 											if suffix.Index != nil {
-												walkExpr(suffix.Index.Start, propName, labels)
-												walkExpr(suffix.Index.End, propName, labels)
+												walkExpr(suffix.Index.Start, ctxProp, ctxLabels)
+												walkExpr(suffix.Index.End, ctxProp, ctxLabels)
 											}
-											// For IN and StringPred, the expressions are AddSubExpr
-											// We need to walk them but they're not full Expressions
-											// For simplicity, we'll convert manually
 											if suffix.In != nil && suffix.In.Expr != nil {
-												walkAddSubExprSimple(suffix.In.Expr, propName, labels, walkAtom)
+												walkAddSubExprSimple(suffix.In.Expr, ctxProp, ctxLabels, walkAtom)
 											}
 											if suffix.StringPred != nil {
 												if suffix.StringPred.StartsWith != nil {
-													walkAddSubExprSimple(suffix.StringPred.StartsWith, propName, labels, walkAtom)
+													walkAddSubExprSimple(suffix.StringPred.StartsWith, ctxProp, ctxLabels, walkAtom)
 												}
 												if suffix.StringPred.EndsWith != nil {
-													walkAddSubExprSimple(suffix.StringPred.EndsWith, propName, labels, walkAtom)
+													walkAddSubExprSimple(suffix.StringPred.EndsWith, ctxProp, ctxLabels, walkAtom)
 												}
 												if suffix.StringPred.Contains != nil {
-													walkAddSubExprSimple(suffix.StringPred.Contains, propName, labels, walkAtom)
+													walkAddSubExprSimple(suffix.StringPred.Contains, ctxProp, ctxLabels, walkAtom)
 												}
 											}
 										}
@@ -425,9 +446,27 @@ func extractParameters(ast *cyphergrammar.Script, result *scaf.QueryMetadata, ct
 							}
 						}
 
-						walkAddSubExpr(comp.Left)
+						// For equality comparisons (p.name = $param), infer type from property access
+						if len(comp.Right) == 1 && comp.Right[0].Op == "=" {
+							leftInfo := extractPropertyAccess(comp.Left, ctx)
+							rightInfo := extractPropertyAccess(comp.Right[0].Expr, ctx)
+
+							if leftInfo != nil && leftInfo.propName != "" {
+								walkAddSubExprWithCtx(comp.Right[0].Expr, leftInfo.propName, leftInfo.labels)
+								walkAddSubExprWithCtx(comp.Left, propName, labels)
+								return
+							}
+							if rightInfo != nil && rightInfo.propName != "" {
+								walkAddSubExprWithCtx(comp.Left, rightInfo.propName, rightInfo.labels)
+								walkAddSubExprWithCtx(comp.Right[0].Expr, propName, labels)
+								return
+							}
+						}
+
+						// Default: walk with passed-in context
+						walkAddSubExprWithCtx(comp.Left, propName, labels)
 						for _, term := range comp.Right {
-							walkAddSubExpr(term.Expr)
+							walkAddSubExprWithCtx(term.Expr, propName, labels)
 						}
 					}
 
@@ -613,6 +652,72 @@ func inferParameterType(propName string, labels []string, ctx *queryContext) *an
 	}
 
 	return nil
+}
+
+// propertyAccessInfo holds information about a property access expression like "p.name"
+type propertyAccessInfo struct {
+	varName  string   // The variable name (e.g., "p")
+	propName string   // The property name (e.g., "name")
+	labels   []string // The labels bound to the variable (e.g., ["Person"])
+}
+
+// extractPropertyAccess analyzes an AddSubExpr to detect property access patterns like "p.name".
+// Returns info if the expression is a simple property access on a bound variable, nil otherwise.
+func extractPropertyAccess(add *cyphergrammar.AddSubExpr, ctx *queryContext) *propertyAccessInfo {
+	if add == nil || add.Left == nil {
+		return nil
+	}
+
+	// Must be a simple expression (no + or - operations)
+	if len(add.Right) > 0 {
+		return nil
+	}
+
+	mult := add.Left
+	if mult == nil || mult.Left == nil || len(mult.Right) > 0 {
+		return nil
+	}
+
+	pow := mult.Left
+	if pow == nil || pow.Left == nil || len(pow.Right) > 0 {
+		return nil
+	}
+
+	unary := pow.Left
+	if unary == nil || unary.Expr == nil {
+		return nil
+	}
+
+	post := unary.Expr
+	if post.Atom == nil || post.Atom.Variable == "" {
+		return nil
+	}
+
+	varName := post.Atom.Variable
+
+	// Need exactly one suffix that is a property access
+	if len(post.Suffixes) != 1 {
+		return nil
+	}
+
+	suffix := post.Suffixes[0]
+	if suffix.Property == "" {
+		return nil
+	}
+
+	propName := suffix.Property
+
+	// Look up the variable's labels from bindings
+	var labels []string
+	if binding, ok := ctx.bindings[varName]; ok {
+		labels = binding.labels
+	}
+
+	return &propertyAccessInfo{
+		varName:  varName,
+		propName: propName,
+		labels:   labels,
+	}
 }
 
 // extractReturns walks the AST to find RETURN clause items.

@@ -1061,6 +1061,84 @@ func TestFormatWithTrailingComments(t *testing.T) {
 	}
 }
 
+func TestFormatWithParameterComments(t *testing.T) {
+	// Not parallel - trivia state requires serialized access
+	input := `fn CreateUser(
+	// The user's unique identifier
+	id: string,
+	// The user's display name
+	name: string,
+) ` + "`CREATE (u:User {id: $id, name: $name}) RETURN u`" + `
+`
+	result, err := scaf.Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	got := scaf.Format(result)
+
+	// The formatter should preserve parameter comments
+	if !strings.Contains(got, "// The user's unique identifier") {
+		t.Errorf("Missing first param comment in output:\n%s", got)
+	}
+	if !strings.Contains(got, "// The user's display name") {
+		t.Errorf("Missing second param comment in output:\n%s", got)
+	}
+}
+
+func TestFormatWithStatementComments(t *testing.T) {
+	// Not parallel - trivia state requires serialized access
+	input := `fn Q() ` + "`Q`" + `
+
+Q {
+	test "example" {
+		// Comment for input
+		$id: 1
+		// Comment for output
+		u.name: "Alice"
+	}
+}
+`
+	result, err := scaf.Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	got := scaf.Format(result)
+
+	// The formatter should preserve statement comments
+	if !strings.Contains(got, "// Comment for input") {
+		t.Errorf("Missing input comment in output:\n%s", got)
+	}
+	if !strings.Contains(got, "// Comment for output") {
+		t.Errorf("Missing output comment in output:\n%s", got)
+	}
+}
+
+func TestFormatWithAssertComments(t *testing.T) {
+	// Not parallel - trivia state requires serialized access
+	input := `fn Q() ` + "`Q`" + `
+
+Q {
+	test "example" {
+		// Verify the result
+		assert (u != null)
+	}
+}
+`
+	result, err := scaf.Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	got := scaf.Format(result)
+
+	// The formatter should preserve assert comments
+	if !strings.Contains(got, "// Verify the result") {
+		t.Errorf("Missing assert comment in output:\n%s", got)
+	}
+}
+
 func TestFormatUntypedParams(t *testing.T) {
 	t.Parallel()
 

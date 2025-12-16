@@ -11,7 +11,8 @@ import (
 )
 
 // SignatureHelp handles textDocument/signatureHelp requests.
-// Shows parameter hints when typing setup calls like fixtures.CreateUser(.
+// Shows parameter hints when typing setup calls like fixtures.CreateUser(
+// or function calls inside query bodies like count(.
 func (s *Server) SignatureHelp(_ context.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
 	s.logger.Debug("SignatureHelp",
 		zap.String("uri", string(params.TextDocument.URI)),
@@ -20,6 +21,23 @@ func (s *Server) SignatureHelp(_ context.Context, params *protocol.SignatureHelp
 
 	doc, ok := s.getDocument(params.TextDocument.URI)
 	if !ok {
+		return nil, nil //nolint:nilnil
+	}
+
+	// Check if we're inside a query body (backtick string)
+	// If so, delegate to the dialect LSP for signature help
+	if qbc := s.getQueryBodyContext(doc, params.Position); qbc != nil {
+		s.logger.Debug("SignatureHelp: inside query body",
+			zap.String("function", qbc.FunctionName),
+			zap.Int("offset", qbc.Offset))
+
+		if dialectLSP := s.getDialectLSP(); dialectLSP != nil {
+			queryCtx := s.buildQueryLSPContext(doc, qbc, "")
+			sigHelp := dialectLSP.SignatureHelp(qbc.Query, qbc.Offset, queryCtx)
+			return s.convertDialectSignatureHelp(sigHelp), nil
+		}
+
+		// No dialect LSP available
 		return nil, nil //nolint:nilnil
 	}
 

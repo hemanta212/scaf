@@ -220,69 +220,86 @@ func collectCommentableNodes(suite *Suite, nodes *[]commentableNode) {
 	// Suite only gets comments that are separated by a blank line from
 	// the first declaration.
 
+	// Helper to add a commentable node
+	add := func(c Commentable) {
+		*nodes = append(*nodes, commentableNode{
+			span:    c.Span(),
+			comment: c.Comments(),
+		})
+	}
+
+	// Collect imports
 	for _, imp := range suite.Imports {
-		*nodes = append(*nodes, commentableNode{
-			span:    imp.Span(),
-			comment: &imp.CommentMeta,
-		})
+		add(imp)
 	}
 
-	for _, q := range suite.Functions {
-		*nodes = append(*nodes, commentableNode{
-			span:    q.Span(),
-			comment: &q.CommentMeta,
-		})
+	// Collect functions and their parameters
+	for _, fn := range suite.Functions {
+		add(fn)
+		for _, p := range fn.Params {
+			if p != nil {
+				add(p)
+			}
+		}
 	}
 
+	// Collect scopes and their contents
 	for _, scope := range suite.Scopes {
-		collectScopeCommentableNodes(scope, nodes)
+		collectScopeNodes(scope, add)
 	}
 }
 
-func collectScopeCommentableNodes(scope *QueryScope, nodes *[]commentableNode) {
+// collectScopeNodes collects all commentable nodes within a scope.
+func collectScopeNodes(scope *QueryScope, add func(Commentable)) {
 	if scope == nil {
 		return
 	}
 
-	*nodes = append(*nodes, commentableNode{
-		span:    scope.Span(),
-		comment: &scope.CommentMeta,
-	})
+	add(scope)
+	collectItemNodes(scope.Items, add)
+}
 
-	for _, item := range scope.Items {
+// collectItemNodes collects all commentable nodes within test/group items.
+func collectItemNodes(items []*TestOrGroup, add func(Commentable)) {
+	for _, item := range items {
 		if item.Test != nil {
-			*nodes = append(*nodes, commentableNode{
-				span:    item.Test.Span(),
-				comment: &item.Test.CommentMeta,
-			})
+			collectTestNodes(item.Test, add)
 		}
-
 		if item.Group != nil {
-			collectGroupCommentableNodes(item.Group, nodes)
+			collectGroupNodes(item.Group, add)
 		}
 	}
 }
 
-func collectGroupCommentableNodes(group *Group, nodes *[]commentableNode) {
+// collectGroupNodes collects all commentable nodes within a group.
+func collectGroupNodes(group *Group, add func(Commentable)) {
 	if group == nil {
 		return
 	}
 
-	*nodes = append(*nodes, commentableNode{
-		span:    group.Span(),
-		comment: &group.CommentMeta,
-	})
+	add(group)
+	collectItemNodes(group.Items, add)
+}
 
-	for _, item := range group.Items {
-		if item.Test != nil {
-			*nodes = append(*nodes, commentableNode{
-				span:    item.Test.Span(),
-				comment: &item.Test.CommentMeta,
-			})
+// collectTestNodes collects all commentable nodes within a test.
+func collectTestNodes(test *Test, add func(Commentable)) {
+	if test == nil {
+		return
+	}
+
+	add(test)
+
+	// Collect statements
+	for _, stmt := range test.Statements {
+		if stmt != nil {
+			add(stmt)
 		}
+	}
 
-		if item.Group != nil {
-			collectGroupCommentableNodes(item.Group, nodes)
+	// Collect asserts
+	for _, assert := range test.Asserts {
+		if assert != nil {
+			add(assert)
 		}
 	}
 }

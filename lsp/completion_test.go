@@ -1236,3 +1236,810 @@ func runCompletionTest(t *testing.T, tc completionTestCase) {
 		}
 	}
 }
+
+func TestServer_Completion_TypeAnnotations(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with a partial function definition
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    "fn GetUser(id: ",
+		},
+	})
+
+	// Request completion after the colon (type position)
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 0, Character: 15}, // After "id: "
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ":",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should have type completions
+	labels := make(map[string]bool)
+	for _, item := range result.Items {
+		labels[item.Label] = true
+	}
+
+	expectedTypes := []string{"string", "int", "bool", "float64", "any"}
+	for _, typ := range expectedTypes {
+		if !labels[typ] {
+			t.Errorf("Expected type %q in completions", typ)
+		}
+	}
+}
+
+func TestServer_Completion_TypeAnnotations_MultipleParams(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with multiple params, cursor on second param type
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    "fn GetUser(id: string, name: ",
+		},
+	})
+
+	// Request completion after the second colon
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 0, Character: 29}, // After "name: "
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	// Should have type completions
+	hasString := false
+	for _, item := range result.Items {
+		if item.Label == "string" {
+			hasString = true
+			break
+		}
+	}
+
+	if !hasString {
+		t.Error("Expected 'string' type in completions")
+		t.Logf("Got items: %v", result.Items)
+	}
+}
+
+func TestServer_Completion_ExprVariables_AssertContext(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First open a valid file to store LastValidAnalysis
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.name == "Alice")
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Now update to incomplete content (typing state)
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion inside assert after "u."
+	// Line 4: "\t\tassert (u."
+	// Position after "u." is around character 13
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 13},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ".",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for expr variables in assert", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v, detail=%s)", item.Label, item.Kind, item.Detail)
+	}
+
+	// Should offer property completions (name, age) without ": " suffix
+	fieldLabels := make(map[string]string) // label -> insertText
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField {
+			fieldLabels[item.Label] = item.InsertText
+		}
+	}
+
+	if _, ok := fieldLabels["name"]; !ok {
+		t.Errorf("Expected 'name' in expr variable completions, got: %v", fieldLabels)
+	}
+	if _, ok := fieldLabels["age"]; !ok {
+		t.Errorf("Expected 'age' in expr variable completions, got: %v", fieldLabels)
+	}
+
+	// Verify no ": " suffix (unlike return fields)
+	for label, insertText := range fieldLabels {
+		if strings.HasSuffix(insertText, ": ") {
+			t.Errorf("Expression variable '%s' should not have ': ' suffix, got insertText: %q", label, insertText)
+		}
+	}
+}
+
+func TestServer_Completion_ExprVariables_WhereContext(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First open a valid file
+	validContent := `fn GetUser(id: int) ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.score`" + `
+
+GetUser {
+	test "check score" {
+		$id: 5 where (u.score > 0)
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Update to incomplete content
+	incompleteContent := `fn GetUser(id: int) ` + "`MATCH (u:User {id: $id}) RETURN u.name, u.score`" + `
+
+GetUser {
+	test "check score" {
+		$id: 5 where (u.
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion inside where clause after "u."
+	// Line 4: "\t\t$id: 5 where (u."
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 19},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ".",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for expr variables in where", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should offer property completions
+	fieldLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField {
+			fieldLabels[item.Label] = true
+		}
+	}
+
+	if !fieldLabels["name"] {
+		t.Errorf("Expected 'name' in where clause completions, got: %v", fieldLabels)
+	}
+	if !fieldLabels["score"] {
+		t.Errorf("Expected 'score' in where clause completions, got: %v", fieldLabels)
+	}
+}
+
+func TestServer_Completion_ExprBuiltinFunctions(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with an assert expression
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text: `fn GetUser() ` + "`MATCH (u:User) RETURN u.items`" + `
+
+GetUser {
+	test "check user" {
+		assert (len
+	}
+}
+`,
+		},
+	})
+
+	// Request completion after "len" in assert context
+	// Line 4: "\t\tassert (len"
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 13},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for expr builtin functions", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v, detail=%s)", item.Label, item.Kind, item.Detail)
+	}
+
+	// Should offer built-in functions
+	functionLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindFunction {
+			functionLabels[item.Label] = true
+		}
+	}
+
+	// Should have len, filter, all, etc.
+	if !functionLabels["len"] {
+		t.Errorf("Expected 'len' builtin function, got: %v", functionLabels)
+	}
+}
+
+func TestServer_Completion_ExprBuiltinFunctions_AllAvailable(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a valid file first to store LastValidAnalysis
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.name == "Alice")
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Now update to incomplete content - just starting to type in assert
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name`" + `
+
+GetUser {
+	test "check user" {
+		assert (
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion inside empty assert paren
+	// Line 4: "\t\tassert ("
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 11},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for empty assert", len(result.Items))
+
+	// Should have both variables AND built-in functions
+	hasField := false
+	hasFunction := false
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField || item.Kind == protocol.CompletionItemKindVariable {
+			hasField = true
+		}
+		if item.Kind == protocol.CompletionItemKindFunction {
+			hasFunction = true
+		}
+	}
+
+	if !hasField {
+		t.Error("Expected field/variable completions in assert")
+	}
+	if !hasFunction {
+		t.Error("Expected function completions in assert (len, contains, etc.)")
+	}
+
+	// Check for some specific functions
+	functionLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindFunction {
+			functionLabels[item.Label] = true
+		}
+	}
+
+	expectedFunctions := []string{"len", "contains", "all", "any", "filter", "map", "sum"}
+	for _, fn := range expectedFunctions {
+		if !functionLabels[fn] {
+			t.Errorf("Expected builtin function %q in completions", fn)
+		}
+	}
+}
+
+func TestServer_Completion_ExprAfterOperator(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First open a valid file
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.name == "Alice")
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Update to typing after an operator
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.age > 
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion after "> "
+	// Line 4: "\t\tassert (u.age > "
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 18},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items after operator", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should still offer completions after operator
+	if len(result.Items) == 0 {
+		t.Error("Expected completions after operator")
+	}
+}
+
+func TestServer_Completion_ExprNestedParens(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// First open a valid file
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age, u.score`" + `
+
+GetUser {
+	test "check user" {
+		assert (u.age > 0)
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Update to nested parens expression
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age, u.score`" + `
+
+GetUser {
+	test "check user" {
+		assert ((u.age > 0) && (u.
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion after "u." inside nested parens
+	// Line 4: "\t\tassert ((u.age > 0) && (u."
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 4, Character: 29},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ".",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for nested parens", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v)", item.Label, item.Kind)
+	}
+
+	// Should offer property completions even in nested parens
+	fieldLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField {
+			fieldLabels[item.Label] = true
+		}
+	}
+
+	if !fieldLabels["name"] {
+		t.Errorf("Expected 'name' in nested paren completions, got: %v", fieldLabels)
+	}
+	if !fieldLabels["age"] {
+		t.Errorf("Expected 'age' in nested paren completions, got: %v", fieldLabels)
+	}
+	if !fieldLabels["score"] {
+		t.Errorf("Expected 'score' in nested paren completions, got: %v", fieldLabels)
+	}
+}
+
+// TestServer_Completion_ExprVariables_AssertQueryScope tests that completions inside
+// an assert with a query use that query's variables, not the parent scope's.
+func TestServer_Completion_ExprVariables_AssertQueryScope(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// File with two queries: GetUser returns u, CountComments returns c
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+fn CountComments() ` + "`MATCH (c:Comment) RETURN c.id, c.content, c.author`" + `
+
+GetUser {
+	test "check user with comments" {
+		$id: 1
+		// Assert uses CountComments, so completions should be from c, not u
+		assert CountComments() { (c.id != "") }
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Update to typing state inside assert with query
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+fn CountComments() ` + "`MATCH (c:Comment) RETURN c.id, c.content, c.author`" + `
+
+GetUser {
+	test "check user with comments" {
+		$id: 1
+		assert CountComments() { (c.
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion after "c." inside assert with query
+	// Line 6: "\t\tassert CountComments() { (c."
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 6, Character: 31},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ".",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for assert query scope", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v, detail=%s)", item.Label, item.Kind, item.Detail)
+	}
+
+	// Should offer CountComments' fields (id, content, author), NOT GetUser's (name, age)
+	fieldLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField {
+			fieldLabels[item.Label] = true
+		}
+	}
+
+	// Should have CountComments' fields
+	if !fieldLabels["id"] {
+		t.Errorf("Expected 'id' from CountComments, got: %v", fieldLabels)
+	}
+	if !fieldLabels["content"] {
+		t.Errorf("Expected 'content' from CountComments, got: %v", fieldLabels)
+	}
+	if !fieldLabels["author"] {
+		t.Errorf("Expected 'author' from CountComments, got: %v", fieldLabels)
+	}
+
+	// Should NOT have GetUser's fields
+	if fieldLabels["name"] {
+		t.Errorf("Should NOT have 'name' from GetUser in assert query scope")
+	}
+	if fieldLabels["age"] {
+		t.Errorf("Should NOT have 'age' from GetUser in assert query scope")
+	}
+}
+
+// TestServer_Completion_ExprVariables_InlineAssertQuery tests that completions inside
+// an inline assert query use the inline query's variables.
+func TestServer_Completion_ExprVariables_InlineAssertQuery(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// File with GetUser query - inline assert has different returns
+	validContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "inline assert" {
+		$id: 1
+		assert ` + "`MATCH (c:Comment) RETURN c.text, c.likes`" + ` { (c.text != "") }
+	}
+}
+`
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    validContent,
+		},
+	})
+
+	// Update to typing state inside inline assert
+	incompleteContent := `fn GetUser() ` + "`MATCH (u:User) RETURN u.name, u.age`" + `
+
+GetUser {
+	test "inline assert" {
+		$id: 1
+		assert ` + "`MATCH (c:Comment) RETURN c.text, c.likes`" + ` { (c.
+	}
+}
+`
+	_ = server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Version:                2,
+		},
+		ContentChanges: []protocol.TextDocumentContentChangeEvent{
+			{Text: incompleteContent},
+		},
+	})
+
+	// Request completion after "c." inside inline assert
+	// Line 5: "\t\tassert `MATCH (c:Comment) RETURN c.text, c.likes` { (c."
+	result, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+			Position:     protocol.Position{Line: 5, Character: 57},
+		},
+		Context: &protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: ".",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Completion() error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected completion result")
+	}
+
+	t.Logf("Got %d completion items for inline assert query", len(result.Items))
+	for _, item := range result.Items {
+		t.Logf("  Item: %s (kind=%v, detail=%s)", item.Label, item.Kind, item.Detail)
+	}
+
+	// Should offer inline query's fields (text, likes), NOT GetUser's (name, age)
+	fieldLabels := make(map[string]bool)
+	for _, item := range result.Items {
+		if item.Kind == protocol.CompletionItemKindField {
+			fieldLabels[item.Label] = true
+		}
+	}
+
+	// Should have inline query's fields
+	if !fieldLabels["text"] {
+		t.Errorf("Expected 'text' from inline query, got: %v", fieldLabels)
+	}
+	if !fieldLabels["likes"] {
+		t.Errorf("Expected 'likes' from inline query, got: %v", fieldLabels)
+	}
+
+	// Should NOT have GetUser's fields
+	if fieldLabels["name"] {
+		t.Errorf("Should NOT have 'name' from GetUser in inline assert query scope")
+	}
+	if fieldLabels["age"] {
+		t.Errorf("Should NOT have 'age' from GetUser in inline assert query scope")
+	}
+}

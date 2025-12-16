@@ -38,6 +38,11 @@ type AnalyzedFile struct {
 	// Used for expression validation to build type environments from query returns.
 	// May be nil if no dialect analyzer is available.
 	QueryAnalyzer scaf.QueryAnalyzer
+
+	// Schema is the type schema for schema-aware type inference.
+	// Used for parameter type checking against inferred types.
+	// May be nil if no schema is available.
+	Schema *TypeSchema
 }
 
 // SymbolTable holds all named definitions in a file.
@@ -100,6 +105,11 @@ type QuerySymbol struct {
 	// More accurate than Params as it uses proper parsing for the dialect.
 	// nil if no dialect analyzer was used.
 	QueryBodyParams []scaf.ParameterInfo
+
+	// QueryBodyReturns are return fields extracted from the query body by the dialect analyzer.
+	// Used for type checking test statements against expected return types.
+	// nil if no dialect analyzer was used.
+	QueryBodyReturns []scaf.ReturnInfo
 
 	// DeclaredParams contains all parameter names declared in the function signature.
 	// Includes both typed and untyped parameters.
@@ -170,3 +180,24 @@ const (
 	SeverityInformation
 	SeverityHint
 )
+
+// HasErrors returns true if there are any error-level diagnostics.
+func (f *AnalyzedFile) HasErrors() bool {
+	for _, d := range f.Diagnostics {
+		if d.Severity == SeverityError {
+			return true
+		}
+	}
+	return false
+}
+
+// Errors returns all error-level diagnostics.
+func (f *AnalyzedFile) Errors() []Diagnostic {
+	var errors []Diagnostic
+	for _, d := range f.Diagnostics {
+		if d.Severity == SeverityError {
+			errors = append(errors, d)
+		}
+	}
+	return errors
+}

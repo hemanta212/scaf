@@ -846,14 +846,13 @@ func TestValueToGo(t *testing.T) {
 }
 
 func TestParseComments(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - trivia state requires serialized access
 	src := `
 		// This is a comment
 		fn Q() ` + "`Q`" + `
 		// Another comment
 		Q {
-			// Group comment
+			// Test comment
 			test "t" {
 				// Input comment
 				$id: 1
@@ -866,20 +865,37 @@ func TestParseComments(t *testing.T) {
 		t.Fatalf("Parse() error: %v", err)
 	}
 
-	expected := &scaf.Suite{
-		Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
-		Scopes: []*scaf.QueryScope{
-			{
-				FunctionName: "Q",
-				Items: []*scaf.TestOrGroup{
-					{Test: &scaf.Test{Name: "t", Statements: []*scaf.Statement{scaf.NewStatement("$id", &scaf.Value{Number: ptr(1.0)})}}},
-				},
-			},
-		},
+	// Verify function doc comment
+	if len(result.Functions) == 0 {
+		t.Fatal("Expected at least one function")
+	}
+	if diff := cmp.Diff([]string{"// This is a comment"}, result.Functions[0].LeadingComments); diff != "" {
+		t.Errorf("Function.LeadingComments mismatch (-want +got):\n%s", diff)
 	}
 
-	if diff := cmp.Diff(expected, result, cmpIgnoreAST); diff != "" {
-		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)
+	// Verify scope doc comment
+	if len(result.Scopes) == 0 {
+		t.Fatal("Expected at least one scope")
+	}
+	if diff := cmp.Diff([]string{"// Another comment"}, result.Scopes[0].LeadingComments); diff != "" {
+		t.Errorf("Scope.LeadingComments mismatch (-want +got):\n%s", diff)
+	}
+
+	// Verify test doc comment
+	if len(result.Scopes[0].Items) == 0 || result.Scopes[0].Items[0].Test == nil {
+		t.Fatal("Expected at least one test")
+	}
+	test := result.Scopes[0].Items[0].Test
+	if diff := cmp.Diff([]string{"// Test comment"}, test.LeadingComments); diff != "" {
+		t.Errorf("Test.LeadingComments mismatch (-want +got):\n%s", diff)
+	}
+
+	// Verify statement doc comment (new feature)
+	if len(test.Statements) == 0 {
+		t.Fatal("Expected at least one statement")
+	}
+	if diff := cmp.Diff([]string{"// Input comment"}, test.Statements[0].LeadingComments); diff != "" {
+		t.Errorf("Statement.LeadingComments mismatch (-want +got):\n%s", diff)
 	}
 }
 

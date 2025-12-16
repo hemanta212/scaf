@@ -289,7 +289,7 @@ func analyzeTokenContext(ctx *RecoveryCompletionContext, pos lexer.Position, sui
 	
 	// Determine context from surrounding structure
 	for _, scope := range suite.Scopes {
-		if containsPosition(scope.Span(), pos) {
+		if ContainsPosition(scope.Span(), pos) {
 			ctx.QueryScope = scope.FunctionName
 			
 			// Check if we're in setup context (after "setup" keyword)
@@ -373,14 +373,14 @@ func findRecoveredInScope(scope *scaf.QueryScope, pos lexer.Position, ctx *Recov
 	}
 
 	// Track query scope context
-	if containsPosition(scope.Span(), pos) {
+	if ContainsPosition(scope.Span(), pos) {
 		ctx.QueryScope = scope.FunctionName
 	}
 
 	// Check setup in scope
 	if scope.Setup != nil {
 		findRecoveredInSetup(scope.Setup, pos, ctx)
-		if containsPosition(scope.Setup.Span(), pos) {
+		if ContainsPosition(scope.Setup.Span(), pos) {
 			ctx.InSetup = true
 		}
 	}
@@ -419,7 +419,7 @@ func findRecoveredInTest(test *scaf.Test, pos lexer.Position, ctx *RecoveryCompl
 	}
 
 	// Track test context
-	if containsPosition(test.Span(), pos) {
+	if ContainsPosition(test.Span(), pos) {
 		ctx.InTest = true
 	}
 
@@ -433,7 +433,7 @@ func findRecoveredInTest(test *scaf.Test, pos lexer.Position, ctx *RecoveryCompl
 	// Check setup
 	if test.Setup != nil {
 		findRecoveredInSetup(test.Setup, pos, ctx)
-		if containsPosition(test.Setup.Span(), pos) {
+		if ContainsPosition(test.Setup.Span(), pos) {
 			ctx.InSetup = true
 		}
 	}
@@ -467,7 +467,7 @@ func findRecoveredInGroup(group *scaf.Group, pos lexer.Position, ctx *RecoveryCo
 	// Check setup
 	if group.Setup != nil {
 		findRecoveredInSetup(group.Setup, pos, ctx)
-		if containsPosition(group.Setup.Span(), pos) {
+		if ContainsPosition(group.Setup.Span(), pos) {
 			ctx.InSetup = true
 		}
 	}
@@ -524,7 +524,7 @@ func findRecoveredInAssert(assert *scaf.Assert, pos lexer.Position, ctx *Recover
 	}
 
 	// Track assert context
-	if containsPosition(assert.Span(), pos) {
+	if ContainsPosition(assert.Span(), pos) {
 		ctx.InAssert = true
 	}
 

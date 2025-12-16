@@ -52,7 +52,7 @@ GetUser {
 		test "finds Alice by id" {
 			$userId: 1
 
-			u.name: "Alice"
+			u.name: "asdf"
 			u.email: "alice@example.com"
 			u.age: 30
 		}
@@ -61,14 +61,14 @@ GetUser {
 			$userId: 2
 
 			u.name: "Bob"
-			u.age: 25
+			u.age: 20
 		}
 
 		test "handles null fields" {
 			$userId: 3
 
 			u.name: "Charlie"
-			u.age: null
+			u.age: 10
 		}
 
 		test "non-existent user returns null" {

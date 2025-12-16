@@ -30,6 +30,16 @@ type CommentMeta struct {
 	TrailingComment string   `parser:""`
 }
 
+// Comments returns a pointer to the CommentMeta for this node.
+// This satisfies the Commentable interface.
+func (c *CommentMeta) Comments() *CommentMeta { return c }
+
+// Commentable is implemented by AST nodes that can have comments attached.
+type Commentable interface {
+	Node
+	Comments() *CommentMeta
+}
+
 // RecoveryMeta holds recovery metadata for nodes that support error recovery.
 // If RecoveredSpan is non-zero, it indicates recovery happened during parsing.
 // Participle automatically populates these fields when recovery occurs.
@@ -156,8 +166,18 @@ type Query = Function
 //	name: string?     // nullable type
 //	ids: [int]        // array type
 //	data: {string: int}  // map type
+//
+// Parameters can have leading comments (doc comments) for documentation:
+//
+//	fn CreateUser(
+//	    // The user's unique identifier
+//	    id: string,
+//	    // The user's display name
+//	    name: string,
+//	) `...`
 type FnParam struct {
 	NodeMeta
+	CommentMeta
 	RecoveryMeta
 
 	Name string    `parser:"@Ident"`
@@ -413,8 +433,14 @@ func (t *Test) IsComplete() bool {
 //	assert { (x > 0) (y < 10) (z == 5) }                     // multiple conditions
 //	assert CreatePost($title: "x") { (p.title == "x") }      // named query with conditions
 //	assert `MATCH (n) RETURN count(n) as cnt` { (cnt > 0) }  // inline query with conditions
+//
+// Assertions can have leading comments for documentation:
+//
+//	// Verify the user exists
+//	assert (u != null)
 type Assert struct {
 	NodeMeta
+	CommentMeta
 	RecoveryMeta
 	// Shorthand is a single parenthesized condition without braces: assert (expr)
 	// When present, Query and Conditions should be nil/empty.
@@ -741,8 +767,14 @@ func (d *DottedIdent) String() string {
 //	$userId: (rand()) where (userId > 0)          // expression with constraint
 //	$limit: 10 where (limit <= maxLimit)          // literal with constraint
 //	u.name: "Alice"                               // expected output (equality)
+//
+// Statements can have leading comments for documentation:
+//
+//	// The ID of the user to look up
+//	$userId: 1
 type Statement struct {
 	NodeMeta
+	CommentMeta
 	RecoveryMeta
 	KeyParts *DottedIdent    `parser:"@@"`
 	Value    *StatementValue `parser:"Colon @@"`

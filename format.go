@@ -178,9 +178,12 @@ func (f *formatter) formatQueryMultiLine(q *Function) {
 		f.indent++
 
 		for _, p := range q.Params {
+			// Write leading comments for parameter
+			f.writeLeadingComments(p.LeadingComments)
 			f.writeIndent()
 			f.write(f.formatParam(p))
 			f.write(",")
+			f.writeTrailingComment(p.TrailingComment)
 			f.write("\n")
 		}
 
@@ -353,7 +356,10 @@ func (f *formatter) formatScope(s *QueryScope) {
 	f.formatItems(s.Items, s.Setup != nil || s.Teardown != nil)
 
 	f.indent--
-	f.writeLine("}")
+	f.writeIndent()
+	f.write("}")
+	f.writeTrailingComment(s.TrailingComment)
+	f.write("\n")
 }
 
 func (f *formatter) formatItems(items []*TestOrGroup, hasSetupOrTeardown bool) {
@@ -392,7 +398,10 @@ func (f *formatter) formatGroup(g *Group) {
 	f.formatItems(g.Items, g.Setup != nil || g.Teardown != nil)
 
 	f.indent--
-	f.writeLine("}")
+	f.writeIndent()
+	f.write("}")
+	f.writeTrailingComment(g.TrailingComment)
+	f.write("\n")
 }
 
 func (f *formatter) formatTest(t *Test) {
@@ -443,10 +452,16 @@ func (f *formatter) formatTest(t *Test) {
 	}
 
 	f.indent--
-	f.writeLine("}")
+	f.writeIndent()
+	f.write("}")
+	f.writeTrailingComment(t.TrailingComment)
+	f.write("\n")
 }
 
 func (f *formatter) formatStatement(s *Statement) {
+	// Write leading comments
+	f.writeLeadingComments(s.LeadingComments)
+
 	// Check if value needs multi-line (trailing comma present)
 	valueSingle := f.formatStatementValueSingleLine(s.Value)
 
@@ -454,7 +469,10 @@ func (f *formatter) formatStatement(s *Statement) {
 	if valueSingle == "" {
 		f.formatStatementMultiLine(s)
 	} else {
-		f.writeLine(s.Key() + ": " + valueSingle)
+		f.writeIndent()
+		f.write(s.Key() + ": " + valueSingle)
+		f.writeTrailingComment(s.TrailingComment)
+		f.write("\n")
 	}
 }
 
@@ -550,9 +568,15 @@ func (f *formatter) formatStatementValueSingleLine(sv *StatementValue) string {
 }
 
 func (f *formatter) formatAssert(a *Assert) {
+	// Write leading comments
+	f.writeLeadingComments(a.LeadingComments)
+
 	// Handle shorthand form: assert (expr)
 	if a.IsShorthand() {
-		f.writeLine("assert (" + a.Shorthand.String() + ")")
+		f.writeIndent()
+		f.write("assert (" + a.Shorthand.String() + ")")
+		f.writeTrailingComment(a.TrailingComment)
+		f.write("\n")
 		return
 	}
 
@@ -574,7 +598,7 @@ func (f *formatter) formatAssert(a *Assert) {
 				f.indent--
 				f.writeIndent()
 				f.write(") ")
-				f.formatAssertConditions(a.Conditions)
+				f.formatAssertConditionsWithTrailing(a.Conditions, a.TrailingComment)
 				return
 			}
 			if len(a.Query.Params) > 0 {
@@ -591,13 +615,19 @@ func (f *formatter) formatAssert(a *Assert) {
 	}
 
 	if len(a.Conditions) == 0 {
-		f.writeLine("assert " + queryPart + "{}")
+		f.writeIndent()
+		f.write("assert " + queryPart + "{}")
+		f.writeTrailingComment(a.TrailingComment)
+		f.write("\n")
 		return
 	}
 
 	// For single condition without query, always use shorthand form
 	if len(a.Conditions) == 1 && queryPart == "" {
-		f.writeLine("assert (" + a.Conditions[0].String() + ")")
+		f.writeIndent()
+		f.write("assert (" + a.Conditions[0].String() + ")")
+		f.writeTrailingComment(a.TrailingComment)
+		f.write("\n")
 		return
 	}
 
@@ -605,7 +635,10 @@ func (f *formatter) formatAssert(a *Assert) {
 	if len(a.Conditions) == 1 {
 		singleLine := "assert " + queryPart + "{ (" + a.Conditions[0].String() + ") }"
 		if !f.wouldExceedWidth(singleLine) {
-			f.writeLine(singleLine)
+			f.writeIndent()
+			f.write(singleLine)
+			f.writeTrailingComment(a.TrailingComment)
+			f.write("\n")
 			return
 		}
 	}
@@ -619,12 +652,21 @@ func (f *formatter) formatAssert(a *Assert) {
 	}
 
 	f.indent--
-	f.writeLine("}")
+	f.writeIndent()
+	f.write("}")
+	f.writeTrailingComment(a.TrailingComment)
+	f.write("\n")
 }
 
 func (f *formatter) formatAssertConditions(conditions []*ParenExpr) {
+	f.formatAssertConditionsWithTrailing(conditions, "")
+}
+
+func (f *formatter) formatAssertConditionsWithTrailing(conditions []*ParenExpr, trailing string) {
 	if len(conditions) == 0 {
-		f.write("{}\n")
+		f.write("{}")
+		f.writeTrailingComment(trailing)
+		f.write("\n")
 		return
 	}
 
@@ -632,7 +674,9 @@ func (f *formatter) formatAssertConditions(conditions []*ParenExpr) {
 	if len(conditions) == 1 {
 		singleLine := "{ (" + conditions[0].String() + ") }"
 		if !f.wouldExceedWidth(singleLine) {
-			f.write(singleLine + "\n")
+			f.write(singleLine)
+			f.writeTrailingComment(trailing)
+			f.write("\n")
 			return
 		}
 	}
@@ -646,7 +690,10 @@ func (f *formatter) formatAssertConditions(conditions []*ParenExpr) {
 	}
 
 	f.indent--
-	f.writeLine("}")
+	f.writeIndent()
+	f.write("}")
+	f.writeTrailingComment(trailing)
+	f.write("\n")
 }
 
 func (f *formatter) formatValue(v *Value) string {

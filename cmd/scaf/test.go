@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/analysis"
 	_ "github.com/rlch/scaf/databases/neo4j"
+	_ "github.com/rlch/scaf/dialects/cypher"
 	"github.com/rlch/scaf/module"
 	"github.com/rlch/scaf/runner"
 	"github.com/urfave/cli/v3"
@@ -22,6 +24,7 @@ var (
 	ErrNoDatabase          = errors.New("no database specified (use neo4j config in .scaf.yaml)")
 	ErrNoConnectionURI     = errors.New("no connection URI specified (use --uri or .scaf.yaml)")
 	ErrUnsupportedDatabase = errors.New("unsupported database")
+	ErrDiagnosticErrors    = errors.New("scaf files contain errors")
 )
 
 func testCommand() *cli.Command {
@@ -174,6 +177,40 @@ func runTest(ctx context.Context, cmd *cli.Command) error {
 			data:     data,
 			resolved: resolved,
 		})
+	}
+
+	// Run analysis and check for errors before proceeding
+	// Get the dialect from config to use proper query analyzer
+	dialectName := scaf.DialectCypher // default
+	if configErr == nil {
+		if d := loadedCfg.DialectName(); d != "" {
+			dialectName = d
+		}
+	}
+
+	queryAnalyzer := scaf.GetAnalyzer(dialectName)
+	analyzer := analysis.NewAnalyzerWithQueryAnalyzer(nil, nil, queryAnalyzer)
+
+	var hasErrors bool
+	for _, ps := range suites {
+		result := analyzer.Analyze(ps.path, ps.data)
+		if result.HasErrors() {
+			hasErrors = true
+			// Print errors
+			for _, diag := range result.Errors() {
+				loc := ""
+				if diag.Span.Start.Line > 0 {
+					loc = fmt.Sprintf("%s:%d:%d: ", ps.path, diag.Span.Start.Line, diag.Span.Start.Column)
+				} else {
+					loc = fmt.Sprintf("%s: ", ps.path)
+				}
+				fmt.Fprintf(os.Stderr, "%serror: %s\n", loc, diag.Message)
+			}
+		}
+	}
+
+	if hasErrors {
+		return ErrDiagnosticErrors
 	}
 
 	// Create database

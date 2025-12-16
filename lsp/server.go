@@ -29,8 +29,11 @@ type Server struct {
 	fileLoader *LSPFileLoader
 
 	// Query analysis for dialect-specific completions
-	dialectName   string              // e.g., "cypher", "sql"
-	queryAnalyzer scaf.QueryAnalyzer  // dialect-specific query analyzer
+	dialectName   string             // e.g., "cypher", "sql"
+	queryAnalyzer scaf.QueryAnalyzer // dialect-specific query analyzer
+
+	// Schema for LSP features (labels, properties, etc.)
+	schema *analysis.TypeSchema
 
 	// Server state
 	initialized   bool
@@ -96,6 +99,9 @@ func (s *Server) Initialize(_ context.Context, params *protocol.InitializeParams
 		s.logger.Info("Workspace root (from RootPath)", zap.String("root", s.workspaceRoot))
 	}
 
+	// Load schema if available
+	s.loadSchema()
+
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			// Full document sync - client sends entire content on change
@@ -109,7 +115,7 @@ func (s *Server) Initialize(_ context.Context, params *protocol.InitializeParams
 			DefinitionProvider: true,
 			// Completion support
 			CompletionProvider: &protocol.CompletionOptions{
-				TriggerCharacters: []string{"$", "."},
+				TriggerCharacters: []string{"$", ".", ":"},
 				ResolveProvider:   false,
 			},
 			// Document symbol support for outline view
@@ -305,4 +311,61 @@ func (s *Server) getDocument(uri protocol.DocumentURI) (*Document, bool) {
 	doc, ok := s.documents[uri]
 
 	return doc, ok
+}
+
+// loadSchema loads the TypeSchema from the workspace configuration.
+// It looks for .scaf.yaml config and loads the schema file if specified.
+func (s *Server) loadSchema() {
+	if s.workspaceRoot == "" {
+		s.logger.Debug("No workspace root, skipping schema load")
+		return
+	}
+
+	// Try to load config from workspace root
+	cfg, err := scaf.LoadConfig(s.workspaceRoot)
+	if err != nil {
+		s.logger.Debug("No .scaf.yaml config found, skipping schema load",
+			zap.String("root", s.workspaceRoot),
+			zap.Error(err))
+		return
+	}
+
+	// Check if schema path is configured
+	schemaPath := cfg.Generate.Schema
+	if schemaPath == "" {
+		s.logger.Debug("No schema path in config")
+		return
+	}
+
+	// Load the schema
+	schema, err := analysis.LoadSchema(schemaPath, s.workspaceRoot)
+	if err != nil {
+		s.logger.Warn("Failed to load schema",
+			zap.String("path", schemaPath),
+			zap.Error(err))
+		return
+	}
+
+	if schema == nil {
+		s.logger.Debug("Schema loaded but is nil")
+		return
+	}
+
+	s.schema = schema
+	s.analyzer.SetSchema(schema)
+	s.logger.Info("Schema loaded successfully",
+		zap.String("path", schemaPath),
+		zap.Int("models", len(schema.Models)))
+}
+
+// getSchema returns the loaded TypeSchema (may be nil).
+func (s *Server) getSchema() *analysis.TypeSchema {
+	return s.schema
+}
+
+// SetSchemaForTesting sets the schema for testing purposes.
+// This should only be used in tests.
+func (s *Server) SetSchemaForTesting(schema *analysis.TypeSchema) {
+	s.schema = schema
+	s.analyzer.SetSchema(schema)
 }

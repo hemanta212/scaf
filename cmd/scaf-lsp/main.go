@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
@@ -60,7 +61,18 @@ func main() {
 
 	err = run(ctx, startupLogger, os.Stdin, os.Stdout, *dialectFlag, level, *logfileFlag)
 	if err != nil {
-		startupLogger.Fatal("Server error", zap.Error(err))
+		// EOF is expected when client disconnects - don't treat as fatal
+		if errors.Is(err, io.EOF) {
+			startupLogger.Info("Client disconnected")
+			return
+		}
+		// Check for "closed" error which is also normal shutdown
+		if err.Error() == "closed" {
+			startupLogger.Info("Connection closed")
+			return
+		}
+		startupLogger.Error("Server error", zap.Error(err))
+		os.Exit(1)
 	}
 }
 

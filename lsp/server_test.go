@@ -7,6 +7,7 @@ import (
 	"go.lsp.dev/protocol"
 	"go.uber.org/zap"
 
+	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/lsp"
 
 	// Import dialects to register their analyzers via init().
@@ -560,11 +561,11 @@ GetUser {
 		},
 	})
 
-	// Hover over the u.name return field (line 5, column 3)
+	// Hover over the "name" part of u.name return field (line 5, column 5)
 	result, err := server.Hover(ctx, &protocol.HoverParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
-			Position:     protocol.Position{Line: 5, Character: 3},
+			Position:     protocol.Position{Line: 5, Character: 5},
 		},
 	})
 	if err != nil {
@@ -580,17 +581,113 @@ GetUser {
 		t.Error("Expected hover content")
 	}
 
-	// Should mention the return field
+	// Should mention the full path
 	if !contains(content, "u.name") {
 		t.Errorf("Expected u.name in hover, got: %s", content)
 	}
 
-	// Should mention it's a return field
-	if !contains(content, "Return Field") {
-		t.Errorf("Expected 'Return Field' in hover, got: %s", content)
+	// Should mention it's a property
+	if !contains(content, "(property)") {
+		t.Errorf("Expected '(property)' in hover, got: %s", content)
 	}
 
 	t.Logf("Return field hover content:\n%s", content)
+}
+
+func TestServer_Hover_StatementParts(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServer(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with expression and where clause
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text: `fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u.name`" + `
+
+GetUser {
+	test "with expression" {
+		$id: (2 + 2) where (id > 0)
+		u.name: "Alice"
+	}
+}
+`,
+		},
+	})
+
+	tests := []struct {
+		name     string
+		line     uint32
+		char     uint32
+		contains string
+	}{
+		{
+			name:     "parameter key",
+			line:     4,
+			char:     3, // on $id
+			contains: "(parameter)",
+		},
+		{
+			name:     "expression value",
+			line:     4,
+			char:     9, // on (2 + 2)
+			contains: "(expression)",
+		},
+		{
+			name:     "where clause",
+			line:     4,
+			char:     24, // on the parens of where (id > 0)
+			contains: "(constraint)",
+		},
+		{
+			name:     "variable part of field",
+			line:     5,
+			char:     3, // on "u" in u.name
+			contains: "(variable)",
+		},
+		{
+			name:     "property part of field",
+			line:     5,
+			char:     5, // on "name" in u.name
+			contains: "(property)",
+		},
+		{
+			name:     "literal value",
+			line:     5,
+			char:     10, // on "Alice"
+			contains: "(literal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := server.Hover(ctx, &protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+					Position:     protocol.Position{Line: tt.line, Character: tt.char},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Hover() error: %v", err)
+			}
+
+			if result == nil {
+				t.Fatal("Expected hover result")
+			}
+
+			content := result.Contents.Value
+			if !contains(content, tt.contains) {
+				t.Errorf("Expected %q in hover, got: %s", tt.contains, content)
+			}
+
+			t.Logf("%s hover content:\n%s", tt.name, content)
+		})
+	}
 }
 
 func TestServer_Hover_AssertQuery(t *testing.T) {
@@ -646,6 +743,91 @@ GetUser {
 	}
 
 	t.Logf("Assert query hover content:\n%s", content)
+}
+
+func TestServer_Hover_AssertExpression(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestServerWithDebug(t)
+	ctx := context.Background()
+
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Open a file with assert expression
+	content := "fn GetUser() `MATCH (p:Post) RETURN p`\n\nGetUser {\n\ttest \"t\" {\n\t\tassert (p.name == \"\")\n\t}\n}\n"
+	t.Logf("Content:\n%s", content)
+	for i, line := range splitLines(content) {
+		t.Logf("  Line %d: %q", i, line)
+	}
+
+	_ = server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    content,
+		},
+	})
+
+	tests := []struct {
+		name     string
+		line     uint32
+		char     uint32
+		contains string
+	}{
+		{
+			name:     "variable p",
+			line:     4,
+			char:     10, // on 'p' in p.name
+			contains: "(variable)",
+		},
+		{
+			name:     "property name",
+			line:     4,
+			char:     12, // on 'n' in p.name
+			contains: "(property)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := server.Hover(ctx, &protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+					Position:     protocol.Position{Line: tt.line, Character: tt.char},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Hover() error: %v", err)
+			}
+
+			if result == nil {
+				t.Fatalf("Expected hover result for line %d char %d", tt.line, tt.char)
+			}
+
+			content := result.Contents.Value
+			t.Logf("Hover at line %d char %d: %q", tt.line, tt.char, content)
+
+			if !contains(content, tt.contains) {
+				t.Errorf("Expected %q in hover, got: %s", tt.contains, content)
+			}
+		})
+	}
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
 }
 
 // Helper to check if string contains substring
@@ -1391,5 +1573,115 @@ func TestServer_Formatting_UnknownDocument(t *testing.T) {
 	// Should return nil (document not found)
 	if edits != nil {
 		t.Errorf("Expected nil edits for unknown document, got %d edits", len(edits))
+	}
+}
+
+func TestServer_DialectDiagnostics_PrecisePosition(t *testing.T) {
+	t.Skip("Skipped: dialect LSP diagnostics (unknown-label) functionality was removed")
+	t.Parallel()
+
+	server, client := newTestServer(t)
+	ctx := context.Background()
+
+	// Initialize the server
+	_, _ = server.Initialize(ctx, &protocol.InitializeParams{})
+	_ = server.Initialized(ctx, &protocol.InitializedParams{})
+
+	// Set up a schema with known labels so we get "unknown label" diagnostics
+	// for labels not in the schema
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name:   "User",
+				Fields: []*analysis.Field{{Name: "name"}},
+			},
+		},
+	}
+	server.SetSchemaForTesting(schema)
+
+	// Open a document with an unknown label "UnknownLabel"
+	// Position: fn GetUser() `MATCH (u:UnknownLabel) RETURN u`
+	//           0         1         2         3         4
+	//           0123456789012345678901234567890123456789012345678
+	// The backtick is at position 13
+	// Query body starts at position 14 ('M' in MATCH)
+	// "UnknownLabel" starts at position 23 in the document (14 + 9)
+	// "UnknownLabel" ends at position 35 in the document (14 + 21)
+	doc := `fn GetUser() ` + "`" + `MATCH (u:UnknownLabel) RETURN u` + "`"
+
+	err := server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+		TextDocument: protocol.TextDocumentItem{
+			URI:     "file:///test.scaf",
+			Version: 1,
+			Text:    doc,
+		},
+	})
+	if err != nil {
+		t.Fatalf("DidOpen() error: %v", err)
+	}
+
+	// Find the unknown-label diagnostic
+	var unknownLabelDiag *protocol.Diagnostic
+	for _, params := range client.diagnostics {
+		for i, diag := range params.Diagnostics {
+			if diag.Code == "unknown-label" {
+				unknownLabelDiag = &params.Diagnostics[i]
+				break
+			}
+		}
+	}
+
+	if unknownLabelDiag == nil {
+		// List all diagnostics for debugging
+		t.Log("All diagnostics received:")
+		for _, params := range client.diagnostics {
+			for _, diag := range params.Diagnostics {
+				t.Logf("  Code=%v Message=%q Range=(%d,%d)-(%d,%d)",
+					diag.Code, diag.Message,
+					diag.Range.Start.Line, diag.Range.Start.Character,
+					diag.Range.End.Line, diag.Range.End.Character)
+			}
+		}
+		t.Fatal("Expected unknown-label diagnostic but didn't find one")
+	}
+
+	// Check that the diagnostic range precisely covers "UnknownLabel"
+	// Expected: Line 0, Character 23 (start of "UnknownLabel")
+	// Expected: Line 0, Character 35 (end of "UnknownLabel")
+
+	expectedStartLine := uint32(0)
+	expectedStartChar := uint32(23) // position 14 (after backtick) + offset 9 (after "MATCH (u:")
+	expectedEndLine := uint32(0)
+	expectedEndChar := uint32(35) // position 14 + offset 21
+
+	if unknownLabelDiag.Range.Start.Line != expectedStartLine {
+		t.Errorf("Diagnostic start line: expected %d, got %d",
+			expectedStartLine, unknownLabelDiag.Range.Start.Line)
+	}
+	if unknownLabelDiag.Range.Start.Character != expectedStartChar {
+		t.Errorf("Diagnostic start character: expected %d, got %d",
+			expectedStartChar, unknownLabelDiag.Range.Start.Character)
+	}
+	if unknownLabelDiag.Range.End.Line != expectedEndLine {
+		t.Errorf("Diagnostic end line: expected %d, got %d",
+			expectedEndLine, unknownLabelDiag.Range.End.Line)
+	}
+	if unknownLabelDiag.Range.End.Character != expectedEndChar {
+		t.Errorf("Diagnostic end character: expected %d, got %d",
+			expectedEndChar, unknownLabelDiag.Range.End.Character)
+	}
+
+	// Also verify that the diagnostic covers exactly the label text in the document
+	lines := []string{doc}
+	if int(unknownLabelDiag.Range.Start.Line) < len(lines) {
+		line := lines[unknownLabelDiag.Range.Start.Line]
+		start := int(unknownLabelDiag.Range.Start.Character)
+		end := int(unknownLabelDiag.Range.End.Character)
+		if start <= len(line) && end <= len(line) && start < end {
+			labelText := line[start:end]
+			if labelText != "UnknownLabel" {
+				t.Errorf("Diagnostic span should cover 'UnknownLabel', got %q", labelText)
+			}
+		}
 	}
 }

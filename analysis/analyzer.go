@@ -26,6 +26,11 @@ type Analyzer struct {
 	// Can be nil if no dialect analyzer is available.
 	queryAnalyzer scaf.QueryAnalyzer
 
+	// schema is the type schema for schema-aware type inference.
+	// When provided, parameters can be inferred from property comparisons.
+	// Can be nil if no schema is available.
+	schema *TypeSchema
+
 	// rules is the set of semantic checks to run.
 	rules []*Rule
 }
@@ -79,6 +84,24 @@ func NewAnalyzerWithQueryAnalyzer(loader FileLoader, resolver CrossFileResolver,
 	}
 }
 
+// NewAnalyzerWithSchema creates an analyzer with schema-aware type inference.
+// The schema enables parameter type inference from property comparisons in queries.
+func NewAnalyzerWithSchema(loader FileLoader, resolver CrossFileResolver, queryAnalyzer scaf.QueryAnalyzer, schema *TypeSchema) *Analyzer {
+	return &Analyzer{
+		loader:        loader,
+		resolver:      resolver,
+		queryAnalyzer: queryAnalyzer,
+		schema:        schema,
+		rules:         DefaultRules(),
+	}
+}
+
+// SetSchema sets the type schema for schema-aware type inference.
+// This can be called after initialization when the schema becomes available.
+func (a *Analyzer) SetSchema(schema *TypeSchema) {
+	a.schema = schema
+}
+
 // NewAnalyzerWithRules creates an analyzer with custom rules.
 func NewAnalyzerWithRules(loader FileLoader, rules []*Rule) *Analyzer {
 	return &Analyzer{
@@ -97,6 +120,7 @@ func (a *Analyzer) Analyze(path string, content []byte) *AnalyzedFile {
 		Symbols:       NewSymbolTable(),
 		Resolver:      a.resolver,
 		QueryAnalyzer: a.queryAnalyzer,
+		Schema:        a.schema,
 	}
 
 	// Parse the file - returns partial AST even on error.
@@ -239,19 +263,21 @@ func buildSymbols(f *AnalyzedFile, queryAnalyzer scaf.QueryAnalyzer) {
 		params := extractQueryParams(q.Body)
 		declaredParams := extractDeclaredParams(q)
 		typedParams := extractTypedParams(q)
-		queryBodyParams := extractQueryBodyParams(q.Body, queryAnalyzer)
+		queryBodyParams := extractQueryBodyParams(q.Body, queryAnalyzer, f.Schema)
+		queryBodyReturns := extractQueryBodyReturns(q.Body, queryAnalyzer, f.Schema)
 		f.Symbols.Queries[q.Name] = &QuerySymbol{
 			Symbol: Symbol{
 				Name: q.Name,
 				Span: q.Span(),
 				Kind: SymbolKindQuery,
 			},
-			Body:            q.Body,
-			Params:          params,
-			QueryBodyParams: queryBodyParams,
-			DeclaredParams:  declaredParams,
-			TypedParams:     typedParams,
-			Node:            q,
+			Body:             q.Body,
+			Params:           params,
+			QueryBodyParams:  queryBodyParams,
+			QueryBodyReturns: queryBodyReturns,
+			DeclaredParams:   declaredParams,
+			TypedParams:      typedParams,
+			Node:             q,
 		}
 	}
 
@@ -391,19 +417,63 @@ func extractQueryParams(body string) []string {
 	return params
 }
 
+// schemaAwareAnalyzer is an interface for analyzers that support schema-aware type inference.
+type schemaAwareAnalyzer interface {
+	AnalyzeQueryWithSchema(query string, schema *TypeSchema) (*scaf.QueryMetadata, error)
+}
+
 // extractQueryBodyParams extracts parameters from the query body using the dialect analyzer.
+// If schema is provided and the analyzer supports it, uses schema-aware analysis for type inference.
 // Returns nil if no analyzer is available or if analysis fails.
-func extractQueryBodyParams(body string, queryAnalyzer scaf.QueryAnalyzer) []scaf.ParameterInfo {
+func extractQueryBodyParams(body string, queryAnalyzer scaf.QueryAnalyzer, schema *TypeSchema) []scaf.ParameterInfo {
 	if queryAnalyzer == nil || body == "" {
 		return nil
 	}
 
+	// Try schema-aware analyzer first for better type inference
+	if schema != nil {
+		if schemaAnalyzer, ok := queryAnalyzer.(schemaAwareAnalyzer); ok {
+			metadata, err := schemaAnalyzer.AnalyzeQueryWithSchema(body, schema)
+			if err == nil && metadata != nil {
+				return metadata.Parameters
+			}
+		}
+	}
+
+	// Fall back to basic analysis
 	metadata, err := queryAnalyzer.AnalyzeQuery(body)
 	if err != nil || metadata == nil {
 		return nil
 	}
 
 	return metadata.Parameters
+}
+
+// extractQueryBodyReturns extracts return fields from the query body using the dialect analyzer.
+// If schema is provided and the analyzer supports it, uses schema-aware analysis for type inference.
+// Returns nil if no analyzer is available or if analysis fails.
+func extractQueryBodyReturns(body string, queryAnalyzer scaf.QueryAnalyzer, schema *TypeSchema) []scaf.ReturnInfo {
+	if queryAnalyzer == nil || body == "" {
+		return nil
+	}
+
+	// Try schema-aware analyzer first for better type inference
+	if schema != nil {
+		if schemaAnalyzer, ok := queryAnalyzer.(schemaAwareAnalyzer); ok {
+			metadata, err := schemaAnalyzer.AnalyzeQueryWithSchema(body, schema)
+			if err == nil && metadata != nil {
+				return metadata.Returns
+			}
+		}
+	}
+
+	// Fall back to basic analysis
+	metadata, err := queryAnalyzer.AnalyzeQuery(body)
+	if err != nil || metadata == nil {
+		return nil
+	}
+
+	return metadata.Returns
 }
 
 // extractDeclaredParams extracts all parameter names from a function definition.

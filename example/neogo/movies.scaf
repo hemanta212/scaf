@@ -18,7 +18,7 @@ fn FindReviews(title) `
 
 FindActors {
 	test "finds Tom Hanks movies" {
-		$name: "Tom Hanks"
+		$name: 2
 
 		p.name: "Tom Hanks"
 		m.title: "Forrest Gump"
@@ -29,6 +29,8 @@ FindDirectors {
 	test "finds directors" {
 		p.name: "Robert Zemeckis"
 		m.title: "Forrest Gump"
+
+		assert (p.name == "")
 	}
 }
 

@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>scaf-viz | Parser Playground</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --orange: #d29922;
+      --purple: #a371f7;
+      --cyan: #39c5cf;
+      --pink: #db61a2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    header .subtitle {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      background: var(--bg-secondary);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+
+    .editor-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+    }
+
+    #editor-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      pointer-events: none;
+      color: transparent;
+    }
+
+    #editor {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      color: var(--text);
+      border: none;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      caret-color: var(--text);
+    }
+
+    .highlight-span {
+      background: rgba(88, 166, 255, 0.25);
+      border-radius: 2px;
+    }
+
+    /* Syntax highlighting for backdrop */
+    .syn-keyword { color: var(--purple); }
+    .syn-string { color: var(--green); }
+    .syn-rawstring { color: var(--cyan); }
+    .syn-number { color: var(--orange); }
+    .syn-comment { color: var(--text-muted); font-style: italic; }
+    .syn-ident { color: var(--text); }
+    .syn-op { color: var(--red); }
+    .syn-punct { color: var(--text-muted); }
+
+    .right-panels {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      overflow: auto;
+    }
+    .tab-content.active { display: block; }
+
+    /* Token Stream */
+    #tokens {
+      padding: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-content: flex-start;
+    }
+
+    .token {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.1s;
+      border: 1px solid transparent;
+    }
+
+    .token:hover {
+      border-color: var(--accent);
+      transform: scale(1.05);
+    }
+
+    .token.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3);
+    }
+
+    .token-keyword { background: rgba(163, 113, 247, 0.2); color: var(--purple); }
+    .token-string { background: rgba(63, 185, 80, 0.2); color: var(--green); }
+    .token-rawstring { background: rgba(57, 197, 207, 0.2); color: var(--cyan); }
+    .token-number { background: rgba(210, 153, 34, 0.2); color: var(--orange); }
+    .token-ident { background: rgba(201, 209, 217, 0.1); color: var(--text); }
+    .token-op { background: rgba(248, 81, 73, 0.2); color: var(--red); }
+    .token-punct { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
+    .token-comment { background: rgba(139, 148, 158, 0.1); color: var(--text-muted); font-style: italic; }
+
+    .token-type {
+      font-size: 9px;
+      margin-left: 6px;
+      opacity: 0.6;
+      text-transform: uppercase;
+    }
+
+    /* AST Tree */
+    #ast {
+      padding: 16px;
+    }
+
+    .ast-node {
+      margin-left: 20px;
+      position: relative;
+    }
+
+    .ast-node::before {
+      content: '';
+      position: absolute;
+      left: -12px;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--border);
+    }
+
+    .ast-node-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .ast-node-header:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .ast-node.selected > .ast-node-header {
+      background: rgba(88, 166, 255, 0.15);
+      outline: 1px solid var(--accent);
+    }
+
+    .ast-node.recovered > .ast-node-header {
+      background: rgba(248, 81, 73, 0.15);
+      border-left: 3px solid var(--red);
+    }
+
+    .ast-toggle {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .ast-type {
+      color: var(--purple);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .ast-name {
+      color: var(--accent);
+      font-size: 12px;
+    }
+
+    .ast-value {
+      color: var(--green);
+      font-size: 11px;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ast-pos {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-left: auto;
+    }
+
+    .ast-children {
+      overflow: hidden;
+      transition: max-height 0.2s;
+    }
+
+    .ast-node.collapsed > .ast-children {
+      display: none;
+    }
+
+    .ast-node.collapsed > .ast-node-header .ast-toggle::after {
+      content: '+';
+    }
+
+    .ast-node:not(.collapsed) > .ast-node-header .ast-toggle::after {
+      content: '−';
+    }
+
+    .ast-node.leaf > .ast-node-header .ast-toggle {
+      visibility: hidden;
+    }
+
+    /* Errors */
+    #errors {
+      padding: 16px;
+    }
+
+    .error-item {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--red);
+    }
+
+    .recovery-item {
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+
+    .recovery-item .label {
+      font-size: 10px;
+      color: var(--orange);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .recovery-item .skipped {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-tertiary);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .empty-state {
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 40px;
+    }
+
+    /* Grammar panel */
+    #grammar {
+      padding: 16px;
+    }
+
+    .grammar-section {
+      margin-bottom: 20px;
+    }
+
+    .grammar-title {
+      color: var(--purple);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .grammar-title::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: var(--purple);
+      border-radius: 2px;
+    }
+
+    .grammar-rule {
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      border-left: 3px solid var(--border);
+    }
+
+    .grammar-rule:hover {
+      border-left-color: var(--accent);
+    }
+
+    .grammar-rule .field {
+      color: var(--accent);
+    }
+
+    .grammar-rule .tag {
+      color: var(--green);
+    }
+
+    .grammar-rule .literal {
+      color: var(--orange);
+    }
+
+    .grammar-rule .type {
+      color: var(--text-muted);
+    }
+
+    /* Tooltip */
+    .tooltip {
+      position: fixed;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 11px;
+      pointer-events: none;
+      z-index: 1000;
+      max-width: 300px;
+    }
+
+    .tooltip-row {
+      display: flex;
+      gap: 12px;
+      margin: 2px 0;
+    }
+
+    .tooltip-label {
+      color: var(--text-muted);
+    }
+
+    .tooltip-value {
+      color: var(--text);
+    }
+
+    /* Stats bar */
+    .stats {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 24px;
+    }
+
+    .stat-item span {
+      color: var(--text);
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>scaf-viz</h1>
+    <span class="subtitle">Parser Playground for scaf DSL</span>
+  </header>
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-header">Source Code</div>
+      <div class="panel-content">
+        <div class="editor-container">
+          <div id="editor-backdrop"></div>
+          <textarea id="editor" spellcheck="false">// Example scaf file
+import fixtures "./fixtures"
+
+fn GetUser(id: string, active: bool?) `
+  MATCH (u:User {id: $id})
+  WHERE u.active = $active
+  RETURN u.name, u.age
+`
+
+GetUser {
+  setup fixtures.CreateUsers()
+
+  test "finds active user" {
+    $id: "user-1"
+    $active: true
+    u.name: "Alice"
+    assert (u.age >= 18)
+  }
+
+  group "edge cases" {
+    test "handles null active" {
+      $id: "user-2"
+      $active: null
+      u.name: "Bob"
+    }
+  }
+}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel right-panels">
+      <div class="tabs">
+        <div class="tab active" data-tab="tokens">Tokens</div>
+        <div class="tab" data-tab="ast">AST</div>
+        <div class="tab" data-tab="errors">Errors</div>
+        <div class="tab" data-tab="grammar">Grammar</div>
+      </div>
+      <div id="tokens" class="tab-content active"></div>
+      <div id="ast" class="tab-content"></div>
+      <div id="errors" class="tab-content"></div>
+      <div id="grammar" class="tab-content"></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-item">Tokens:<span id="token-count">0</span></div>
+    <div class="stat-item">AST Nodes:<span id="ast-count">0</span></div>
+    <div class="stat-item">Errors:<span id="error-count">0</span></div>
+  </div>
+
+  <div id="tooltip" class="tooltip" style="display:none"></div>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const backdrop = document.getElementById('editor-backdrop');
+    const tokensEl = document.getElementById('tokens');
+    const astEl = document.getElementById('ast');
+    const errorsEl = document.getElementById('errors');
+    const grammarEl = document.getElementById('grammar');
+    const tooltip = document.getElementById('tooltip');
+
+    let debounceTimer;
+    let currentData = null;
+    let currentHighlight = null;
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Debounced analysis
+    editor.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(analyze, 150);
+    });
+
+    async function analyze() {
+      const source = editor.value;
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source })
+        });
+        currentData = await res.json();
+        render();
+      } catch (err) {
+        console.error('Analysis failed:', err);
+      }
+    }
+
+    function render() {
+      if (!currentData) return;
+
+      renderTokens(currentData.tokens);
+      renderAST(currentData.ast);
+      renderErrors(currentData.errors, currentData.recovery);
+      renderGrammar();
+
+      document.getElementById('token-count').textContent = currentData.tokens?.length || 0;
+      document.getElementById('ast-count').textContent = countNodes(currentData.ast);
+      document.getElementById('error-count').textContent = currentData.errors?.length || 0;
+    }
+
+    function getTokenClass(typeName) {
+      const keywords = ['fn', 'import', 'setup', 'teardown', 'test', 'group', 'assert', 'where'];
+      if (keywords.includes(typeName)) return 'token-keyword';
+      if (typeName === 'String') return 'token-string';
+      if (typeName === 'RawString') return 'token-rawstring';
+      if (typeName === 'Number') return 'token-number';
+      if (typeName === 'Ident') return 'token-ident';
+      if (typeName === 'Op') return 'token-op';
+      if (typeName === 'Comment') return 'token-comment';
+      return 'token-punct';
+    }
+
+    function renderTokens(tokens) {
+      if (!tokens || tokens.length === 0) {
+        tokensEl.innerHTML = '<div class="empty-state">No tokens</div>';
+        return;
+      }
+
+      tokensEl.innerHTML = tokens.map((tok, i) => {
+        const cls = getTokenClass(tok.typeName);
+        const display = tok.value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<div class="token ${cls}" data-index="${i}" data-offset="${tok.offset}" data-end="${tok.endOffset}">
+          <span class="token-text">${display}</span>
+          <span class="token-type">${tok.typeName}</span>
+        </div>`;
+      }).join('');
+
+      // Token hover
+      tokensEl.querySelectorAll('.token').forEach(el => {
+        el.addEventListener('mouseenter', (e) => {
+          const idx = parseInt(el.dataset.index);
+          const tok = tokens[idx];
+          showTooltip(e, `
+            <div class="tooltip-row"><span class="tooltip-label">Type:</span><span class="tooltip-value">${tok.typeName}</span></div>
+            <div class="tooltip-row"><span class="tooltip-label">Value:</span><span class="tooltip-value">${tok.value}</span></div>
+            <div class="tooltip-row"><span class="tooltip-label">Position:</span><span class="tooltip-value">L${tok.line}:${tok.column}</span></div>
+            <div class="tooltip-row"><span class="tooltip-label">Offset:</span><span class="tooltip-value">${tok.offset}-${tok.endOffset}</span></div>
+          `);
+        });
+        el.addEventListener('mouseleave', hideTooltip);
+
+        // Click to select in editor
+        el.addEventListener('click', () => {
+          const start = parseInt(el.dataset.offset);
+          const end = parseInt(el.dataset.end);
+          editor.focus();
+          editor.setSelectionRange(start, end);
+        });
+      });
+    }
+
+    function renderAST(ast) {
+      if (!ast) {
+        astEl.innerHTML = '<div class="empty-state">No AST (parse failed)</div>';
+        return;
+      }
+
+      astEl.innerHTML = renderASTNode(ast);
+
+      // Toggle collapse and highlight source
+      astEl.querySelectorAll('.ast-node-header').forEach(el => {
+        el.addEventListener('click', (e) => {
+          const node = el.parentElement;
+          
+          // Toggle collapse on double-click or if clicking toggle
+          if (e.detail === 2 || e.target.classList.contains('ast-toggle')) {
+            if (!node.classList.contains('leaf')) {
+              node.classList.toggle('collapsed');
+            }
+            return;
+          }
+
+          // Highlight source span
+          const line = parseInt(el.dataset.line);
+          const col = parseInt(el.dataset.col);
+          const endLine = parseInt(el.dataset.endline) || line;
+          const endCol = parseInt(el.dataset.endcol) || col;
+          
+          highlightSourceSpan(line, col, endLine, endCol);
+
+          // Mark AST node as selected
+          astEl.querySelectorAll('.ast-node.selected').forEach(n => n.classList.remove('selected'));
+          node.classList.add('selected');
+        });
+      });
+    }
+
+    function highlightSourceSpan(startLine, startCol, endLine, endCol) {
+      const source = editor.value;
+      const lines = source.split('\n');
+      
+      // Convert line:col to offset
+      let startOffset = 0;
+      for (let i = 0; i < startLine - 1 && i < lines.length; i++) {
+        startOffset += lines[i].length + 1;
+      }
+      startOffset += startCol - 1;
+
+      let endOffset = 0;
+      for (let i = 0; i < endLine - 1 && i < lines.length; i++) {
+        endOffset += lines[i].length + 1;
+      }
+      endOffset += endCol - 1;
+
+      // Build backdrop with highlight
+      const before = escapeHtml(source.substring(0, startOffset));
+      const highlighted = escapeHtml(source.substring(startOffset, endOffset));
+      const after = escapeHtml(source.substring(endOffset));
+
+      backdrop.innerHTML = before + '<span class="highlight-span">' + highlighted + '</span>' + after;
+      currentHighlight = { startOffset, endOffset };
+
+      // Also select in textarea
+      editor.focus();
+      editor.setSelectionRange(startOffset, endOffset);
+    }
+
+    function clearHighlight() {
+      backdrop.innerHTML = '';
+      currentHighlight = null;
+    }
+
+    function renderASTNode(node, depth = 0) {
+      if (!node) return '';
+      
+      const hasChildren = node.children && node.children.length > 0;
+      const leafClass = hasChildren ? '' : 'leaf';
+      const recoveredClass = node.recovered ? 'recovered' : '';
+      
+      let html = `<div class="ast-node ${leafClass} ${recoveredClass}">
+        <div class="ast-node-header" data-line="${node.line}" data-col="${node.column}" data-endline="${node.endLine || node.line}" data-endcol="${node.endColumn || node.column}">
+          <span class="ast-toggle"></span>
+          <span class="ast-type">${node.type}</span>
+          ${node.name ? `<span class="ast-name">${node.name}</span>` : ''}
+          ${node.value ? `<span class="ast-value">"${escapeHtml(node.value)}"</span>` : ''}
+          <span class="ast-pos">L${node.line}:${node.column}</span>
+        </div>`;
+
+      if (hasChildren) {
+        html += '<div class="ast-children">';
+        for (const child of node.children) {
+          html += renderASTNode(child, depth + 1);
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    function renderErrors(errors, recovery) {
+      let html = '';
+
+      if (errors && errors.length > 0) {
+        html += errors.map(err => `<div class="error-item">${escapeHtml(err)}</div>`).join('');
+      }
+
+      if (recovery && recovery.length > 0) {
+        html += recovery.map(r => `
+          <div class="recovery-item">
+            <div class="label">Recovery at L${r.line}:${r.column}</div>
+            <div class="skipped">Skipped: ${escapeHtml(r.skipped || '(none)')}</div>
+          </div>
+        `).join('');
+      }
+
+      if (!html) {
+        html = '<div class="empty-state">No errors</div>';
+      }
+
+      errorsEl.innerHTML = html;
+    }
+
+    function countNodes(node) {
+      if (!node) return 0;
+      let count = 1;
+      if (node.children) {
+        for (const child of node.children) {
+          count += countNodes(child);
+        }
+      }
+      return count;
+    }
+
+    function showTooltip(e, content) {
+      tooltip.innerHTML = content;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.pageX + 10) + 'px';
+      tooltip.style.top = (e.pageY + 10) + 'px';
+    }
+
+    function hideTooltip() {
+      tooltip.style.display = 'none';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderGrammar() {
+      const grammar = [
+        {
+          name: 'File',
+          rules: [
+            { field: 'Imports', tag: '@@*', type: '[]*Import' },
+            { field: 'Functions', tag: '@@*', type: '[]*Function' },
+            { field: 'Setup', tag: "('setup' @@)?", type: '*SetupClause' },
+            { field: 'Teardown', tag: "('teardown' @RawString)?", type: '*string' },
+            { field: 'Scopes', tag: '@@*', type: '[]*FunctionScope' },
+          ]
+        },
+        {
+          name: 'Import',
+          rules: [
+            { field: 'Alias', tag: "'import' @Ident?", type: '*string' },
+            { field: 'Path', tag: '@String', type: 'string' },
+          ]
+        },
+        {
+          name: 'Function',
+          rules: [
+            { field: 'Name', tag: "'fn' @Ident '('", type: 'string' },
+            { field: 'Params', tag: "(@@ (Comma @@)*)?", type: '[]*FnParam' },
+            { field: 'TrailingComma', tag: "@Comma? ')'", type: 'bool' },
+            { field: 'Body', tag: '@RawString', type: 'string' },
+          ]
+        },
+        {
+          name: 'FnParam',
+          rules: [
+            { field: 'Name', tag: '@Ident', type: 'string' },
+            { field: 'Type', tag: '(Colon @@)?', type: '*TypeExpr' },
+          ]
+        },
+        {
+          name: 'FunctionScope',
+          rules: [
+            { field: 'FunctionName', tag: "@Ident '{'", type: 'string' },
+            { field: 'Setup', tag: "('setup' @@)?", type: '*SetupClause' },
+            { field: 'Teardown', tag: "('teardown' @RawString)?", type: '*string' },
+            { field: 'Items', tag: '@@*', type: '[]*TestOrGroup' },
+            { field: 'Close', tag: "@'}'", type: 'string' },
+          ]
+        },
+        {
+          name: 'Test',
+          rules: [
+            { field: 'Name', tag: "'test' @String '{'", type: 'string' },
+            { field: 'Setup', tag: "('setup' @@)?", type: '*SetupClause' },
+            { field: 'Statements', tag: '@@*', type: '[]*Statement' },
+            { field: 'Asserts', tag: '@@*', type: '[]*Assert' },
+            { field: 'Close', tag: "@'}'", type: 'string' },
+          ]
+        },
+        {
+          name: 'Assert',
+          rules: [
+            { field: 'Shorthand', tag: "'assert' ( @@", type: '*ParenExpr' },
+            { field: 'Query', tag: '| @@?', type: '*AssertQuery' },
+            { field: 'Conditions', tag: "'{' @@*", type: '[]*ParenExpr' },
+            { field: 'Close', tag: "@'}' )", type: 'string' },
+          ]
+        },
+        {
+          name: 'Statement',
+          rules: [
+            { field: 'KeyParts', tag: '@@', type: '*DottedIdent' },
+            { field: 'Value', tag: 'Colon @@', type: '*StatementValue' },
+          ]
+        },
+      ];
+
+      grammarEl.innerHTML = grammar.map(section => `
+        <div class="grammar-section">
+          <div class="grammar-title">${section.name}</div>
+          ${section.rules.map(rule => `
+            <div class="grammar-rule">
+              <span class="field">${rule.field}</span>
+              <span class="type">${rule.type}</span>
+              <br>
+              <span class="tag">${escapeHtml(rule.tag)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    }
+
+    // Initial analysis
+    analyze();
+  </script>
+</body>
+</html>

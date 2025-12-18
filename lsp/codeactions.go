@@ -348,7 +348,7 @@ func (s *Server) fixEmptyTest(doc *Document, diag protocol.Diagnostic) []protoco
 
 	// Build insertion text with parameters and return fields
 	var lines []string
-	
+
 	// Add parameters
 	for _, param := range query.Params {
 		lines = append(lines, fmt.Sprintf("\t\t$%s: ", param))

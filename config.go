@@ -130,3 +130,15 @@ func LoadConfigFile(path string) (*Config, error) {
 
 	return &cfg, nil
 }
+
+// CreateDatabase creates a database connection from the config.
+func (c *Config) CreateDatabase() (Database, error) {
+	switch {
+	case c.Neo4j != nil:
+		return NewDatabase(DatabaseNeo4j, c.Neo4j)
+	case c.Postgres != nil:
+		return NewDatabase(DatabasePostgres, c.Postgres)
+	default:
+		return nil, ErrConfigNotFound
+	}
+}

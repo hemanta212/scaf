@@ -23,6 +23,7 @@ func main() {
 			fmtCommand(),
 			testCommand(),
 			generateCommand(),
+			schemaCommand(),
 		},
 	}
 

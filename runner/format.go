@@ -129,19 +129,19 @@ type jsonError struct {
 }
 
 type jsonEvent struct {
-	Time     string       `json:"time"`
-	Action   string       `json:"action"`
-	ID       string       `json:"id"`
-	Suite    string       `json:"suite,omitempty"`
-	Path     string       `json:"path"`
-	Test     string       `json:"test,omitempty"`
-	Elapsed  float64      `json:"elapsed,omitempty"`
-	Output   string       `json:"output,omitempty"`
-	Short    string       `json:"short,omitempty"`
-	Errors   []jsonError  `json:"errors,omitempty"`
-	Field    string       `json:"field,omitempty"`
-	Expected any          `json:"expected,omitempty"`
-	Actual   any          `json:"actual,omitempty"`
+	Time     string      `json:"time"`
+	Action   string      `json:"action"`
+	ID       string      `json:"id"`
+	Suite    string      `json:"suite,omitempty"`
+	Path     string      `json:"path"`
+	Test     string      `json:"test,omitempty"`
+	Elapsed  float64     `json:"elapsed,omitempty"`
+	Output   string      `json:"output,omitempty"`
+	Short    string      `json:"short,omitempty"`
+	Errors   []jsonError `json:"errors,omitempty"`
+	Field    string      `json:"field,omitempty"`
+	Expected any         `json:"expected,omitempty"`
+	Actual   any         `json:"actual,omitempty"`
 }
 
 // Format outputs a JSON event.
@@ -256,5 +256,3 @@ func (j *JSONFormatter) Summary(result *Result) error {
 		Results: results,
 	})
 }
-
-

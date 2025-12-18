@@ -193,7 +193,7 @@ GetUser {
 	if !fieldLabels["name"] && !fieldLabels["email"] {
 		t.Errorf("Expected return field completions, got: %v", fieldLabels)
 	}
-	
+
 	// Let's also test with prefix filtering by making second request after 'n'
 	resultWithPrefix, err := server.Completion(ctx, &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -615,11 +615,11 @@ GetUser {
 	// For testing completion, we need valid syntax that still has imports.
 	// We'll request completion on a line that has "fixtures." pattern
 	// where the file still parses correctly
-	
+
 	// The original content should parse correctly, so let's work with it
 	// Instead, we'll test completion at the end of a line where we type "fixtures."
 	// But we need the imports to be recognized first
-	
+
 	// Let's verify the document has the import by triggering import alias completion
 	importAliasResult, err := server.Completion(ctx, &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{

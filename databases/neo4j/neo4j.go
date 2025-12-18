@@ -215,30 +215,52 @@ func splitStatements(query string) []string {
 		return false
 	}
 
-	isComplete := func(s string) bool {
+	isComplete := func(s string, nextLine string) bool {
 		upper := strings.ToUpper(s)
-		// Has RETURN clause
+		nextUpper := strings.ToUpper(strings.TrimSpace(nextLine))
+
+		// Has RETURN clause - this is definitively complete
 		if strings.Contains(upper, "RETURN ") || strings.HasSuffix(upper, "RETURN") {
 			return true
 		}
-		// Is a write-only statement (CREATE, DELETE, etc. without needing RETURN)
-		for _, kw := range writeKeywords {
-			if strings.Contains(upper, kw) {
-				return true
+
+		// If next line is CREATE/MERGE, don't split - they may share variable bindings
+		// Only split if next line is MATCH (starting a new read cycle)
+		if strings.HasPrefix(nextUpper, "CREATE") || strings.HasPrefix(nextUpper, "MERGE") {
+			return false
+		}
+
+		// MATCH followed by write is complete if next line starts a new MATCH
+		startsWithRead := strings.HasPrefix(upper, "MATCH") || strings.HasPrefix(upper, "OPTIONAL")
+		if startsWithRead && strings.HasPrefix(nextUpper, "MATCH") {
+			for _, kw := range writeKeywords {
+				if strings.Contains(upper, kw) {
+					return true
+				}
 			}
 		}
 
 		return false
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
 
+		// Look ahead to next non-empty line
+		nextLine := ""
+		for j := i + 1; j < len(lines); j++ {
+			if t := strings.TrimSpace(lines[j]); t != "" {
+				nextLine = t
+				break
+			}
+		}
+
 		// Check if this line starts a new statement AND previous is complete
-		if isStarter(trimmed) && current.Len() > 0 && isComplete(current.String()) {
+		// Pass trimmed as the "next line" since that's what would start the new statement
+		if isStarter(trimmed) && current.Len() > 0 && isComplete(current.String(), trimmed) {
 			stmt := strings.TrimSpace(current.String())
 			if stmt != "" {
 				statements = append(statements, stmt)
@@ -252,6 +274,7 @@ func splitStatements(query string) []string {
 		}
 
 		current.WriteString(line)
+		_ = nextLine // may be used for future lookahead
 	}
 
 	// Don't forget the last statement
@@ -320,9 +343,140 @@ func flattenValue(result map[string]any, key string, value any) {
 	}
 }
 
+// IntrospectSchema extracts the database schema from Neo4j.
+func (d *Database) IntrospectSchema(ctx context.Context) (*scaf.Schema, error) {
+	schema := &scaf.Schema{
+		Models: make(map[string]*scaf.ModelSchema),
+	}
+
+	// Get node properties
+	nodeProps, err := d.Execute(ctx, `
+		CALL db.schema.nodeTypeProperties()
+		YIELD nodeType, propertyName, propertyTypes, mandatory
+		RETURN nodeType, propertyName, propertyTypes, mandatory
+		ORDER BY nodeType, propertyName
+	`, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node properties: %w", err)
+	}
+
+	for _, row := range nodeProps {
+		nodeType := extractLabel(row["nodeType"])
+		propName, _ := row["propertyName"].(string)
+		propTypes, _ := row["propertyTypes"].([]any)
+		mandatory, _ := row["mandatory"].(bool)
+
+		if nodeType == "" || propName == "" {
+			continue
+		}
+
+		if schema.Models[nodeType] == nil {
+			schema.Models[nodeType] = &scaf.ModelSchema{
+				Fields: make(map[string]*scaf.FieldSchema),
+			}
+		}
+
+		schema.Models[nodeType].Fields[propName] = &scaf.FieldSchema{
+			Type:     mapNeo4jType(propTypes),
+			Required: mandatory,
+		}
+	}
+
+	// Get relationship types and add as empty models
+	relProps, err := d.Execute(ctx, `
+		CALL db.schema.relTypeProperties()
+		YIELD relType, propertyName, propertyTypes, mandatory
+		RETURN DISTINCT relType
+	`, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relationship types: %w", err)
+	}
+
+	for _, row := range relProps {
+		relType := extractRelType(row["relType"])
+		if relType == "" {
+			continue
+		}
+		modelName := toCamelCase(relType)
+		if schema.Models[modelName] == nil {
+			schema.Models[modelName] = &scaf.ModelSchema{}
+		}
+	}
+
+	return schema, nil
+}
+
+// extractLabel extracts label name from nodeType like `["User"]` or `:User`.
+func extractLabel(v any) string {
+	switch t := v.(type) {
+	case string:
+		// Format: `:`User`` or `:"User"` or `:User`
+		s := strings.TrimPrefix(t, ":")
+		s = strings.Trim(s, `"`)
+		s = strings.Trim(s, "`")
+		return s
+	case []any:
+		if len(t) > 0 {
+			if s, ok := t[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// extractRelType extracts relationship type from relType like `:"AUTHORED"`.
+func extractRelType(v any) string {
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	s = strings.TrimPrefix(s, ":")
+	s = strings.Trim(s, `"`)
+	s = strings.Trim(s, "`")
+	return s
+}
+
+// mapNeo4jType converts Neo4j property types to scaf types.
+func mapNeo4jType(types []any) string {
+	if len(types) == 0 {
+		return "any"
+	}
+	t, ok := types[0].(string)
+	if !ok {
+		return "any"
+	}
+	switch {
+	case strings.Contains(t, "Long"), strings.Contains(t, "Integer"):
+		return "int"
+	case strings.Contains(t, "Double"), strings.Contains(t, "Float"):
+		return "float"
+	case strings.Contains(t, "Boolean"):
+		return "bool"
+	case strings.Contains(t, "String"):
+		return "string"
+	case strings.Contains(t, "List"):
+		return "[]string"
+	default:
+		return "any"
+	}
+}
+
+// toCamelCase converts SNAKE_CASE to CamelCase.
+func toCamelCase(s string) string {
+	parts := strings.Split(strings.ToLower(s), "_")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 // Compile-time interface checks.
 var (
 	_ scaf.Database              = (*Database)(nil)
 	_ scaf.TransactionalDatabase = (*Database)(nil)
 	_ scaf.DatabaseTransaction   = (*Transaction)(nil)
+	_ scaf.SchemaIntrospector    = (*Database)(nil)
 )

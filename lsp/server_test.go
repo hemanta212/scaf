@@ -902,7 +902,7 @@ GetUser {
 		if docSym, ok := sym.(protocol.DocumentSymbol); ok {
 			symbolNames[docSym.Name] = true
 			t.Logf("Symbol: %s (%s) - %s", docSym.Name, docSym.Kind, docSym.Detail)
-			
+
 			// Check nested symbols for GetUser scope
 			if docSym.Name == "GetUser" && docSym.Kind == protocol.SymbolKindClass {
 				for _, child := range docSym.Children {
@@ -1251,9 +1251,9 @@ Q {
 	// Line 5: test "nested test" {}
 
 	expectations := map[string]uint32{
-		"scaf.runScope:Q":                   2, // Q scope at line 2 (0-indexed)
-		"scaf.runTest:Q/first test":         3, // first test at line 3
-		"scaf.runGroup:Q/my group":          4, // group at line 4
+		"scaf.runScope:Q":                     2, // Q scope at line 2 (0-indexed)
+		"scaf.runTest:Q/first test":           3, // first test at line 3
+		"scaf.runGroup:Q/my group":            4, // group at line 4
 		"scaf.runTest:Q/my group/nested test": 5, // nested test at line 5
 	}
 

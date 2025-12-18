@@ -67,8 +67,8 @@ func generateCommand() *cli.Command {
 				Aliases: []string{"s"},
 				Usage:   "path to schema HCL file (e.g., .scaf-schema.hcl)",
 			},
-			},
-			Action: runGenerate,
+		},
+		Action: runGenerate,
 	}
 }
 

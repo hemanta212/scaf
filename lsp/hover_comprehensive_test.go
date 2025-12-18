@@ -118,7 +118,7 @@ GetUser {
 
 		// Assert expression - variable
 		{"assert_expr_var", 18, 11, []string{"variable", "u"}},
-		
+
 		// Assert expression - property
 		{"assert_expr_prop", 18, 13, []string{"property", "u.age"}},
 

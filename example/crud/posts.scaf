@@ -1,0 +1,134 @@
+// Post CRUD operations - imports users fixtures
+import fixtures "./shared/fixtures"
+
+fn CreatePost(id, title, content, authorId, createdAt) `
+MATCH (u:User {id: $authorId})
+CREATE (p:Post {id: $id, title: $title, content: $content, createdAt: $createdAt})
+CREATE (u)-[:AUTHORED]->(p)
+RETURN p.id, p.title, p.content
+`
+
+fn GetPostById(id) `
+MATCH (p:Post {id: $id})
+OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+RETURN p.id, p.title, p.content, author.name as authorName
+`
+
+fn GetPostsByAuthor(authorId) `
+MATCH (u:User {id: $authorId})-[:AUTHORED]->(p:Post)
+RETURN p.id, p.title, p.content
+ORDER BY p.createdAt DESC
+`
+
+fn ListPosts() `
+MATCH (p:Post)
+OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+RETURN p.id, p.title, author.name as authorName
+ORDER BY p.createdAt DESC
+`
+
+fn UpdatePost(id, title, content) `
+MATCH (p:Post {id: $id})
+SET p.title = $title, p.content = $content
+RETURN p.id, p.title, p.content
+`
+
+fn DeletePost(id) `
+MATCH (p:Post {id: $id})
+DETACH DELETE p
+RETURN count(p) as deleted
+`
+
+fn CountPosts() `
+MATCH (p:Post)
+RETURN count(p) as count
+`
+
+fn CountRelationships() `
+MATCH ()-[r:AUTHORED]->()
+RETURN count(r) as count
+`
+
+// Chain: clear -> create users -> create posts
+setup {
+	fixtures
+	fixtures.CreateUsers()
+	fixtures.CreatePosts()
+}
+teardown `MATCH (n) DETACH DELETE n`
+
+GetPostById {
+	test "finds post with author" {
+		$id: 1
+		p.title: "Hello World"
+		authorName: "Alice"
+	}
+
+	test "returns null for non-existent post" {
+		$id: 999
+		p.id: null
+		p.title: null
+	}
+}
+
+GetPostsByAuthor {
+	test "gets Alice's posts" {
+		$authorId: 1
+		p.title: "Learning Neo4j"
+	}
+
+	test "gets Bob's posts" {
+		$authorId: 2
+		p.title: "Bob's Post"
+	}
+}
+
+CountPosts {
+	test "counts all posts" {
+		count: 3
+	}
+}
+
+CountRelationships {
+	test "has authored relationships" {
+		count: 3
+	}
+}
+
+CreatePost {
+	test "creates post linked to author" {
+		$id: 10
+		$title: "New Post"
+		$content: "Some content here"
+		$authorId: 1
+		$createdAt: 1700001000
+
+		p.id: 10
+		p.title: "New Post"
+	}
+}
+
+UpdatePost {
+	test "updates post title and content" {
+		$id: 1
+		$title: "Hello World (Updated)"
+		$content: "Updated content"
+
+		p.title: "Hello World (Updated)"
+		p.content: "Updated content"
+	}
+}
+
+DeletePost {
+	test "deletes existing post" {
+		$id: 3
+		deleted: 1
+	}
+}
+
+ListPosts {
+	test "lists all posts with authors" {
+		p.title: "Bob's Post"
+		authorName: "Bob"
+	}
+}

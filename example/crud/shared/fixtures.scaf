@@ -1,0 +1,52 @@
+// Shared fixtures for CRUD example
+// Layered setup: users -> posts -> comments
+
+fn CreateUser(id, name, email, createdAt) `
+CREATE (u:User {id: $id, name: $name, email: $email, createdAt: $createdAt})
+`
+
+fn CreateUsers() `
+CREATE (alice:User {id: 1, name: "Alice", email: "alice@example.com", createdAt: 1700000000})
+CREATE (bob:User {id: 2, name: "Bob", email: "bob@example.com", createdAt: 1700000001})
+CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", createdAt: 1700000002})
+`
+
+fn CreatePost(id, title, content, authorId, createdAt) `
+MATCH (u:User {id: $authorId})
+CREATE (p:Post {id: $id, title: $title, content: $content, createdAt: $createdAt})
+CREATE (u)-[:AUTHORED]->(p)
+`
+
+fn CreatePosts() `
+MATCH (alice:User {id: 1}), (bob:User {id: 2})
+CREATE (p1:Post {id: 1, title: "Hello World", content: "My first post!", createdAt: 1700000100})
+CREATE (p2:Post {id: 2, title: "Learning Neo4j", content: "Graph databases are cool", createdAt: 1700000200})
+CREATE (p3:Post {id: 3, title: "Bob's Post", content: "Hi from Bob", createdAt: 1700000300})
+CREATE (alice)-[:AUTHORED]->(p1)
+CREATE (alice)-[:AUTHORED]->(p2)
+CREATE (bob)-[:AUTHORED]->(p3)
+`
+
+fn CreateComment(id, text, authorId, postId, createdAt) `
+MATCH (u:User {id: $authorId}), (p:Post {id: $postId})
+CREATE (c:Comment {id: $id, text: $text, createdAt: $createdAt})
+CREATE (u)-[:WROTE]->(c)
+CREATE (c)-[:ON_POST]->(p)
+`
+
+fn CreateComments() `
+MATCH (alice:User {id: 1}), (bob:User {id: 2}), (p1:Post {id: 1})
+CREATE (c1:Comment {id: 1, text: "Great post!", createdAt: 1700000150})
+CREATE (c2:Comment {id: 2, text: "Thanks for sharing", createdAt: 1700000160})
+CREATE (c3:Comment {id: 3, text: "I agree!", createdAt: 1700000170})
+CREATE (bob)-[:WROTE]->(c1)
+CREATE (alice)-[:WROTE]->(c2)
+CREATE (bob)-[:WROTE]->(c3)
+CREATE (c1)-[:ON_POST]->(p1)
+CREATE (c2)-[:ON_POST]->(p1)
+CREATE (c3)-[:ON_POST]->(p1)
+`
+
+setup `
+MATCH (n) DETACH DELETE n
+`

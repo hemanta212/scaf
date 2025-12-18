@@ -1,0 +1,148 @@
+// Comment CRUD operations - imports posts fixtures (which includes users)
+import fixtures "./shared/fixtures"
+
+fn CreateComment(id, text, authorId, postId, createdAt) `
+MATCH (u:User {id: $authorId}), (p:Post {id: $postId})
+CREATE (c:Comment {id: $id, text: $text, createdAt: $createdAt})
+CREATE (u)-[:WROTE]->(c)
+CREATE (p)-[:HAS]->(c)
+RETURN c.id, c.text
+`
+
+fn GetCommentById(id) `
+MATCH (c:Comment {id: $id})
+OPTIONAL MATCH (author:User)-[:WROTE]->(c)
+OPTIONAL MATCH (post:Post)-[:HAS]->(c)
+RETURN c.id, c.text, author.name as authorName, post.title as postTitle
+`
+
+fn GetCommentsByPost(postId) `
+MATCH (p:Post {id: $postId})-[:HAS]->(c:Comment)
+OPTIONAL MATCH (author:User)-[:WROTE]->(c)
+RETURN c.id, c.text, author.name as authorName
+ORDER BY c.createdAt ASC
+`
+
+fn GetCommentsByUser(userId) `
+MATCH (u:User {id: $userId})-[:WROTE]->(c:Comment)
+OPTIONAL MATCH (p:Post)-[:HAS]->(c)
+RETURN c.id, c.text, p.title as postTitle
+ORDER BY c.createdAt DESC
+`
+
+fn UpdateComment(id, text) `
+MATCH (c:Comment {id: $id})
+SET c.text = $text
+RETURN c.id, c.text
+`
+
+fn DeleteComment(id) `
+MATCH (c:Comment {id: $id})
+DETACH DELETE c
+RETURN count(c) as deleted
+`
+
+fn CountCommentsByPost(postId) `
+MATCH (p:Post {id: $postId})-[:HAS]->(c:Comment)
+RETURN count(c) as count
+`
+
+fn CreateReply(id, text, authorId, parentId, createdAt) `
+MATCH (u:User {id: $authorId}), (parent:Comment {id: $parentId})
+CREATE (c:Comment {id: $id, text: $text, createdAt: $createdAt})
+CREATE (u)-[:WROTE]->(c)
+CREATE (c)-[:REPLIES]->(parent)
+RETURN c.id, c.text
+`
+
+fn GetReplies(commentId) `
+MATCH (reply:Comment)-[:REPLIES]->(c:Comment {id: $commentId})
+OPTIONAL MATCH (author:User)-[:WROTE]->(reply)
+RETURN reply.id, reply.text, author.name as authorName
+ORDER BY reply.createdAt ASC
+`
+
+fn CountReplies(commentId) `
+MATCH (reply:Comment)-[:REPLIES]->(c:Comment {id: $commentId})
+RETURN count(reply) as count
+`
+
+// Full chain: clear -> users -> posts -> comments
+setup {
+	fixtures
+	fixtures.CreateUsers()
+	fixtures.CreatePosts()
+	fixtures.CreateComments()
+}
+teardown `MATCH (n) DETACH DELETE n`
+
+GetCommentById {
+	test "finds comment with author and post" {
+		$id: 1
+		c.text: "Great post!"
+		authorName: "Bob"
+		postTitle: "Hello World"
+	}
+
+	test "returns null for non-existent comment" {
+		$id: 999
+		c.id: null
+		c.text: null
+	}
+}
+
+GetCommentsByPost {
+	test "gets all comments on post" {
+		$postId: 1
+		c.text: "Great post!"
+		authorName: "Bob"
+	}
+}
+
+GetCommentsByUser {
+	test "gets Bob's comments" {
+		$userId: 2
+		c.text: "I agree!"
+	}
+
+	test "gets Alice's comments" {
+		$userId: 1
+		c.text: "Thanks for sharing"
+	}
+}
+
+CountCommentsByPost {
+	test "counts comments on post" {
+		$postId: 1
+		count: 3
+	}
+}
+
+CreateComment {
+	test "creates comment linked to author and post" {
+		$id: 10
+		$text: "New comment"
+		$authorId: 1
+		$postId: 1
+		$createdAt: 1700001000
+
+		c.id: 10
+		c.text: "New comment"
+	}
+}
+
+UpdateComment {
+	test "updates comment text" {
+		$id: 1
+		$text: "Updated comment!"
+
+		c.text: "Updated comment!"
+	}
+}
+
+DeleteComment {
+	test "deletes existing comment" {
+		$id: 3
+		deleted: 1
+	}
+}

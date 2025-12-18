@@ -1,0 +1,127 @@
+// User CRUD operations
+import fixtures "./shared/fixtures"
+
+fn CreateUser(id, name, email, createdAt) `
+CREATE (u:User {id: $id, name: $name, email: $email, createdAt: $createdAt})
+RETURN u.id, u.name, u.email
+`
+
+fn GetUserById(id) `
+MATCH (u:User {id: $id})
+RETURN u.id, u.name, u.email, u.createdAt
+`
+
+fn GetUserByEmail(email) `
+MATCH (u:User {email: $email})
+RETURN u.id, u.name, u.email
+`
+
+fn ListUsers() `
+MATCH (u:User)
+RETURN u.id, u.name, u.email
+ORDER BY u.createdAt DESC
+`
+
+fn UpdateUser(id, name, email) `
+MATCH (u:User {id: $id})
+SET u.name = $name, u.email = $email
+RETURN u.id, u.name, u.email
+`
+
+fn DeleteUser(id) `
+MATCH (u:User {id: $id})
+DETACH DELETE u
+RETURN count(u) as deleted
+`
+
+fn CountUsers() `
+MATCH (u:User)
+RETURN count(u) as count
+`
+
+setup {
+	fixtures
+	fixtures.CreateUsers()
+}
+teardown `MATCH (n) DETACH DELETE n`
+
+GetUserById {
+	test "finds Alice by id" {
+		$id: 1
+		u.name: "Alice"
+		u.email: "alice@example.com"
+	}
+
+	test "finds Bob by id" {
+		$id: 2
+		u.name: "Bob"
+		u.email: "bob@example.com"
+	}
+
+	test "returns null for non-existent user" {
+		$id: 999
+		u.id: null
+		u.name: null
+	}
+}
+
+GetUserByEmail {
+	test "finds user by email" {
+		$email: "alice@example.com"
+		u.name: "Alice"
+		u.id: 1
+	}
+
+	test "returns null for non-existent email" {
+		$email: "nobody@example.com"
+		u.name: null
+	}
+}
+
+CountUsers {
+	test "counts all users" {
+		count: 3
+	}
+}
+
+CreateUser {
+	test "creates new user" {
+		$id: 10
+		$name: "Dave"
+		$email: "dave@example.com"
+		$createdAt: 1700000010
+
+		u.id: 10
+		u.name: "Dave"
+		u.email: "dave@example.com"
+	}
+}
+
+UpdateUser {
+	test "updates user name and email" {
+		$id: 1
+		$name: "Alice Smith"
+		$email: "alice.smith@example.com"
+
+		u.name: "Alice Smith"
+		u.email: "alice.smith@example.com"
+	}
+}
+
+DeleteUser {
+	test "deletes existing user" {
+		$id: 3
+		deleted: 1
+	}
+
+	test "delete non-existent user returns 0" {
+		$id: 999
+		deleted: 0
+	}
+}
+
+ListUsers {
+	test "lists all users ordered by createdAt desc" {
+		u.name: "Charlie"
+	}
+}

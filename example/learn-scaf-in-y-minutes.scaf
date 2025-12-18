@@ -1,0 +1,399 @@
+// Learn scaf in Y Minutes
+// =======================
+// scaf is a DSL for writing declarative database tests.
+// You define queries, then write tests that specify inputs and expected outputs.
+// Tests run in transactions that rollback - no cleanup needed.
+
+// ============================================================================
+// COMMENTS
+// ============================================================================
+
+// Single-line comments start with //
+// There are no multi-line comments
+
+// ============================================================================
+// IMPORTS
+// ============================================================================
+
+// Import other .scaf files to reuse their queries and setup
+import fixtures "./shared/fixtures"          // import with alias
+import "./other/module"                       // import without alias (uses filename)
+
+// ============================================================================
+// FUNCTION DEFINITIONS (Queries)
+// ============================================================================
+
+// Functions define reusable database queries
+// Syntax: fn Name(params) `query body`
+
+fn GetUser(userId) `
+  MATCH (u:User {id: $userId})
+  RETURN u.name, u.age, u.email
+`
+
+// Parameters can have type annotations (optional, defaults to 'any')
+fn GetUserTyped(userId: string) `
+  MATCH (u:User {id: $userId})
+  RETURN u.name, u.age
+`
+
+// Supported types: string, int, float64, bool, any
+// Nullable types use ? suffix
+fn FindUser(name: string, age: int?) `
+  MATCH (u:User {name: $name})
+  WHERE u.age = $age OR $age IS NULL
+  RETURN u
+`
+
+// Array types: [type]
+fn GetUsersByIds(ids: [string]) `
+  MATCH (u:User) WHERE u.id IN $ids
+  RETURN u.name
+`
+
+// Map types: {keyType: valueType}
+fn CreateWithMeta(data: {string: any}) `
+  CREATE (n:Node $data)
+  RETURN n
+`
+
+// Multi-line params with trailing comma allowed
+fn CreateUser(
+  id: string,
+  name: string,
+  email: string,
+  age: int?,      // trailing comma OK
+) `
+  CREATE (u:User {id: $id, name: $name, email: $email, age: $age})
+  RETURN u
+`
+
+// Function with no params
+fn CountAllNodes() `
+  MATCH (n) RETURN count(n) as total
+`
+
+// ============================================================================
+// GLOBAL SETUP & TEARDOWN
+// ============================================================================
+
+// Setup runs before all tests in this file
+// Can be: inline query, module reference, function call, or block
+
+setup `
+  MATCH (n) DETACH DELETE n
+  CREATE (:User {id: 1, name: "Alice", age: 30})
+  CREATE (:User {id: 2, name: "Bob", age: 25})
+`
+
+// Or reference imported module's setup
+// setup fixtures
+
+// Or call a specific function
+// setup fixtures.CreateUsers()
+
+// Or use a block for multiple setup steps
+// setup {
+//   fixtures                           // run module's setup clause
+//   fixtures.CreateUser(id: 1, name: "Test")
+//   `CREATE (:Extra)`                  // inline query
+// }
+
+// Teardown runs after all tests (optional - tests rollback anyway)
+teardown `
+  MATCH (n) DETACH DELETE n
+`
+
+// ============================================================================
+// FUNCTION SCOPES (Test Suites)
+// ============================================================================
+
+// Tests are organized under function scopes
+// FunctionName { ... tests ... }
+
+GetUser {
+  // Scope-level setup (runs before each test in this scope)
+  setup `CREATE (:Post {authorId: 1})`
+  
+  // Scope-level teardown
+  teardown `MATCH (p:Post) DELETE p`
+
+  // -------------------------------------------------------------------------
+  // BASIC TESTS
+  // -------------------------------------------------------------------------
+  
+  test "finds user by id" {
+    // Input parameters start with $
+    $userId: 1
+    
+    // Expected outputs use dot notation for returned columns
+    u.name: "Alice"
+    u.age: 30
+    u.email: null     // expect null
+  }
+
+  test "user not found returns null" {
+    $userId: 999
+    u.name: null
+    u.age: null
+  }
+
+  // -------------------------------------------------------------------------
+  // TEST-LEVEL SETUP
+  // -------------------------------------------------------------------------
+  
+  test "with test-specific setup" {
+    // Setup just for this test
+    setup `CREATE (:User {id: 99, name: "Temp"})`
+    
+    $userId: 99
+    u.name: "Temp"
+  }
+
+  test "setup from imported module" {
+    setup fixtures.CreateUser(id: "test-1", name: "Imported", email: "x@y.com", age: 40, verified: true)
+    
+    $userId: "test-1"
+    u.name: "Imported"
+  }
+
+  // -------------------------------------------------------------------------
+  // GROUPS
+  // -------------------------------------------------------------------------
+  
+  // Groups organize related tests with optional shared setup
+  group "edge cases" {
+    setup `CREATE (:User {id: 100, name: "Edge"})`
+    
+    test "handles edge case" {
+      $userId: 100
+      u.name: "Edge"
+    }
+    
+    // Groups can nest
+    group "null handling" {
+      test "null age" {
+        $userId: 100
+        u.age: null
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // ASSERTIONS
+  // -------------------------------------------------------------------------
+  
+  group "assertions" {
+    // Shorthand: single assertion without braces
+    test "user is adult" {
+      $userId: 1
+      assert (u.age >= 18)
+    }
+
+    // Block form: multiple conditions
+    test "multiple assertions" {
+      $userId: 1
+      u.name: "Alice"
+      
+      assert {
+        (u.age >= 18)
+        (u.age < 100)
+        (u.name != "")
+      }
+    }
+
+    // Complex expressions (uses expr-lang syntax)
+    test "complex expression" {
+      $userId: 1
+      
+      assert (u.age > 18 && u.age < 50)
+      assert (len(u.name) > 0)
+    }
+
+    // String operators and functions
+    test "string checks" {
+      $userId: 1
+      
+      assert {
+        (u.email contains "@")        // operator syntax
+        (u.name startsWith "A")
+        (u.name endsWith "e")
+        (len(u.email) > 5)            // function syntax
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // QUERY ASSERTIONS
+  // -------------------------------------------------------------------------
+  
+  group "query assertions" {
+    // Assert with inline query
+    test "inline query assertion" {
+      $userId: 1
+      u.name: "Alice"
+      
+      assert `MATCH (u:User) RETURN count(u) as cnt` {
+        (cnt >= 2)
+      }
+    }
+
+    // Assert with named function
+    test "named query assertion" {
+      $userId: 1
+      
+      assert CountAllNodes() {
+        (total > 0)
+      }
+    }
+
+    // Assert with function + params
+    test "parameterized query assertion" {
+      $userId: 1
+      
+      assert CreateUser(id: "temp", name: "New", email: "new@x.com", age: 20) {
+        (u.name == "New")
+        (u.age == 20)
+      }
+    }
+
+    // Field references: pass values from main query to assert query
+    test "field reference in assertion" {
+      $userId: 1
+      u.name: "Alice"
+      
+      // u.age comes from GetUser result, passed to another query
+      assert FindUser(name: u.name, age: u.age) {
+        (u != null)
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // EXPRESSIONS & WHERE CONSTRAINTS
+  // -------------------------------------------------------------------------
+  
+  group "expressions" {
+    // Input can be an expression (evaluated at runtime)
+    test "expression as input" {
+      $userId: (1 + 0)
+      u.name: "Alice"
+    }
+
+    // Where constraints validate generated/random values
+    test "where constraint" {
+      $userId: 1
+      
+      // Expression with constraint: value must satisfy condition
+      u.age: (30) where (u.age >= 18 && u.age <= 100)
+    }
+  }
+}
+
+// ============================================================================
+// MULTIPLE FUNCTION SCOPES
+// ============================================================================
+
+// Each function can have its own test scope
+CountAllNodes {
+  test "counts nodes" {
+    assert (total >= 2)
+  }
+  
+  test "with extra setup" {
+    setup `CREATE (:Temp) CREATE (:Temp)`
+    assert (total >= 4)
+  }
+}
+
+CreateUser {
+  test "creates and returns user" {
+    $id: "new-user"
+    $name: "NewUser"
+    $email: "new@example.com"
+    $age: 25
+    
+    u.name: "NewUser"
+    u.email: "new@example.com"
+  }
+}
+
+// ============================================================================
+// VALUE TYPES
+// ============================================================================
+
+GetUser {
+  group "value types" {
+    test "all value types" {
+      // Strings
+      $userId: "user-1"
+      
+      // Numbers (integers and floats)
+      u.age: 30
+      u.score: 95.5
+      
+      // Booleans
+      u.active: true
+      u.deleted: false
+      
+      // Null
+      u.middleName: null
+      
+      // Lists
+      u.tags: ["admin", "user"]
+      u.scores: [1, 2, 3]
+      
+      // Maps/Objects
+      u.meta: {key: "value", count: 42}
+      
+      // Nested structures
+      u.config: {
+        settings: {
+          theme: "dark",
+          notifications: true,
+        },
+        tags: ["a", "b"],
+      }
+    }
+  }
+}
+
+// ============================================================================
+// EXPR-LANG REFERENCE (for assertions)
+// ============================================================================
+// 
+// Operators:
+//   Arithmetic: + - * / % **
+//   Comparison: == != < > <= >=
+//   Logical: && || !
+//   String: contains, startsWith, endsWith, matches (regex)
+//
+// Functions:
+//   len(x)           - length of string/array/map
+//   upper(s)         - uppercase string
+//   lower(s)         - lowercase string
+//   trim(s)          - trim whitespace
+//   split(s, sep)    - split string
+//   join(arr, sep)   - join array
+//   keys(map)        - map keys
+//   values(map)      - map values
+//   all(arr, pred)   - all elements match predicate
+//   any(arr, pred)   - any element matches predicate
+//   filter(arr, pred)- filter elements
+//   map(arr, fn)     - transform elements
+//
+// Ternary: condition ? trueVal : falseVal
+// Nil coalescing: value ?? default
+// Optional chaining: obj?.field
+//
+// See: https://expr-lang.org/docs/language-definition
+
+// ============================================================================
+// RUNNING TESTS
+// ============================================================================
+//
+// scaf test                    # run all .scaf files
+// scaf test file.scaf          # run specific file
+// scaf test -v                 # verbose output
+// scaf fmt file.scaf           # format file
+// scaf generate file.scaf      # generate Go test code

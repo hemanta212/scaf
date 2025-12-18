@@ -12,7 +12,7 @@ import (
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/language"
-	"github.com/rlch/scaf/language/go"
+	golang "github.com/rlch/scaf/language/go"
 	"github.com/urfave/cli/v3"
 
 	// Register bindings and dialects.
@@ -222,9 +222,19 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		packageName: packageName,
 	}
 
-	// Process each file
+	// Group files by output directory
+	groups := make(map[string][]string)
 	for _, inputFile := range files {
-		if err := generateFile(inputFile, opts); err != nil {
+		outDir := outputDir
+		if outDir == "" {
+			outDir = filepath.Dir(inputFile)
+		}
+		groups[outDir] = append(groups[outDir], inputFile)
+	}
+
+	// Process each group: merge suites and generate once per output dir
+	for outDir, groupFiles := range groups {
+		if err := generateMergedFiles(outDir, groupFiles, opts); err != nil {
 			return err
 		}
 	}
@@ -240,6 +250,79 @@ type generateOptions struct {
 	schema      *analysis.TypeSchema
 	outputDir   string
 	packageName string
+}
+
+// generateMergedFiles parses all files in a group, merges their suites, and generates once.
+func generateMergedFiles(outputDir string, inputFiles []string, opts *generateOptions) error {
+	var merged scaf.File
+
+	for _, inputFile := range inputFiles {
+		data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", inputFile, err)
+		}
+
+		suite, err := scaf.Parse(data)
+		if err != nil {
+			return fmt.Errorf("parsing %s: %w", inputFile, err)
+		}
+
+		// Merge into combined suite
+		merged.Imports = append(merged.Imports, suite.Imports...)
+		merged.Functions = append(merged.Functions, suite.Functions...)
+		merged.Scopes = append(merged.Scopes, suite.Scopes...)
+		// Setup/Teardown: keep first non-nil (or could warn on conflicts)
+		if merged.Setup == nil && suite.Setup != nil {
+			merged.Setup = suite.Setup
+		}
+		if merged.Teardown == nil && suite.Teardown != nil {
+			merged.Teardown = suite.Teardown
+		}
+	}
+
+	// Determine package name (default: directory name)
+	packageName := opts.packageName
+	if packageName == "" {
+		packageName = filepath.Base(outputDir)
+		packageName = strings.ReplaceAll(packageName, "-", "")
+		packageName = strings.ReplaceAll(packageName, ".", "")
+		if packageName == "" {
+			packageName = "main"
+		}
+	}
+
+	goCtx := &golang.Context{
+		GenerateContext: language.GenerateContext{
+			Suite:         &merged,
+			QueryAnalyzer: opts.analyzer,
+			Schema:        opts.schema,
+			OutputDir:     outputDir,
+		},
+		PackageName: packageName,
+		Binding:     opts.binding,
+	}
+
+	files, err := opts.goLang.GenerateWithContext(goCtx)
+	if err != nil {
+		return fmt.Errorf("generating code: %w", err)
+	}
+
+	for filename, content := range files {
+		if content == nil {
+			continue
+		}
+
+		outPath := filepath.Join(outputDir, filename)
+
+		err := os.WriteFile(outPath, content, 0o644) //nolint:gosec // G306: output file permissions are fine
+		if err != nil {
+			return fmt.Errorf("writing %s: %w", outPath, err)
+		}
+
+		fmt.Printf("wrote %s\n", outPath)
+	}
+
+	return nil
 }
 
 func generateFile(inputFile string, opts *generateOptions) error {

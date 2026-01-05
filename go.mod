@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
-	github.com/rlch/neogo v0.0.0
+	github.com/rlch/neogo v0.0.0-20251222040623-d3268222ee8e
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v3 v3.6.1
 	go.lsp.dev/jsonrpc2 v0.10.0
@@ -20,9 +20,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/rlch/neogo => ../neogo
-
-replace github.com/alecthomas/participle/v2 => ../participle
+replace github.com/alecthomas/participle/v2 => github.com/rlch/participle/v2 v2.1.5-0.20251126160008-edf31da19af2
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

@@ -1,5 +1,5 @@
 // User CRUD operations
-import fixtures "./shared/fixtures"
+import fixtures "./fixtures"
 
 fn CreateUser(id, name, email, createdAt) `
 CREATE (u:User {id: $id, name: $name, email: $email, createdAt: $createdAt})
@@ -58,6 +58,12 @@ GetUserById {
 		u.email: "bob@example.com"
 	}
 
+	test "finds Charlie for delete" {
+		$id: 3
+		u.name: "Charlie"
+		u.email: "charlie@example.com"
+	}
+
 	test "returns null for non-existent user" {
 		$id: 999
 		u.id: null
@@ -72,6 +78,18 @@ GetUserByEmail {
 		u.id: 1
 	}
 
+	test "dave email not found" {
+		$email: "dave@example.com"
+		u.id: null
+		u.name: null
+	}
+
+	test "new email not taken" {
+		$email: "alice.smith@example.com"
+		u.id: null
+		u.name: null
+	}
+
 	test "returns null for non-existent email" {
 		$email: "nobody@example.com"
 		u.name: null
@@ -81,6 +99,10 @@ GetUserByEmail {
 CountUsers {
 	test "counts all users" {
 		count: 3
+	}
+
+	test "counts for create flow" {
+		count: 9
 	}
 }
 

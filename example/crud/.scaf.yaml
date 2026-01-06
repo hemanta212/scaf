@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/rlch/scaf/refs/heads/master/.scaf.schema.json
 
 neo4j:
-  uri: bolt://localhost:7689
+  uri: bolt://localhost:7696
   username: neo4j
   password: password
 
 generate:
   adapter: neogo
   schema: .scaf-schema.yaml
-  package: db
+  package: internal

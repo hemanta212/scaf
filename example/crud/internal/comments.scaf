@@ -1,5 +1,5 @@
 // Comment CRUD operations - imports posts fixtures (which includes users)
-import fixtures "./shared/fixtures"
+import fixtures "./fixtures"
 
 fn CreateComment(id, text, authorId, postId, createdAt) `
 MATCH (u:User {id: $authorId}), (p:Post {id: $postId})

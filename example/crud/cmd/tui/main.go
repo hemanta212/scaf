@@ -11,148 +11,149 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/example/crud/cmd/crud-tui/service"
+	"github.com/rlch/scaf"
+	service "github.com/rlch/scaf/example/crud/internal"
 )
 
 // Twitter/X Dark Mode Color Palette
 var (
 	// Core colors
-	colorBlack      = lipgloss.Color("#000000")
-	colorDarkBg     = lipgloss.Color("#15202B") // Twitter dark blue bg
-	colorDarkerBg   = lipgloss.Color("#192734") // Slightly lighter for cards
-	colorBorder     = lipgloss.Color("#38444D") // Muted border
-	colorDimText    = lipgloss.Color("#8899A6") // Secondary text
-	colorText       = lipgloss.Color("#E7E9EA") // Primary text
-	colorWhite      = lipgloss.Color("#FFFFFF")
-	colorBlue       = lipgloss.Color("#1D9BF0") // Twitter blue
-	colorGreen      = lipgloss.Color("#00BA7C") // Success green
-	colorRed        = lipgloss.Color("#F4212E") // Error red
-	colorLightBlue  = lipgloss.Color("#8ECDF8") // Hover/selected blue
-	colorReplyLine  = lipgloss.Color("#2F3336") // Reply thread line
+	colorBlack     = lipgloss.Color("#000000")
+	colorDarkBg    = lipgloss.Color("#15202B") // Twitter dark blue bg
+	colorDarkerBg  = lipgloss.Color("#192734") // Slightly lighter for cards
+	colorBorder    = lipgloss.Color("#38444D") // Muted border
+	colorDimText   = lipgloss.Color("#8899A6") // Secondary text
+	colorText      = lipgloss.Color("#E7E9EA") // Primary text
+	colorWhite     = lipgloss.Color("#FFFFFF")
+	colorBlue      = lipgloss.Color("#1D9BF0") // Twitter blue
+	colorGreen     = lipgloss.Color("#00BA7C") // Success green
+	colorRed       = lipgloss.Color("#F4212E") // Error red
+	colorLightBlue = lipgloss.Color("#8ECDF8") // Hover/selected blue
+	colorReplyLine = lipgloss.Color("#2F3336") // Reply thread line
 )
 
 // Styles
 var (
 	// App container - full dark bg
 	appStyle = lipgloss.NewStyle().
-		Background(colorDarkBg)
+			Background(colorDarkBg)
 
 	// Header bar style
 	headerStyle = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Bold(true).
-		Padding(1, 2).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderBottom(true).
-		BorderForeground(colorBorder)
+			Foreground(colorWhite).
+			Bold(true).
+			Padding(1, 2).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderBottom(true).
+			BorderForeground(colorBorder)
 
 	// Tweet/Post card style
 	postCardStyle = lipgloss.NewStyle().
-		Padding(1, 2).
-		MarginBottom(0).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderBottom(true).
-		BorderForeground(colorBorder)
+			Padding(1, 2).
+			MarginBottom(0).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderBottom(true).
+			BorderForeground(colorBorder)
 
 	// Selected post highlight
 	selectedPostStyle = lipgloss.NewStyle().
-		Padding(1, 2).
-		MarginBottom(0).
-		Background(colorDarkerBg).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderBottom(true).
-		BorderForeground(colorBlue).
-		BorderLeft(true)
+				Padding(1, 2).
+				MarginBottom(0).
+				Background(colorDarkerBg).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderBottom(true).
+				BorderForeground(colorBlue).
+				BorderLeft(true)
 
 	// Username/handle style
 	usernameStyle = lipgloss.NewStyle().
-		Foreground(colorText).
-		Bold(true)
+			Foreground(colorText).
+			Bold(true)
 
 	handleStyle = lipgloss.NewStyle().
-		Foreground(colorDimText)
+			Foreground(colorDimText)
 
 	// Content text
 	contentStyle = lipgloss.NewStyle().
-		Foreground(colorText).
-		MarginTop(1)
+			Foreground(colorText).
+			MarginTop(1)
 
 	// Selected content with blue tint
 	selectedContentStyle = lipgloss.NewStyle().
-		Foreground(colorLightBlue).
-		MarginTop(1)
+				Foreground(colorLightBlue).
+				MarginTop(1)
 
 	// Timestamp style
 	timestampStyle = lipgloss.NewStyle().
-		Foreground(colorDimText).
-		MarginLeft(1)
+			Foreground(colorDimText).
+			MarginLeft(1)
 
 	// Action bar (replies, likes, etc)
 	actionBarStyle = lipgloss.NewStyle().
-		Foreground(colorDimText).
-		MarginTop(1)
+			Foreground(colorDimText).
+			MarginTop(1)
 
 	// Reply thread indicator
 	replyLineStyle = lipgloss.NewStyle().
-		Foreground(colorReplyLine).
-		SetString("│").
-		PaddingLeft(1)
+			Foreground(colorReplyLine).
+			SetString("│").
+			PaddingLeft(1)
 
 	// Input composer box
 	composerStyle = lipgloss.NewStyle().
-		Padding(1, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		MarginBottom(1)
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBlue).
+			MarginBottom(1)
 
 	composerLabelStyle = lipgloss.NewStyle().
-		Foreground(colorBlue).
-		Bold(true)
+				Foreground(colorBlue).
+				Bold(true)
 
 	composerInputStyle = lipgloss.NewStyle().
-		Foreground(colorText)
+				Foreground(colorText)
 
 	// Tab/navigation indicator
 	tabActiveStyle = lipgloss.NewStyle().
-		Foreground(colorBlue).
-		Bold(true).
-		Underline(true).
-		Padding(0, 1)
+			Foreground(colorBlue).
+			Bold(true).
+			Underline(true).
+			Padding(0, 1)
 
 	tabInactiveStyle = lipgloss.NewStyle().
-		Foreground(colorDimText).
-		Padding(0, 1)
+				Foreground(colorDimText).
+				Padding(0, 1)
 
 	// Status messages
 	errorMsgStyle = lipgloss.NewStyle().
-		Foreground(colorRed).
-		Bold(true).
-		Padding(0, 2)
+			Foreground(colorRed).
+			Bold(true).
+			Padding(0, 2)
 
 	successMsgStyle = lipgloss.NewStyle().
-		Foreground(colorGreen).
-		Bold(true).
-		Padding(0, 2)
+			Foreground(colorGreen).
+			Bold(true).
+			Padding(0, 2)
 
 	// Help footer
 	helpStyle = lipgloss.NewStyle().
-		Foreground(colorDimText).
-		Padding(1, 2).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderTop(true).
-		BorderForeground(colorBorder)
+			Foreground(colorDimText).
+			Padding(1, 2).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderTop(true).
+			BorderForeground(colorBorder)
 
 	// Empty state
 	emptyStyle = lipgloss.NewStyle().
-		Foreground(colorDimText).
-		Italic(true).
-		Padding(2, 2)
+			Foreground(colorDimText).
+			Italic(true).
+			Padding(2, 2)
 
 	// Cursor/caret for input
 	cursorStyle = lipgloss.NewStyle().
-		Foreground(colorBlue).
-		Bold(true).
-		SetString("▎")
+			Foreground(colorBlue).
+			Bold(true).
+			SetString("▎")
 )
 
 type view int
@@ -770,18 +771,7 @@ func truncate(s string, max int) string {
 }
 
 func main() {
-	uri := os.Getenv("NEO4J_URI")
-	if uri == "" {
-		uri = "bolt://localhost:7689"
-	}
-	user := os.Getenv("NEO4J_USER")
-	if user == "" {
-		user = "neo4j"
-	}
-	pass := os.Getenv("NEO4J_PASS")
-	if pass == "" {
-		pass = "password"
-	}
+	uri, user, pass := loadNeo4jConfig()
 
 	ctx := context.Background()
 	db, err := neogo.New(uri, neo4j.BasicAuth(user, pass, ""))
@@ -800,4 +790,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func loadNeo4jConfig() (uri, user, pass string) {
+	configPath, err := scaf.FindConfig(".")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: .scaf.yaml not found: %v\n", err)
+		os.Exit(1)
+	}
+	cfg, err := scaf.LoadConfigFile(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	if cfg.Neo4j == nil {
+		fmt.Fprintf(os.Stderr, "error: neo4j config not found in .scaf.yaml\n")
+		os.Exit(1)
+	}
+	return cfg.Neo4j.URI, cfg.Neo4j.Username, cfg.Neo4j.Password
 }

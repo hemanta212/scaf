@@ -1,5 +1,5 @@
 // Post CRUD operations - imports users fixtures
-import fixtures "./shared/fixtures"
+import fixtures "./fixtures"
 
 fn CreatePost(id, title, content, authorId, createdAt) `
 MATCH (u:User {id: $authorId})

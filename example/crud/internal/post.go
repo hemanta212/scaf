@@ -1,4 +1,4 @@
-package service
+package internal
 
 import (
 	"context"
@@ -6,16 +6,7 @@ import (
 	"time"
 
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/example/crud/db"
 )
-
-type Post struct {
-	ID         int    `json:"id"`
-	Title      string `json:"title"`
-	Content    string `json:"content"`
-	AuthorName string `json:"authorName,omitempty"`
-	CreatedAt  int    `json:"createdAt,omitempty"`
-}
 
 type PostService struct {
 	db neogo.Driver
@@ -30,7 +21,7 @@ func (s *PostService) Create(ctx context.Context, title, content string, authorI
 		return nil, fmt.Errorf("title is required")
 	}
 
-	count, err := db.CountPosts(ctx, s.db)
+	count, err := CountPosts(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("counting posts: %w", err)
 	}
@@ -40,7 +31,7 @@ func (s *PostService) Create(ctx context.Context, title, content string, authorI
 	}
 
 	createdAt := int(time.Now().Unix())
-	results, err := db.CreatePost(ctx, s.db, authorID, id, title, content, createdAt)
+	results, err := CreatePost(ctx, s.db, authorID, id, title, content, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating post: %w", err)
 	}
@@ -57,7 +48,7 @@ func (s *PostService) Create(ctx context.Context, title, content string, authorI
 }
 
 func (s *PostService) GetByID(ctx context.Context, id int) (*Post, error) {
-	results, err := db.GetPostById(ctx, s.db, id)
+	results, err := GetPostById(ctx, s.db, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting post: %w", err)
 	}
@@ -74,7 +65,7 @@ func (s *PostService) GetByID(ctx context.Context, id int) (*Post, error) {
 }
 
 func (s *PostService) List(ctx context.Context) ([]*Post, error) {
-	results, err := db.ListPosts(ctx, s.db)
+	results, err := ListPosts(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("listing posts: %w", err)
 	}
@@ -91,7 +82,7 @@ func (s *PostService) List(ctx context.Context) ([]*Post, error) {
 }
 
 func (s *PostService) GetByAuthor(ctx context.Context, authorID int) ([]*Post, error) {
-	results, err := db.GetPostsByAuthor(ctx, s.db, authorID)
+	results, err := GetPostsByAuthor(ctx, s.db, authorID)
 	if err != nil {
 		return nil, fmt.Errorf("getting posts: %w", err)
 	}
@@ -112,7 +103,7 @@ func (s *PostService) Update(ctx context.Context, id int, title, content string)
 		return nil, fmt.Errorf("title is required")
 	}
 
-	results, err := db.UpdatePost(ctx, s.db, id, title, content)
+	results, err := UpdatePost(ctx, s.db, id, title, content)
 	if err != nil {
 		return nil, fmt.Errorf("updating post: %w", err)
 	}
@@ -128,7 +119,7 @@ func (s *PostService) Update(ctx context.Context, id int, title, content string)
 }
 
 func (s *PostService) Delete(ctx context.Context, id int) error {
-	_, err := db.DeletePost(ctx, s.db, id)
+	_, err := DeletePost(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("deleting post: %w", err)
 	}

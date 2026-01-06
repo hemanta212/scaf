@@ -1,39 +1,32 @@
-.PHONY: all build tui cli bootstrap test clean schema generate
+.PHONY: all build tui bootstrap test clean schema generate run
 
 BINDIR := bin
 SCAF := ../../bin/scaf
 
 all: build
 
-build: tui cli
+build: tui
 
 tui:
 	@mkdir -p $(BINDIR)
-	go build -o $(BINDIR)/crud-tui ./cmd/crud-tui
-
-cli:
-	@mkdir -p $(BINDIR)
-	go build -o $(BINDIR)/crud ./cmd/crud
+	go build -o $(BINDIR)/crud-tui ./cmd/tui
 
 schema:
-	$(SCAF) schema
+	go run ./cmd/schema > .scaf-schema.yaml
+	cp .scaf-schema.yaml internal/
 	@echo "Generated .scaf-schema.yaml"
 
 generate:
-	$(SCAF) generate .
+	$(SCAF) generate internal/
 
 bootstrap:
-	./bootstrap.sh
+	./cmd/bootstrap/bootstrap.sh
 
 test:
-	$(SCAF) test .
+	$(SCAF) test internal/
 
-run-tui: tui
-	NEO4J_URI=bolt://localhost:7689 $(BINDIR)/crud-tui
-
-run-cli: cli
-	@echo "Usage: $(BINDIR)/crud user list"
-	@echo "       $(BINDIR)/crud comment list 1"
+run: tui
+	$(BINDIR)/crud-tui
 
 clean:
 	rm -rf $(BINDIR)

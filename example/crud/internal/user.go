@@ -1,4 +1,4 @@
-package service
+package internal
 
 import (
 	"context"
@@ -7,22 +7,18 @@ import (
 	"time"
 
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/example/crud/cmd/crud-tui/db"
 )
 
-type User struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	CreatedAt int    `json:"createdAt,omitempty"`
-}
-
 type UserService struct {
-	db neogo.Driver
+	db      neogo.Driver
+	nowFunc func() int
 }
 
 func NewUserService(driver neogo.Driver) *UserService {
-	return &UserService{db: driver}
+	return &UserService{
+		db:      driver,
+		nowFunc: func() int { return int(time.Now().Unix()) },
+	}
 }
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
@@ -35,7 +31,7 @@ func (s *UserService) Create(ctx context.Context, name, email string) (*User, er
 		return nil, fmt.Errorf("invalid email format")
 	}
 
-	existing, err := db.GetUserByEmail(ctx, s.db, email)
+	existing, err := GetUserByEmail(ctx, s.db, email)
 	if err != nil {
 		return nil, fmt.Errorf("checking email: %w", err)
 	}
@@ -43,7 +39,7 @@ func (s *UserService) Create(ctx context.Context, name, email string) (*User, er
 		return nil, fmt.Errorf("email already exists")
 	}
 
-	count, err := db.CountUsers(ctx, s.db)
+	count, err := CountUsers(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("counting users: %w", err)
 	}
@@ -52,8 +48,8 @@ func (s *UserService) Create(ctx context.Context, name, email string) (*User, er
 		id = count[0] + 1
 	}
 
-	createdAt := int(time.Now().Unix())
-	results, err := db.CreateUser(ctx, s.db, id, name, email, createdAt)
+	createdAt := s.nowFunc()
+	results, err := CreateUser(ctx, s.db, id, name, email, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
@@ -70,7 +66,7 @@ func (s *UserService) Create(ctx context.Context, name, email string) (*User, er
 }
 
 func (s *UserService) GetByID(ctx context.Context, id int) (*User, error) {
-	results, err := db.GetUserById(ctx, s.db, id)
+	results, err := GetUserById(ctx, s.db, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting user: %w", err)
 	}
@@ -87,7 +83,7 @@ func (s *UserService) GetByID(ctx context.Context, id int) (*User, error) {
 }
 
 func (s *UserService) List(ctx context.Context) ([]*User, error) {
-	results, err := db.ListUsers(ctx, s.db)
+	results, err := ListUsers(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
@@ -111,7 +107,7 @@ func (s *UserService) Update(ctx context.Context, id int, name, email string) (*
 		return nil, fmt.Errorf("invalid email format")
 	}
 
-	existing, err := db.GetUserById(ctx, s.db, id)
+	existing, err := GetUserById(ctx, s.db, id)
 	if err != nil {
 		return nil, fmt.Errorf("checking user: %w", err)
 	}
@@ -120,7 +116,7 @@ func (s *UserService) Update(ctx context.Context, id int, name, email string) (*
 	}
 
 	if existing[0].Email != email {
-		dup, err := db.GetUserByEmail(ctx, s.db, email)
+		dup, err := GetUserByEmail(ctx, s.db, email)
 		if err != nil {
 			return nil, fmt.Errorf("checking email: %w", err)
 		}
@@ -129,7 +125,7 @@ func (s *UserService) Update(ctx context.Context, id int, name, email string) (*
 		}
 	}
 
-	results, err := db.UpdateUser(ctx, s.db, id, name, email)
+	results, err := UpdateUser(ctx, s.db, id, name, email)
 	if err != nil {
 		return nil, fmt.Errorf("updating user: %w", err)
 	}
@@ -145,7 +141,7 @@ func (s *UserService) Update(ctx context.Context, id int, name, email string) (*
 }
 
 func (s *UserService) Delete(ctx context.Context, id int) error {
-	existing, err := db.GetUserById(ctx, s.db, id)
+	existing, err := GetUserById(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("checking user: %w", err)
 	}
@@ -153,7 +149,7 @@ func (s *UserService) Delete(ctx context.Context, id int) error {
 		return fmt.Errorf("user not found")
 	}
 
-	_, err = db.DeleteUser(ctx, s.db, id)
+	_, err = DeleteUser(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("deleting user: %w", err)
 	}

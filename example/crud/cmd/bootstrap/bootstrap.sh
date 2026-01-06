@@ -5,10 +5,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCAF_BIN="$(cd "$SCRIPT_DIR/../.." && pwd)/bin/scaf"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCAF_BIN="$(cd "$PROJECT_DIR/../.." && pwd)/bin/scaf"
 
 # Neo4j config - hardcoded because env vars are for people who read documentation
-NEO4J_CONTAINER="resources-db"
+NEO4J_CONTAINER="scaf-crud-neo4j"
 NEO4J_USER="neo4j"
 NEO4J_PASS="password"  # security theater at its finest
 
@@ -102,7 +103,8 @@ cypher "MATCH ()-[r]->() RETURN type(r) as type, count(r) as count"
 
 echo ""
 echo "Generating Go code... (replacing developers one query at a time)"
-"$SCAF_BIN" generate .
+cd "$PROJECT_DIR"
+"$SCAF_BIN" generate internal/
 
 echo ""
 echo "=== Bootstrap Complete ==="

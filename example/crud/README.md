@@ -4,15 +4,13 @@ Users/Posts/Comments CRUD example demonstrating scaf's capabilities.
 
 ## Prerequisites
 
-Neo4j running on localhost:7689:
+Start Neo4j using docker-compose:
 
 ```bash
-# Using existing resources-db container or:
-docker run -d --name neo4j-test \
-  -p 7474:7474 -p 7689:7687 \
-  -e NEO4J_AUTH=neo4j/password \
-  neo4j:latest
+docker compose up -d
 ```
+
+This starts Neo4j on port 7696 (browser at 7478). Connection details are in `.scaf.yaml`.
 
 ## Quick Start
 
@@ -24,7 +22,7 @@ cd example/crud
 ./bootstrap.sh
 
 # Extract schema from database
-scaf schema
+make schema
 
 # Run tests
 scaf test .

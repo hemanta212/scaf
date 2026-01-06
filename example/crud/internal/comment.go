@@ -1,4 +1,4 @@
-package service
+package internal
 
 import (
 	"context"
@@ -6,16 +6,7 @@ import (
 	"time"
 
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/example/crud/db"
 )
-
-type Comment struct {
-	ID         int    `json:"id"`
-	Text       string `json:"text"`
-	AuthorName string `json:"authorName,omitempty"`
-	PostTitle  string `json:"postTitle,omitempty"`
-	CreatedAt  int    `json:"createdAt,omitempty"`
-}
 
 type CommentService struct {
 	db neogo.Driver
@@ -30,7 +21,7 @@ func (s *CommentService) Create(ctx context.Context, text string, authorID, post
 		return nil, fmt.Errorf("text is required")
 	}
 
-	count, err := db.CountCommentsByPost(ctx, s.db, postID)
+	count, err := CountCommentsByPost(ctx, s.db, postID)
 	if err != nil {
 		return nil, fmt.Errorf("counting comments: %w", err)
 	}
@@ -40,7 +31,7 @@ func (s *CommentService) Create(ctx context.Context, text string, authorID, post
 	}
 
 	createdAt := int(time.Now().Unix())
-	results, err := db.CreateComment(ctx, s.db, authorID, postID, id, text, createdAt)
+	results, err := CreateComment(ctx, s.db, authorID, postID, id, text, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating comment: %w", err)
 	}
@@ -56,7 +47,7 @@ func (s *CommentService) Create(ctx context.Context, text string, authorID, post
 }
 
 func (s *CommentService) GetByID(ctx context.Context, id int) (*Comment, error) {
-	results, err := db.GetCommentById(ctx, s.db, id)
+	results, err := GetCommentById(ctx, s.db, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting comment: %w", err)
 	}
@@ -73,7 +64,7 @@ func (s *CommentService) GetByID(ctx context.Context, id int) (*Comment, error) 
 }
 
 func (s *CommentService) GetByPost(ctx context.Context, postID int) ([]*Comment, error) {
-	results, err := db.GetCommentsByPost(ctx, s.db, postID)
+	results, err := GetCommentsByPost(ctx, s.db, postID)
 	if err != nil {
 		return nil, fmt.Errorf("getting comments: %w", err)
 	}
@@ -90,7 +81,7 @@ func (s *CommentService) GetByPost(ctx context.Context, postID int) ([]*Comment,
 }
 
 func (s *CommentService) GetByUser(ctx context.Context, userID int) ([]*Comment, error) {
-	results, err := db.GetCommentsByUser(ctx, s.db, userID)
+	results, err := GetCommentsByUser(ctx, s.db, userID)
 	if err != nil {
 		return nil, fmt.Errorf("getting comments: %w", err)
 	}
@@ -111,7 +102,7 @@ func (s *CommentService) Update(ctx context.Context, id int, text string) (*Comm
 		return nil, fmt.Errorf("text is required")
 	}
 
-	results, err := db.UpdateComment(ctx, s.db, id, text)
+	results, err := UpdateComment(ctx, s.db, id, text)
 	if err != nil {
 		return nil, fmt.Errorf("updating comment: %w", err)
 	}
@@ -126,7 +117,7 @@ func (s *CommentService) Update(ctx context.Context, id int, text string) (*Comm
 }
 
 func (s *CommentService) Delete(ctx context.Context, id int) error {
-	_, err := db.DeleteComment(ctx, s.db, id)
+	_, err := DeleteComment(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("deleting comment: %w", err)
 	}
@@ -138,7 +129,7 @@ func (s *CommentService) Reply(ctx context.Context, text string, authorID, paren
 		return nil, fmt.Errorf("text is required")
 	}
 
-	count, err := db.CountReplies(ctx, s.db, parentID)
+	count, err := CountReplies(ctx, s.db, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("counting replies: %w", err)
 	}
@@ -148,7 +139,7 @@ func (s *CommentService) Reply(ctx context.Context, text string, authorID, paren
 	}
 
 	createdAt := int(time.Now().Unix())
-	results, err := db.CreateReply(ctx, s.db, authorID, parentID, id, text, createdAt)
+	results, err := CreateReply(ctx, s.db, authorID, parentID, id, text, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating reply: %w", err)
 	}
@@ -164,7 +155,7 @@ func (s *CommentService) Reply(ctx context.Context, text string, authorID, paren
 }
 
 func (s *CommentService) GetReplies(ctx context.Context, commentID int) ([]*Comment, error) {
-	results, err := db.GetReplies(ctx, s.db, commentID)
+	results, err := GetReplies(ctx, s.db, commentID)
 	if err != nil {
 		return nil, fmt.Errorf("getting replies: %w", err)
 	}

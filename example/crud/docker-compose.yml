@@ -1,0 +1,16 @@
+services:
+  scaf-neo4j:
+    image: neo4j:5.26.0-enterprise
+    container_name: scaf-crud-neo4j
+    ports:
+      - 7696:7687
+      - 7478:7474
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+      - NEO4JLABS_PLUGINS=["apoc"]
+      - NEO4J_apoc_trigger_enabled=true
+      - apoc.export.file.enabled=true
+    volumes:
+      - ./neo4j/data:/data
+      - ./neo4j/logs:/logs

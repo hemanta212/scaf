@@ -5,8 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCAF_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SCAF_BIN="$SCAF_ROOT/bin/scaf"
+SCAF_BIN="$(cd "$SCRIPT_DIR/../.." && pwd)/bin/scaf"
 
 # Neo4j config - hardcoded because env vars are for people who read documentation
 NEO4J_CONTAINER="resources-db"
@@ -16,12 +15,6 @@ NEO4J_PASS="password"  # security theater at its finest
 echo "=== CRUD Example Bootstrap ==="
 echo "Preparing to mass-delete your data. You did back up, right? lol"
 echo ""
-
-# Build scaf if needed - because pre-built binaries are too mainstream
-if [ ! -f "$SCAF_BIN" ]; then
-    echo "Building scaf... (compiling Go is my cardio)"
-    (cd "$SCAF_ROOT" && make build)
-fi
 
 # Check if container exists - Docker: making "it works on my machine" everyone's problem
 if ! docker ps --format '{{.Names}}' | grep -q "^${NEO4J_CONTAINER}$"; then
@@ -37,8 +30,8 @@ cypher() {
     docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" "$1"
 }
 
-echo "Nuking existing data... (hope you weren't attached to it)"
-cypher "MATCH (n) DETACH DELETE n"
+echo "Nuking existing CRUD data... (hope you weren't attached to it)"
+cypher "MATCH (n) WHERE n:User OR n:Post OR n:Comment DETACH DELETE n"
 
 echo "Creating constraints... (because data integrity is not optional, even if your code quality is)"
 cypher "
@@ -108,11 +101,6 @@ echo "Relationships:"
 cypher "MATCH ()-[r]->() RETURN type(r) as type, count(r) as count"
 
 echo ""
-echo "Regenerating schema... (because YAML is how we suffer together)"
-cd "$SCRIPT_DIR"
-"$SCAF_BIN" schema
-
-echo ""
 echo "Generating Go code... (replacing developers one query at a time)"
 "$SCAF_BIN" generate .
 
@@ -122,6 +110,7 @@ echo "Your database is now full of fake people having fake conversations."
 echo "Just like Twitter, but with better data modeling."
 echo ""
 echo "Next steps:"
-echo "  scaf test .     # pray the tests pass"
-echo "  scaf generate . # when you inevitably change something"
-echo "  touch grass     # optional but recommended"
+echo "  make build        # build the TUI and CLI"
+echo "  make test         # pray the tests pass"
+echo "  make run-tui      # run the TUI"
+echo "  touch grass       # optional but recommended"

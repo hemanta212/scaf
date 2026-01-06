@@ -7,68 +7,6 @@ import (
 	"github.com/rlch/neogo"
 )
 
-type createUserResult struct {
-	ID int
-	Name string
-	Email string
-}
-
-type getUserByIdResult struct {
-	ID int
-	Name string
-	Email string
-	CreatedAt int
-}
-
-type getUserByEmailResult struct {
-	ID int
-	Name string
-	Email string
-}
-
-type listUsersResult struct {
-	ID int
-	Name string
-	Email string
-}
-
-type updateUserResult struct {
-	ID int
-	Name string
-	Email string
-}
-
-type createPostResult struct {
-	ID int
-	Title string
-	Content string
-}
-
-type getPostByIdResult struct {
-	ID int
-	Title string
-	Content string
-	AuthorName string
-}
-
-type getPostsByAuthorResult struct {
-	ID int
-	Title string
-	Content string
-}
-
-type listPostsResult struct {
-	ID int
-	Title string
-	AuthorName string
-}
-
-type updatePostResult struct {
-	ID int
-	Title string
-	Content string
-}
-
 type createCommentResult struct {
 	ID int
 	Text string
@@ -109,389 +47,66 @@ type getRepliesResult struct {
 	AuthorName string
 }
 
-func CreateUser(ctx context.Context, db neogo.Driver, id int, name string, email string, createdAt int) ([]*createUserResult, error) {
-	return createUserImpl(ctx, db, id, name, email, createdAt)
+type createPostResult struct {
+	ID int
+	Title string
+	Content string
 }
 
-var createUserImpl func(context.Context, neogo.Driver, int, string, string, int) ([]*createUserResult, error) = createUserProd
-
-func createUserProd(ctx context.Context, db neogo.Driver, id int, name string, email string, createdAt int) ([]*createUserResult, error) {
-	var rowsID []int
-	var rowsName []string
-	var rowsEmail []string
-	err := db.Exec().
-		Cypher(`CREATE (u:User {id: $id, name: $name, email: $email, createdAt: $createdAt})
-	RETURN u.id, u.name, u.email`).
-		RunWithParams(ctx, map[string]any{"id": id, "name": name, "email": email, "createdAt": createdAt}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*createUserResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &createUserResult{
-			ID: rowsID[i],
-			Name: rowsName[i],
-			Email: rowsEmail[i],
-		}
-	}
-	return results, nil
+type getPostByIdResult struct {
+	ID int
+	Title string
+	Content string
+	AuthorName string
 }
 
-func GetUserById(ctx context.Context, db neogo.Driver, id int) ([]*getUserByIdResult, error) {
-	return getUserByIdImpl(ctx, db, id)
+type getPostsByAuthorResult struct {
+	ID int
+	Title string
+	Content string
 }
 
-var getUserByIdImpl func(context.Context, neogo.Driver, int) ([]*getUserByIdResult, error) = getUserByIdProd
-
-func getUserByIdProd(ctx context.Context, db neogo.Driver, id int) ([]*getUserByIdResult, error) {
-	var rowsID []int
-	var rowsName []string
-	var rowsEmail []string
-	var rowsCreatedAt []int
-	err := db.Exec().
-		Cypher(`MATCH (u:User {id: $id})
-	RETURN u.id, u.name, u.email, u.createdAt`).
-		RunWithParams(ctx, map[string]any{"id": id}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail, "u.createdAt", &rowsCreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*getUserByIdResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &getUserByIdResult{
-			ID: rowsID[i],
-			Name: rowsName[i],
-			Email: rowsEmail[i],
-			CreatedAt: rowsCreatedAt[i],
-		}
-	}
-	return results, nil
+type listPostsResult struct {
+	ID int
+	Title string
+	AuthorName string
 }
 
-func GetUserByEmail(ctx context.Context, db neogo.Driver, email string) ([]*getUserByEmailResult, error) {
-	return getUserByEmailImpl(ctx, db, email)
+type updatePostResult struct {
+	ID int
+	Title string
+	Content string
 }
 
-var getUserByEmailImpl func(context.Context, neogo.Driver, string) ([]*getUserByEmailResult, error) = getUserByEmailProd
-
-func getUserByEmailProd(ctx context.Context, db neogo.Driver, email string) ([]*getUserByEmailResult, error) {
-	var rowsID []int
-	var rowsName []string
-	var rowsEmail []string
-	err := db.Exec().
-		Cypher(`MATCH (u:User {email: $email})
-	RETURN u.id, u.name, u.email`).
-		RunWithParams(ctx, map[string]any{"email": email}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*getUserByEmailResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &getUserByEmailResult{
-			ID: rowsID[i],
-			Name: rowsName[i],
-			Email: rowsEmail[i],
-		}
-	}
-	return results, nil
+type createUserResult struct {
+	ID int
+	Name string
+	Email string
 }
 
-func ListUsers(ctx context.Context, db neogo.Driver) ([]*listUsersResult, error) {
-	return listUsersImpl(ctx, db)
+type getUserByIdResult struct {
+	ID int
+	Name string
+	Email string
+	CreatedAt int
 }
 
-var listUsersImpl func(context.Context, neogo.Driver) ([]*listUsersResult, error) = listUsersProd
-
-func listUsersProd(ctx context.Context, db neogo.Driver) ([]*listUsersResult, error) {
-	var rowsID []int
-	var rowsName []string
-	var rowsEmail []string
-	err := db.Exec().
-		Cypher(`MATCH (u:User)
-	RETURN u.id, u.name, u.email
-	ORDER BY u.createdAt DESC`).
-		Run(ctx, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*listUsersResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &listUsersResult{
-			ID: rowsID[i],
-			Name: rowsName[i],
-			Email: rowsEmail[i],
-		}
-	}
-	return results, nil
+type getUserByEmailResult struct {
+	ID int
+	Name string
+	Email string
 }
 
-func UpdateUser(ctx context.Context, db neogo.Driver, id int, name string, email string) ([]*updateUserResult, error) {
-	return updateUserImpl(ctx, db, id, name, email)
+type listUsersResult struct {
+	ID int
+	Name string
+	Email string
 }
 
-var updateUserImpl func(context.Context, neogo.Driver, int, string, string) ([]*updateUserResult, error) = updateUserProd
-
-func updateUserProd(ctx context.Context, db neogo.Driver, id int, name string, email string) ([]*updateUserResult, error) {
-	var rowsID []int
-	var rowsName []string
-	var rowsEmail []string
-	err := db.Exec().
-		Cypher(`MATCH (u:User {id: $id})
-	SET u.name = $name, u.email = $email
-	RETURN u.id, u.name, u.email`).
-		RunWithParams(ctx, map[string]any{"id": id, "name": name, "email": email}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*updateUserResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &updateUserResult{
-			ID: rowsID[i],
-			Name: rowsName[i],
-			Email: rowsEmail[i],
-		}
-	}
-	return results, nil
-}
-
-func DeleteUser(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
-	return deleteUserImpl(ctx, db, id)
-}
-
-var deleteUserImpl func(context.Context, neogo.Driver, int) ([]int, error) = deleteUserProd
-
-func deleteUserProd(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
-	var rowsDeleted []int
-	err := db.Exec().
-		Cypher(`MATCH (u:User {id: $id})
-	DETACH DELETE u
-	RETURN count(u) as deleted`).
-		RunWithParams(ctx, map[string]any{"id": id}, "deleted", &rowsDeleted)
-	if err != nil {
-		return nil, err
-	}
-	return rowsDeleted, nil
-}
-
-func CountUsers(ctx context.Context, db neogo.Driver) ([]int, error) {
-	return countUsersImpl(ctx, db)
-}
-
-var countUsersImpl func(context.Context, neogo.Driver) ([]int, error) = countUsersProd
-
-func countUsersProd(ctx context.Context, db neogo.Driver) ([]int, error) {
-	var rowsCount []int
-	err := db.Exec().
-		Cypher(`MATCH (u:User)
-	RETURN count(u) as count`).
-		Run(ctx, "count", &rowsCount)
-	if err != nil {
-		return nil, err
-	}
-	return rowsCount, nil
-}
-
-func CreatePost(ctx context.Context, db neogo.Driver, authorId int, id int, title string, content string, createdAt int) ([]*createPostResult, error) {
-	return createPostImpl(ctx, db, authorId, id, title, content, createdAt)
-}
-
-var createPostImpl func(context.Context, neogo.Driver, int, int, string, string, int) ([]*createPostResult, error) = createPostProd
-
-func createPostProd(ctx context.Context, db neogo.Driver, authorId int, id int, title string, content string, createdAt int) ([]*createPostResult, error) {
-	var rowsID []int
-	var rowsTitle []string
-	var rowsContent []string
-	err := db.Exec().
-		Cypher(`MATCH (u:User {id: $authorId})
-	CREATE (p:Post {id: $id, title: $title, content: $content, createdAt: $createdAt})
-	CREATE (u)-[:AUTHORED]->(p)
-	RETURN p.id, p.title, p.content`).
-		RunWithParams(ctx, map[string]any{"authorId": authorId, "id": id, "title": title, "content": content, "createdAt": createdAt}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*createPostResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &createPostResult{
-			ID: rowsID[i],
-			Title: rowsTitle[i],
-			Content: rowsContent[i],
-		}
-	}
-	return results, nil
-}
-
-func GetPostById(ctx context.Context, db neogo.Driver, id int) ([]*getPostByIdResult, error) {
-	return getPostByIdImpl(ctx, db, id)
-}
-
-var getPostByIdImpl func(context.Context, neogo.Driver, int) ([]*getPostByIdResult, error) = getPostByIdProd
-
-func getPostByIdProd(ctx context.Context, db neogo.Driver, id int) ([]*getPostByIdResult, error) {
-	var rowsID []int
-	var rowsTitle []string
-	var rowsContent []string
-	var rowsAuthorName []string
-	err := db.Exec().
-		Cypher(`MATCH (p:Post {id: $id})
-	OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
-	RETURN p.id, p.title, p.content, author.name as authorName`).
-		RunWithParams(ctx, map[string]any{"id": id}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent, "authorName", &rowsAuthorName)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*getPostByIdResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &getPostByIdResult{
-			ID: rowsID[i],
-			Title: rowsTitle[i],
-			Content: rowsContent[i],
-			AuthorName: rowsAuthorName[i],
-		}
-	}
-	return results, nil
-}
-
-func GetPostsByAuthor(ctx context.Context, db neogo.Driver, authorId int) ([]*getPostsByAuthorResult, error) {
-	return getPostsByAuthorImpl(ctx, db, authorId)
-}
-
-var getPostsByAuthorImpl func(context.Context, neogo.Driver, int) ([]*getPostsByAuthorResult, error) = getPostsByAuthorProd
-
-func getPostsByAuthorProd(ctx context.Context, db neogo.Driver, authorId int) ([]*getPostsByAuthorResult, error) {
-	var rowsID []int
-	var rowsTitle []string
-	var rowsContent []string
-	err := db.Exec().
-		Cypher(`MATCH (u:User {id: $authorId})-[:AUTHORED]->(p:Post)
-	RETURN p.id, p.title, p.content
-	ORDER BY p.createdAt DESC`).
-		RunWithParams(ctx, map[string]any{"authorId": authorId}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*getPostsByAuthorResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &getPostsByAuthorResult{
-			ID: rowsID[i],
-			Title: rowsTitle[i],
-			Content: rowsContent[i],
-		}
-	}
-	return results, nil
-}
-
-func ListPosts(ctx context.Context, db neogo.Driver) ([]*listPostsResult, error) {
-	return listPostsImpl(ctx, db)
-}
-
-var listPostsImpl func(context.Context, neogo.Driver) ([]*listPostsResult, error) = listPostsProd
-
-func listPostsProd(ctx context.Context, db neogo.Driver) ([]*listPostsResult, error) {
-	var rowsID []int
-	var rowsTitle []string
-	var rowsAuthorName []string
-	err := db.Exec().
-		Cypher(`MATCH (p:Post)
-	OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
-	RETURN p.id, p.title, author.name as authorName
-	ORDER BY p.createdAt DESC`).
-		Run(ctx, "p.id", &rowsID, "p.title", &rowsTitle, "authorName", &rowsAuthorName)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*listPostsResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &listPostsResult{
-			ID: rowsID[i],
-			Title: rowsTitle[i],
-			AuthorName: rowsAuthorName[i],
-		}
-	}
-	return results, nil
-}
-
-func UpdatePost(ctx context.Context, db neogo.Driver, id int, title string, content string) ([]*updatePostResult, error) {
-	return updatePostImpl(ctx, db, id, title, content)
-}
-
-var updatePostImpl func(context.Context, neogo.Driver, int, string, string) ([]*updatePostResult, error) = updatePostProd
-
-func updatePostProd(ctx context.Context, db neogo.Driver, id int, title string, content string) ([]*updatePostResult, error) {
-	var rowsID []int
-	var rowsTitle []string
-	var rowsContent []string
-	err := db.Exec().
-		Cypher(`MATCH (p:Post {id: $id})
-	SET p.title = $title, p.content = $content
-	RETURN p.id, p.title, p.content`).
-		RunWithParams(ctx, map[string]any{"id": id, "title": title, "content": content}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*updatePostResult, len(rowsID))
-	for i := range rowsID {
-		results[i] = &updatePostResult{
-			ID: rowsID[i],
-			Title: rowsTitle[i],
-			Content: rowsContent[i],
-		}
-	}
-	return results, nil
-}
-
-func DeletePost(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
-	return deletePostImpl(ctx, db, id)
-}
-
-var deletePostImpl func(context.Context, neogo.Driver, int) ([]int, error) = deletePostProd
-
-func deletePostProd(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
-	var rowsDeleted []int
-	err := db.Exec().
-		Cypher(`MATCH (p:Post {id: $id})
-	DETACH DELETE p
-	RETURN count(p) as deleted`).
-		RunWithParams(ctx, map[string]any{"id": id}, "deleted", &rowsDeleted)
-	if err != nil {
-		return nil, err
-	}
-	return rowsDeleted, nil
-}
-
-func CountPosts(ctx context.Context, db neogo.Driver) ([]int, error) {
-	return countPostsImpl(ctx, db)
-}
-
-var countPostsImpl func(context.Context, neogo.Driver) ([]int, error) = countPostsProd
-
-func countPostsProd(ctx context.Context, db neogo.Driver) ([]int, error) {
-	var rowsCount []int
-	err := db.Exec().
-		Cypher(`MATCH (p:Post)
-	RETURN count(p) as count`).
-		Run(ctx, "count", &rowsCount)
-	if err != nil {
-		return nil, err
-	}
-	return rowsCount, nil
-}
-
-func CountRelationships(ctx context.Context, db neogo.Driver) ([]int, error) {
-	return countRelationshipsImpl(ctx, db)
-}
-
-var countRelationshipsImpl func(context.Context, neogo.Driver) ([]int, error) = countRelationshipsProd
-
-func countRelationshipsProd(ctx context.Context, db neogo.Driver) ([]int, error) {
-	var rowsCount []int
-	err := db.Exec().
-		Cypher(`MATCH ()-[r:AUTHORED]->()
-	RETURN count(r) as count`).
-		Run(ctx, "count", &rowsCount)
-	if err != nil {
-		return nil, err
-	}
-	return rowsCount, nil
+type updateUserResult struct {
+	ID int
+	Name string
+	Email string
 }
 
 func CreateComment(ctx context.Context, db neogo.Driver, authorId int, postId int, id int, text string, createdAt int) ([]*createCommentResult, error) {
@@ -750,6 +365,391 @@ func countRepliesProd(ctx context.Context, db neogo.Driver, commentId int) ([]in
 		Cypher(`MATCH (reply:Comment)-[:REPLIES]->(c:Comment {id: $commentId})
 	RETURN count(reply) as count`).
 		RunWithParams(ctx, map[string]any{"commentId": commentId}, "count", &rowsCount)
+	if err != nil {
+		return nil, err
+	}
+	return rowsCount, nil
+}
+
+func CreatePost(ctx context.Context, db neogo.Driver, authorId int, id int, title string, content string, createdAt int) ([]*createPostResult, error) {
+	return createPostImpl(ctx, db, authorId, id, title, content, createdAt)
+}
+
+var createPostImpl func(context.Context, neogo.Driver, int, int, string, string, int) ([]*createPostResult, error) = createPostProd
+
+func createPostProd(ctx context.Context, db neogo.Driver, authorId int, id int, title string, content string, createdAt int) ([]*createPostResult, error) {
+	var rowsID []int
+	var rowsTitle []string
+	var rowsContent []string
+	err := db.Exec().
+		Cypher(`MATCH (u:User {id: $authorId})
+	CREATE (p:Post {id: $id, title: $title, content: $content, createdAt: $createdAt})
+	CREATE (u)-[:AUTHORED]->(p)
+	RETURN p.id, p.title, p.content`).
+		RunWithParams(ctx, map[string]any{"authorId": authorId, "id": id, "title": title, "content": content, "createdAt": createdAt}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*createPostResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &createPostResult{
+			ID: rowsID[i],
+			Title: rowsTitle[i],
+			Content: rowsContent[i],
+		}
+	}
+	return results, nil
+}
+
+func GetPostById(ctx context.Context, db neogo.Driver, id int) ([]*getPostByIdResult, error) {
+	return getPostByIdImpl(ctx, db, id)
+}
+
+var getPostByIdImpl func(context.Context, neogo.Driver, int) ([]*getPostByIdResult, error) = getPostByIdProd
+
+func getPostByIdProd(ctx context.Context, db neogo.Driver, id int) ([]*getPostByIdResult, error) {
+	var rowsID []int
+	var rowsTitle []string
+	var rowsContent []string
+	var rowsAuthorName []string
+	err := db.Exec().
+		Cypher(`MATCH (p:Post {id: $id})
+	OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+	RETURN p.id, p.title, p.content, author.name as authorName`).
+		RunWithParams(ctx, map[string]any{"id": id}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent, "authorName", &rowsAuthorName)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*getPostByIdResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &getPostByIdResult{
+			ID: rowsID[i],
+			Title: rowsTitle[i],
+			Content: rowsContent[i],
+			AuthorName: rowsAuthorName[i],
+		}
+	}
+	return results, nil
+}
+
+func GetPostsByAuthor(ctx context.Context, db neogo.Driver, authorId int) ([]*getPostsByAuthorResult, error) {
+	return getPostsByAuthorImpl(ctx, db, authorId)
+}
+
+var getPostsByAuthorImpl func(context.Context, neogo.Driver, int) ([]*getPostsByAuthorResult, error) = getPostsByAuthorProd
+
+func getPostsByAuthorProd(ctx context.Context, db neogo.Driver, authorId int) ([]*getPostsByAuthorResult, error) {
+	var rowsID []int
+	var rowsTitle []string
+	var rowsContent []string
+	err := db.Exec().
+		Cypher(`MATCH (u:User {id: $authorId})-[:AUTHORED]->(p:Post)
+	RETURN p.id, p.title, p.content
+	ORDER BY p.createdAt DESC`).
+		RunWithParams(ctx, map[string]any{"authorId": authorId}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*getPostsByAuthorResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &getPostsByAuthorResult{
+			ID: rowsID[i],
+			Title: rowsTitle[i],
+			Content: rowsContent[i],
+		}
+	}
+	return results, nil
+}
+
+func ListPosts(ctx context.Context, db neogo.Driver) ([]*listPostsResult, error) {
+	return listPostsImpl(ctx, db)
+}
+
+var listPostsImpl func(context.Context, neogo.Driver) ([]*listPostsResult, error) = listPostsProd
+
+func listPostsProd(ctx context.Context, db neogo.Driver) ([]*listPostsResult, error) {
+	var rowsID []int
+	var rowsTitle []string
+	var rowsAuthorName []string
+	err := db.Exec().
+		Cypher(`MATCH (p:Post)
+	OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+	RETURN p.id, p.title, author.name as authorName
+	ORDER BY p.createdAt DESC`).
+		Run(ctx, "p.id", &rowsID, "p.title", &rowsTitle, "authorName", &rowsAuthorName)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*listPostsResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &listPostsResult{
+			ID: rowsID[i],
+			Title: rowsTitle[i],
+			AuthorName: rowsAuthorName[i],
+		}
+	}
+	return results, nil
+}
+
+func UpdatePost(ctx context.Context, db neogo.Driver, id int, title string, content string) ([]*updatePostResult, error) {
+	return updatePostImpl(ctx, db, id, title, content)
+}
+
+var updatePostImpl func(context.Context, neogo.Driver, int, string, string) ([]*updatePostResult, error) = updatePostProd
+
+func updatePostProd(ctx context.Context, db neogo.Driver, id int, title string, content string) ([]*updatePostResult, error) {
+	var rowsID []int
+	var rowsTitle []string
+	var rowsContent []string
+	err := db.Exec().
+		Cypher(`MATCH (p:Post {id: $id})
+	SET p.title = $title, p.content = $content
+	RETURN p.id, p.title, p.content`).
+		RunWithParams(ctx, map[string]any{"id": id, "title": title, "content": content}, "p.id", &rowsID, "p.title", &rowsTitle, "p.content", &rowsContent)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*updatePostResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &updatePostResult{
+			ID: rowsID[i],
+			Title: rowsTitle[i],
+			Content: rowsContent[i],
+		}
+	}
+	return results, nil
+}
+
+func DeletePost(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
+	return deletePostImpl(ctx, db, id)
+}
+
+var deletePostImpl func(context.Context, neogo.Driver, int) ([]int, error) = deletePostProd
+
+func deletePostProd(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
+	var rowsDeleted []int
+	err := db.Exec().
+		Cypher(`MATCH (p:Post {id: $id})
+	DETACH DELETE p
+	RETURN count(p) as deleted`).
+		RunWithParams(ctx, map[string]any{"id": id}, "deleted", &rowsDeleted)
+	if err != nil {
+		return nil, err
+	}
+	return rowsDeleted, nil
+}
+
+func CountPosts(ctx context.Context, db neogo.Driver) ([]int, error) {
+	return countPostsImpl(ctx, db)
+}
+
+var countPostsImpl func(context.Context, neogo.Driver) ([]int, error) = countPostsProd
+
+func countPostsProd(ctx context.Context, db neogo.Driver) ([]int, error) {
+	var rowsCount []int
+	err := db.Exec().
+		Cypher(`MATCH (p:Post)
+	RETURN count(p) as count`).
+		Run(ctx, "count", &rowsCount)
+	if err != nil {
+		return nil, err
+	}
+	return rowsCount, nil
+}
+
+func CountRelationships(ctx context.Context, db neogo.Driver) ([]int, error) {
+	return countRelationshipsImpl(ctx, db)
+}
+
+var countRelationshipsImpl func(context.Context, neogo.Driver) ([]int, error) = countRelationshipsProd
+
+func countRelationshipsProd(ctx context.Context, db neogo.Driver) ([]int, error) {
+	var rowsCount []int
+	err := db.Exec().
+		Cypher(`MATCH ()-[r:AUTHORED]->()
+	RETURN count(r) as count`).
+		Run(ctx, "count", &rowsCount)
+	if err != nil {
+		return nil, err
+	}
+	return rowsCount, nil
+}
+
+func CreateUser(ctx context.Context, db neogo.Driver, id int, name string, email string, createdAt int) ([]*createUserResult, error) {
+	return createUserImpl(ctx, db, id, name, email, createdAt)
+}
+
+var createUserImpl func(context.Context, neogo.Driver, int, string, string, int) ([]*createUserResult, error) = createUserProd
+
+func createUserProd(ctx context.Context, db neogo.Driver, id int, name string, email string, createdAt int) ([]*createUserResult, error) {
+	var rowsID []int
+	var rowsName []string
+	var rowsEmail []string
+	err := db.Exec().
+		Cypher(`CREATE (u:User {id: $id, name: $name, email: $email, createdAt: $createdAt})
+	RETURN u.id, u.name, u.email`).
+		RunWithParams(ctx, map[string]any{"id": id, "name": name, "email": email, "createdAt": createdAt}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*createUserResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &createUserResult{
+			ID: rowsID[i],
+			Name: rowsName[i],
+			Email: rowsEmail[i],
+		}
+	}
+	return results, nil
+}
+
+func GetUserById(ctx context.Context, db neogo.Driver, id int) ([]*getUserByIdResult, error) {
+	return getUserByIdImpl(ctx, db, id)
+}
+
+var getUserByIdImpl func(context.Context, neogo.Driver, int) ([]*getUserByIdResult, error) = getUserByIdProd
+
+func getUserByIdProd(ctx context.Context, db neogo.Driver, id int) ([]*getUserByIdResult, error) {
+	var rowsID []int
+	var rowsName []string
+	var rowsEmail []string
+	var rowsCreatedAt []int
+	err := db.Exec().
+		Cypher(`MATCH (u:User {id: $id})
+	RETURN u.id, u.name, u.email, u.createdAt`).
+		RunWithParams(ctx, map[string]any{"id": id}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail, "u.createdAt", &rowsCreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*getUserByIdResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &getUserByIdResult{
+			ID: rowsID[i],
+			Name: rowsName[i],
+			Email: rowsEmail[i],
+			CreatedAt: rowsCreatedAt[i],
+		}
+	}
+	return results, nil
+}
+
+func GetUserByEmail(ctx context.Context, db neogo.Driver, email string) ([]*getUserByEmailResult, error) {
+	return getUserByEmailImpl(ctx, db, email)
+}
+
+var getUserByEmailImpl func(context.Context, neogo.Driver, string) ([]*getUserByEmailResult, error) = getUserByEmailProd
+
+func getUserByEmailProd(ctx context.Context, db neogo.Driver, email string) ([]*getUserByEmailResult, error) {
+	var rowsID []int
+	var rowsName []string
+	var rowsEmail []string
+	err := db.Exec().
+		Cypher(`MATCH (u:User {email: $email})
+	RETURN u.id, u.name, u.email`).
+		RunWithParams(ctx, map[string]any{"email": email}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*getUserByEmailResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &getUserByEmailResult{
+			ID: rowsID[i],
+			Name: rowsName[i],
+			Email: rowsEmail[i],
+		}
+	}
+	return results, nil
+}
+
+func ListUsers(ctx context.Context, db neogo.Driver) ([]*listUsersResult, error) {
+	return listUsersImpl(ctx, db)
+}
+
+var listUsersImpl func(context.Context, neogo.Driver) ([]*listUsersResult, error) = listUsersProd
+
+func listUsersProd(ctx context.Context, db neogo.Driver) ([]*listUsersResult, error) {
+	var rowsID []int
+	var rowsName []string
+	var rowsEmail []string
+	err := db.Exec().
+		Cypher(`MATCH (u:User)
+	RETURN u.id, u.name, u.email
+	ORDER BY u.createdAt DESC`).
+		Run(ctx, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*listUsersResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &listUsersResult{
+			ID: rowsID[i],
+			Name: rowsName[i],
+			Email: rowsEmail[i],
+		}
+	}
+	return results, nil
+}
+
+func UpdateUser(ctx context.Context, db neogo.Driver, id int, name string, email string) ([]*updateUserResult, error) {
+	return updateUserImpl(ctx, db, id, name, email)
+}
+
+var updateUserImpl func(context.Context, neogo.Driver, int, string, string) ([]*updateUserResult, error) = updateUserProd
+
+func updateUserProd(ctx context.Context, db neogo.Driver, id int, name string, email string) ([]*updateUserResult, error) {
+	var rowsID []int
+	var rowsName []string
+	var rowsEmail []string
+	err := db.Exec().
+		Cypher(`MATCH (u:User {id: $id})
+	SET u.name = $name, u.email = $email
+	RETURN u.id, u.name, u.email`).
+		RunWithParams(ctx, map[string]any{"id": id, "name": name, "email": email}, "u.id", &rowsID, "u.name", &rowsName, "u.email", &rowsEmail)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*updateUserResult, len(rowsID))
+	for i := range rowsID {
+		results[i] = &updateUserResult{
+			ID: rowsID[i],
+			Name: rowsName[i],
+			Email: rowsEmail[i],
+		}
+	}
+	return results, nil
+}
+
+func DeleteUser(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
+	return deleteUserImpl(ctx, db, id)
+}
+
+var deleteUserImpl func(context.Context, neogo.Driver, int) ([]int, error) = deleteUserProd
+
+func deleteUserProd(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
+	var rowsDeleted []int
+	err := db.Exec().
+		Cypher(`MATCH (u:User {id: $id})
+	DETACH DELETE u
+	RETURN count(u) as deleted`).
+		RunWithParams(ctx, map[string]any{"id": id}, "deleted", &rowsDeleted)
+	if err != nil {
+		return nil, err
+	}
+	return rowsDeleted, nil
+}
+
+func CountUsers(ctx context.Context, db neogo.Driver) ([]int, error) {
+	return countUsersImpl(ctx, db)
+}
+
+var countUsersImpl func(context.Context, neogo.Driver) ([]int, error) = countUsersProd
+
+func countUsersProd(ctx context.Context, db neogo.Driver) ([]int, error) {
+	var rowsCount []int
+	err := db.Exec().
+		Cypher(`MATCH (u:User)
+	RETURN count(u) as count`).
+		Run(ctx, "count", &rowsCount)
 	if err != nil {
 		return nil, err
 	}

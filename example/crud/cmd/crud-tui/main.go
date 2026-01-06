@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/cmd/crud-tui/service"
+	"github.com/rlch/scaf/example/crud/cmd/crud-tui/service"
 )
 
 // Twitter/X Dark Mode Color Palette

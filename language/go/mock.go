@@ -413,6 +413,10 @@ func (m *mockGenerator) writeStructReturn(tc *TestCase, sig *FuncSignature, retu
 func (m *mockGenerator) findOutputValue(tc *TestCase, ret FuncReturn) string {
 	// Try exact match first
 	if val, ok := tc.Outputs[ret.Name]; ok {
+		// null in DSL becomes nil - use zero value for non-pointer types
+		if val == nil {
+			return zeroValue(ret.Type)
+		}
 		return goLiteral(val)
 	}
 
@@ -422,6 +426,10 @@ func (m *mockGenerator) findOutputValue(tc *TestCase, ret FuncReturn) string {
 		fieldName := parts[len(parts)-1]
 
 		if fieldName == ret.Name {
+			// null in DSL becomes nil - use zero value for non-pointer types
+			if val == nil {
+				return zeroValue(ret.Type)
+			}
 			return goLiteral(val)
 		}
 	}

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/rlch/neogo"
-	"github.com/rlch/scaf/cmd/crud-tui/db"
+	"github.com/rlch/scaf/example/crud/cmd/crud-tui/db"
 )
 
 type Comment struct {

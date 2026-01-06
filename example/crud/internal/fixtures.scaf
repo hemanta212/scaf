@@ -9,9 +9,9 @@ CREATE (charlie:User {id: 3, name: "Charlie", email: "charlie@example.com", crea
 
 fn CreatePosts() `
 MATCH (alice:User {id: 1}), (bob:User {id: 2})
-CREATE (p1:Post {id: 1, title: "Hello World", content: "My first post!", createdAt: 1700000100})
-CREATE (p2:Post {id: 2, title: "Learning Neo4j", content: "Graph databases are cool", createdAt: 1700000200})
-CREATE (p3:Post {id: 3, title: "Bob's Post", content: "Hi from Bob", createdAt: 1700000300})
+CREATE (p1:Post {id: 1, title: "Hello World", content: "Hello World", createdAt: 1700000100})
+CREATE (p2:Post {id: 2, title: "Learning Neo4j", content: "Learning Neo4j", createdAt: 1700000200})
+CREATE (p3:Post {id: 3, title: "Bob's Post", content: "Bob's Post", createdAt: 1700000300})
 CREATE (alice)-[:AUTHORED]->(p1)
 CREATE (alice)-[:AUTHORED]->(p2)
 CREATE (bob)-[:AUTHORED]->(p3)
@@ -30,6 +30,39 @@ CREATE (p1)-[:HAS]->(c2)
 CREATE (p1)-[:HAS]->(c3)
 `
 
-setup `
-MATCH (n) DETACH DELETE n
+fn CreateUser(id, name, email) `
+CREATE (:User {id: $id, name: $name, email: $email, createdAt: timestamp()})
 `
+
+fn CreatePost(id, authorId, content) `
+MATCH (u:User {id: $authorId})
+CREATE (p:Post {id: $id, content: $content, createdAt: timestamp()})
+CREATE (u)-[:AUTHORED]->(p)
+`
+
+fn CreateFollow(followerId, followeeId) `
+MATCH (a:User {id: $followerId}), (b:User {id: $followeeId})
+CREATE (a)-[:FOLLOWS {createdAt: timestamp()}]->(b)
+`
+
+fn CreateLike(userId, postId) `
+MATCH (u:User {id: $userId}), (p:Post {id: $postId})
+CREATE (u)-[:LIKED {createdAt: timestamp()}]->(p)
+`
+
+fn CreateSocialGraph() `
+MATCH (alice:User {id: 1}), (bob:User {id: 2}), (charlie:User {id: 3})
+CREATE (alice)-[:FOLLOWS]->(bob)
+CREATE (alice)-[:FOLLOWS]->(charlie)
+CREATE (bob)-[:FOLLOWS]->(alice)
+CREATE (charlie)-[:FOLLOWS]->(bob)
+`
+
+fn CreateEngagement() `
+MATCH (alice:User {id: 1}), (bob:User {id: 2})
+MATCH (p1:Post {id: 1}), (p2:Post {id: 2})
+CREATE (bob)-[:LIKED]->(p1)
+CREATE (alice)-[:LIKED]->(p2)
+`
+
+setup `MATCH (n) DETACH DELETE n`

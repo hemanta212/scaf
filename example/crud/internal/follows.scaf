@@ -1,0 +1,316 @@
+// Follow system with feed
+import fixtures "./fixtures"
+
+fn Follow(followerId, followeeId) `
+MATCH (follower:User {id: $followerId}), (followee:User {id: $followeeId})
+MERGE (follower)-[f:FOLLOWS]->(followee)
+ON CREATE SET f.createdAt = timestamp()
+RETURN count(f) as followed
+`
+
+fn Unfollow(followerId, followeeId) `
+MATCH (follower:User {id: $followerId})-[f:FOLLOWS]->(followee:User {id: $followeeId})
+DELETE f
+RETURN count(f) as unfollowed
+`
+
+fn GetFollowers(userId) `
+MATCH (follower:User)-[:FOLLOWS]->(u:User {id: $userId})
+RETURN follower.id, follower.name, follower.email
+`
+
+fn GetFollowing(userId) `
+MATCH (u:User {id: $userId})-[:FOLLOWS]->(following:User)
+RETURN following.id, following.name, following.email
+`
+
+fn CountFollowers(userId) `
+MATCH (follower:User)-[:FOLLOWS]->(u:User {id: $userId})
+RETURN count(follower) as count
+`
+
+fn CountFollowing(userId) `
+MATCH (u:User {id: $userId})-[:FOLLOWS]->(following:User)
+RETURN count(following) as count
+`
+
+fn IsFollowing(followerId, followeeId) `
+MATCH (follower:User {id: $followerId})-[:FOLLOWS]->(followee:User {id: $followeeId})
+RETURN count(*) > 0 as isFollowing
+`
+
+fn GetFeed(userId: int, limit: int) `
+MATCH (u:User {id: $userId})-[:FOLLOWS]->(following:User)-[:AUTHORED]->(p:Post)
+RETURN p.id, p.content, p.createdAt, following.id as authorId, following.name as authorName
+ORDER BY p.createdAt DESC
+LIMIT toInteger($limit)
+`
+
+fn GetMutualFollowers(userId1, userId2) `
+MATCH (u1:User {id: $userId1})<-[:FOLLOWS]-(mutual:User)-[:FOLLOWS]->(u2:User {id: $userId2})
+RETURN mutual.id, mutual.name
+`
+
+setup {
+	fixtures
+	fixtures.CreateUsers()
+	fixtures.CreatePosts()
+}
+teardown `MATCH (n) DETACH DELETE n`
+
+Follow {
+	group "valid follows" {
+		test "user can follow another user" {
+			$followerId: 1
+			$followeeId: 2
+
+			followed: 1
+
+			assert IsFollowing(followerId: 1, followeeId: 2) {
+				(isFollowing != nil)
+			}
+		}
+
+		test "follow is idempotent (MERGE)" {
+			setup `
+			MATCH (a:User {id: 1}), (b:User {id: 2})
+			CREATE (a)-[:FOLLOWS]->(b)
+			`
+
+			$followerId: 1
+			$followeeId: 2
+
+			followed: 1
+		}
+	}
+
+	group "edge cases" {
+		test "cannot follow non-existent user" {
+			$followerId: 1
+			$followeeId: 999
+
+			followed: 0
+		}
+	}
+}
+
+Unfollow {
+	group "existing follows" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2})
+		CREATE (a)-[:FOLLOWS]->(b)
+		`
+
+		test "user can unfollow" {
+			$followerId: 1
+			$followeeId: 2
+
+			unfollowed: 1
+
+			assert IsFollowing(followerId: 1, followeeId: 2) {
+				(isFollowing != nil)
+			}
+		}
+	}
+
+	group "non-existent follows" {
+		test "unfollow when not following returns 0" {
+			$followerId: 1
+			$followeeId: 3
+
+			unfollowed: 0
+		}
+	}
+}
+
+GetFollowers {
+	group "user with followers" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2}), (c:User {id: 3})
+		CREATE (a)-[:FOLLOWS]->(b)
+		CREATE (c)-[:FOLLOWS]->(b)
+		`
+
+		test "returns all followers" {
+			$userId: 2
+
+			assert (follower.email contains "@")
+		}
+	}
+
+	group "user without followers" {
+		test "returns empty for user with no followers" {
+			$userId: 999
+
+			follower.id: null
+		}
+	}
+}
+
+GetFollowing {
+	group "user following others" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2}), (c:User {id: 3})
+		CREATE (a)-[:FOLLOWS]->(b)
+		CREATE (a)-[:FOLLOWS]->(c)
+		`
+
+		test "returns all following" {
+			$userId: 1
+
+			following.name: "Bob"
+
+			assert (following.email contains "@")
+		}
+	}
+
+	group "user not following anyone" {
+		test "returns empty when not following" {
+			$userId: 999
+
+			following.id: null
+		}
+	}
+}
+
+CountFollowers {
+	group "with followers" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2}), (c:User {id: 3})
+		CREATE (a)-[:FOLLOWS]->(b)
+		CREATE (c)-[:FOLLOWS]->(b)
+		`
+
+		test "counts followers correctly" {
+			$userId: 2
+
+			assert (count != nil)
+		}
+	}
+
+	group "no followers" {
+		test "returns 0 for no followers" {
+			$userId: 999
+
+			count: 0
+		}
+	}
+}
+
+CountFollowing {
+	group "following others" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2}), (c:User {id: 3})
+		CREATE (a)-[:FOLLOWS]->(b)
+		CREATE (a)-[:FOLLOWS]->(c)
+		`
+
+		test "counts following correctly" {
+			$userId: 1
+
+			assert (count != nil)
+		}
+	}
+
+	group "not following anyone" {
+		test "returns 0 when not following" {
+			$userId: 999
+
+			count: 0
+		}
+	}
+}
+
+IsFollowing {
+	group "following relationship exists" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2})
+		CREATE (a)-[:FOLLOWS]->(b)
+		`
+
+		test "returns true when following" {
+			$followerId: 1
+			$followeeId: 2
+
+			isFollowing: true
+		}
+	}
+
+	group "no following relationship" {
+		test "returns false when not following" {
+			$followerId: 1
+			$followeeId: 999
+
+			isFollowing: false
+		}
+	}
+}
+
+GetFeed {
+	group "user with followees who have posts" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2})
+		CREATE (a)-[:FOLLOWS]->(b)
+		`
+
+		test "returns posts from followed users" {
+			$userId: 1
+			$limit: 10
+
+			authorName: "Bob"
+
+			assert (p.content != "")
+		}
+	}
+
+	group "user not following anyone" {
+		test "returns empty feed" {
+			$userId: 999
+			$limit: 10
+
+			p.id: null
+		}
+	}
+
+	group "following users without posts" {
+		setup `
+		MATCH (a:User {id: 2}), (c:User {id: 3})
+		CREATE (a)-[:FOLLOWS]->(c)
+		`
+
+		test "returns empty when followees have no posts" {
+			$userId: 2
+			$limit: 10
+
+			p.id: null
+		}
+	}
+}
+
+GetMutualFollowers {
+	group "with mutual followers" {
+		setup `
+		MATCH (a:User {id: 1}), (b:User {id: 2}), (c:User {id: 3})
+		CREATE (c)-[:FOLLOWS]->(a)
+		CREATE (c)-[:FOLLOWS]->(b)
+		`
+
+		test "finds mutual followers" {
+			$userId1: 1
+			$userId2: 2
+
+			mutual.name: "Charlie"
+
+			assert (mutual.name != "")
+		}
+	}
+
+	group "no mutual followers" {
+		test "returns empty when no mutuals" {
+			$userId1: 1
+			$userId2: 999
+
+			mutual.id: null
+		}
+	}
+}

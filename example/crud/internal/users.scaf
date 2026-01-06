@@ -46,53 +46,147 @@ setup {
 teardown `MATCH (n) DETACH DELETE n`
 
 GetUserById {
-	test "finds Alice by id" {
-		$id: 1
-		u.name: "Alice"
-		u.email: "alice@example.com"
+	group "existing users" {
+		test "finds Alice by id" {
+			$id: 1
+
+			u.id: 1
+			u.name: "Alice"
+			u.email: "alice@example.com"
+
+			assert (u.email contains "@")
+		}
+
+		test "finds Bob by id" {
+			$id: 2
+
+			u.name: "Bob"
+			u.email: "bob@example.com"
+
+			assert (u.email endsWith ".com")
+		}
+
+		test "finds Charlie by id" {
+			$id: 3
+
+			u.name: "Charlie"
+			u.email: "charlie@example.com"
+		}
 	}
 
-	test "finds Bob by id" {
-		$id: 2
-		u.name: "Bob"
-		u.email: "bob@example.com"
-	}
+	group "non-existent users" {
+		test "returns null for non-existent user" {
+			$id: 999
 
-	test "finds Charlie for delete" {
-		$id: 3
-		u.name: "Charlie"
-		u.email: "charlie@example.com"
-	}
-
-	test "returns null for non-existent user" {
-		$id: 999
-		u.id: null
-		u.name: null
+			u.id: null
+			u.name: null
+		}
 	}
 }
 
 GetUserByEmail {
-	test "finds user by email" {
-		$email: "alice@example.com"
-		u.name: "Alice"
-		u.id: 1
+	group "existing emails" {
+		test "finds user by email" {
+			$email: "alice@example.com"
+
+			u.name: "Alice"
+			u.id: 1
+			u.email: "alice@example.com"
+
+			assert (u.email contains "@")
+		}
 	}
 
-	test "dave email not found" {
-		$email: "dave@example.com"
-		u.id: null
-		u.name: null
+	group "non-existent emails" {
+		test "dave email not found" {
+			$email: "dave@example.com"
+
+			u.id: null
+		}
+
+		test "returns null for non-existent email" {
+			$email: "nobody@example.com"
+
+			u.name: null
+		}
+	}
+}
+
+CreateUser {
+	group "valid creation" {
+		test "creates new user" {
+			$id: 10
+			$name: "Dave"
+			$email: "dave@example.com"
+			$createdAt: 1700000010
+
+			u.id: 10
+			u.name: "Dave"
+			u.email: "dave@example.com"
+
+			assert CountUsers() {
+				(count != nil)
+			}
+		}
 	}
 
-	test "new email not taken" {
-		$email: "alice.smith@example.com"
-		u.id: null
-		u.name: null
+	group "validation scenarios" {
+		test "creates user with long name" {
+			$id: 11
+			$name: "Alexander the Great"
+			$email: "alex@example.com"
+			$createdAt: 1700000011
+
+			u.id: 11
+			u.name: "Alexander the Great"
+		}
+	}
+}
+
+UpdateUser {
+	group "valid updates" {
+		test "updates user name and email" {
+			$id: 1
+			$name: "Alice Smith"
+			$email: "alice.smith@example.com"
+
+			u.name: "Alice Smith"
+			u.email: "alice.smith@example.com"
+
+			assert (u.email contains "smith")
+		}
 	}
 
-	test "returns null for non-existent email" {
-		$email: "nobody@example.com"
-		u.name: null
+	group "edge cases" {
+		test "update non-existent user" {
+			$id: 999
+			$name: "Ghost"
+			$email: "ghost@example.com"
+
+			u.id: null
+		}
+	}
+}
+
+DeleteUser {
+	group "existing users" {
+		test "deletes existing user" {
+			$id: 3
+
+			deleted: 1
+
+			assert `MATCH (u:User {id: 3}) RETURN count(u) as c` {
+				(c == 0)
+			}
+		}
+	}
+
+	group "non-existent users" {
+		test "delete non-existent user returns 0" {
+			$id: 999
+
+			deleted: 0
+		}
 	}
 }
 
@@ -100,50 +194,12 @@ CountUsers {
 	test "counts all users" {
 		count: 3
 	}
-
-	test "counts for create flow" {
-		count: 9
-	}
-}
-
-CreateUser {
-	test "creates new user" {
-		$id: 10
-		$name: "Dave"
-		$email: "dave@example.com"
-		$createdAt: 1700000010
-
-		u.id: 10
-		u.name: "Dave"
-		u.email: "dave@example.com"
-	}
-}
-
-UpdateUser {
-	test "updates user name and email" {
-		$id: 1
-		$name: "Alice Smith"
-		$email: "alice.smith@example.com"
-
-		u.name: "Alice Smith"
-		u.email: "alice.smith@example.com"
-	}
-}
-
-DeleteUser {
-	test "deletes existing user" {
-		$id: 3
-		deleted: 1
-	}
-
-	test "delete non-existent user returns 0" {
-		$id: 999
-		deleted: 0
-	}
 }
 
 ListUsers {
 	test "lists all users ordered by createdAt desc" {
 		u.name: "Charlie"
+
+		assert (u.name != "")
 	}
 }

@@ -30,22 +30,22 @@ CREATE (p1)-[:HAS]->(c2)
 CREATE (p1)-[:HAS]->(c3)
 `
 
-fn CreateUser(id, name, email) `
+fn SeedUser(id, name, email) `
 CREATE (:User {id: $id, name: $name, email: $email, createdAt: timestamp()})
 `
 
-fn CreatePost(id, authorId, content) `
+fn SeedPost(id, authorId, content) `
 MATCH (u:User {id: $authorId})
 CREATE (p:Post {id: $id, content: $content, createdAt: timestamp()})
 CREATE (u)-[:AUTHORED]->(p)
 `
 
-fn CreateFollow(followerId, followeeId) `
+fn SeedFollow(followerId, followeeId) `
 MATCH (a:User {id: $followerId}), (b:User {id: $followeeId})
 CREATE (a)-[:FOLLOWS {createdAt: timestamp()}]->(b)
 `
 
-fn CreateLike(userId, postId) `
+fn SeedLike(userId, postId) `
 MATCH (u:User {id: $userId}), (p:Post {id: $postId})
 CREATE (u)-[:LIKED {createdAt: timestamp()}]->(p)
 `

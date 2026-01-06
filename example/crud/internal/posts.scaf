@@ -1,28 +1,52 @@
-// Tweet-like posts with likes
+// Post CRUD operations - imports users fixtures
 import fixtures "./fixtures"
 
-fn CreatePost(id, authorId, content, createdAt) `
+fn CreatePost(id, title, content, authorId, createdAt) `
 MATCH (u:User {id: $authorId})
-CREATE (p:Post {id: $id, content: $content, createdAt: $createdAt})
+CREATE (p:Post {id: $id, title: $title, content: $content, createdAt: $createdAt})
 CREATE (u)-[:AUTHORED]->(p)
-RETURN p.id, p.content, u.name as authorName
+RETURN p.id, p.title, p.content
 `
 
-fn GetPost(id) `
-MATCH (u:User)-[:AUTHORED]->(p:Post {id: $id})
-RETURN p.id, p.content, p.createdAt, u.id as authorId, u.name as authorName
+fn GetPostById(id) `
+MATCH (p:Post {id: $id})
+OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+RETURN p.id, p.title, p.content, author.name as authorName
 `
 
-fn GetUserPosts(userId) `
-MATCH (u:User {id: $userId})-[:AUTHORED]->(p:Post)
-RETURN p.id, p.content, p.createdAt
+fn GetPostsByAuthor(authorId) `
+MATCH (u:User {id: $authorId})-[:AUTHORED]->(p:Post)
+RETURN p.id, p.title, p.content
 ORDER BY p.createdAt DESC
+`
+
+fn ListPosts() `
+MATCH (p:Post)
+OPTIONAL MATCH (author:User)-[:AUTHORED]->(p)
+RETURN p.id, p.title, author.name as authorName
+ORDER BY p.createdAt DESC
+`
+
+fn UpdatePost(id, title, content) `
+MATCH (p:Post {id: $id})
+SET p.title = $title, p.content = $content
+RETURN p.id, p.title, p.content
 `
 
 fn DeletePost(id) `
 MATCH (p:Post {id: $id})
 DETACH DELETE p
 RETURN count(p) as deleted
+`
+
+fn CountPosts() `
+MATCH (p:Post)
+RETURN count(p) as count
+`
+
+fn CountRelationships() `
+MATCH ()-[r:AUTHORED]->()
+RETURN count(r) as count
 `
 
 fn LikePost(userId, postId) `
@@ -37,11 +61,6 @@ MATCH (u:User)-[:LIKED]->(p:Post {id: $postId})
 RETURN count(u) as likeCount, collect(u.name) as likers
 `
 
-fn CountUserPosts(userId) `
-MATCH (u:User {id: $userId})-[:AUTHORED]->(p:Post)
-RETURN count(p) as count
-`
-
 fn HasLiked(userId, postId) `
 MATCH (u:User {id: $userId})-[:LIKED]->(p:Post {id: $postId})
 RETURN count(*) > 0 as hasLiked
@@ -54,66 +73,102 @@ setup {
 }
 teardown `MATCH (n) DETACH DELETE n`
 
-GetPost {
+GetPostById {
 	group "existing posts" {
-		test "finds post with author info" {
+		test "finds post with author" {
 			$id: 1
 
-			p.id: 1
-			p.content: "Hello World"
+			p.title: "Hello World"
 			authorName: "Alice"
-			authorId: 1
 
-			assert (p.content != "")
-		}
-
-		test "validates content format" {
-			$id: 2
-
-			p.content: "Learning Neo4j"
-
-			assert (p.content != "")
+			assert (p.title != "")
 		}
 	}
 
-	group "edge cases" {
-		test "non-existent post returns null" {
+	group "non-existent posts" {
+		test "returns null for non-existent post" {
 			$id: 999
+
 			p.id: null
-			p.content: null
+			p.title: null
 		}
+	}
+}
+
+GetPostsByAuthor {
+	group "users with posts" {
+		test "gets Alice's posts" {
+			$authorId: 1
+
+			p.title: "Learning Neo4j"
+		}
+
+		test "gets Bob's posts" {
+			$authorId: 2
+
+			p.title: "Bob's Post"
+		}
+	}
+}
+
+CountPosts {
+	test "counts all posts" {
+		count: 3
+	}
+}
+
+CountRelationships {
+	test "has authored relationships" {
+		count: 3
 	}
 }
 
 CreatePost {
 	group "valid creation" {
-		test "creates post and links to author" {
-			$id: 100
+		test "creates post linked to author" {
+			$id: 10
+			$title: "New Post"
+			$content: "Some content here"
 			$authorId: 1
-			$content: "My new tweet!"
 			$createdAt: 1700001000
 
-			p.id: 100
-			p.content: "My new tweet!"
-			authorName: "Alice"
+			p.id: 10
+			p.title: "New Post"
+		}
+	}
+}
 
-			assert CountUserPosts(userId: 1) {
-				(count != nil)
+UpdatePost {
+	group "valid updates" {
+		test "updates post title and content" {
+			$id: 1
+			$title: "Hello World (Updated)"
+			$content: "Updated content"
+
+			p.title: "Hello World (Updated)"
+			p.content: "Updated content"
+		}
+	}
+}
+
+DeletePost {
+	group "existing posts" {
+		test "deletes existing post" {
+			$id: 3
+
+			deleted: 1
+
+			assert `MATCH (p:Post {id: 3}) RETURN count(p) as c` {
+				(c == 0)
 			}
 		}
 	}
+}
 
-	group "validation" {
-		test "creates empty content post" {
-			setup `CREATE (:ValidationTest {id: 999})`
-
-			$id: 101
-			$authorId: 1
-			$content: ""
-			$createdAt: 1700001001
-
-			p.id: 101
-		}
+ListPosts {
+	test "lists all posts with authors" {
+		p.title: "Bob's Post"
+		authorName: "Bob"
 	}
 }
 
@@ -165,47 +220,6 @@ GetPostLikes {
 			$postId: 2
 
 			likeCount: 0
-		}
-	}
-}
-
-GetUserPosts {
-	group "user with posts" {
-		test "returns posts ordered by createdAt desc" {
-			$userId: 1
-
-			p.id: 2
-
-			assert (p.content != nil)
-		}
-	}
-
-	group "user without posts" {
-		test "returns empty for user with no posts" {
-			$userId: 3
-
-			p.id: null
-		}
-	}
-}
-
-DeletePost {
-	group "existing posts" {
-		test "deletes existing post" {
-			$id: 3
-
-			deleted: 1
-
-			assert `MATCH (p:Post {id: 3}) RETURN count(p) as c` {
-				(c == 0)
-			}
-		}
-	}
-
-	group "non-existent posts" {
-		test "delete non-existent post returns 0" {
-			$id: 999
-			deleted: 0
 		}
 	}
 }

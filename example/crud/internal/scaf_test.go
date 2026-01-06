@@ -26,12 +26,16 @@ func init() {
 	isFollowingImpl = isFollowingMock
 	getFeedImpl = getFeedMock
 	getMutualFollowersImpl = getMutualFollowersMock
-	getPostImpl = getPostMock
+	getPostByIdImpl = getPostByIdMock
+	getPostsByAuthorImpl = getPostsByAuthorMock
+	countPostsImpl = countPostsMock
+	countRelationshipsImpl = countRelationshipsMock
 	createPostImpl = createPostMock
+	updatePostImpl = updatePostMock
+	deletePostImpl = deletePostMock
+	listPostsImpl = listPostsMock
 	likePostImpl = likePostMock
 	getPostLikesImpl = getPostLikesMock
-	getUserPostsImpl = getUserPostsMock
-	deletePostImpl = deletePostMock
 	getUserByIdImpl = getUserByIdMock
 	getUserByEmailImpl = getUserByEmailMock
 	createUserImpl = createUserMock
@@ -247,47 +251,91 @@ func getMutualFollowersMock(ctx context.Context, db neogo.Driver, userId1 int, u
 	panic("no matching test case")
 }
 
-func getPostMock(ctx context.Context, db neogo.Driver, id int) ([]*getPostResult, error) {
+func getPostByIdMock(ctx context.Context, db neogo.Driver, id int) ([]*getPostByIdResult, error) {
 	if id == 1 {
-		return []*getPostResult{{
-			ID:         1,
-			Content:    "Hello World",
-			CreatedAt:  0,
-			AuthorId:   1,
+		return []*getPostByIdResult{{
+			ID:         0,
+			Title:      "Hello World",
+			Content:    "",
 			AuthorName: "Alice",
 		}}, nil
-	} else if id == 2 {
-		return []*getPostResult{{
-			ID:         0,
-			Content:    "Learning Neo4j",
-			CreatedAt:  0,
-			AuthorId:   0,
-			AuthorName: "",
-		}}, nil
 	} else if id == 999 {
-		return []*getPostResult{{
+		return []*getPostByIdResult{{
 			ID:         0,
+			Title:      "",
 			Content:    "",
-			CreatedAt:  0,
-			AuthorId:   0,
 			AuthorName: "",
 		}}, nil
 	}
 	panic("no matching test case")
 }
 
-func createPostMock(ctx context.Context, db neogo.Driver, authorId int, id int, content string, createdAt int) ([]*createPostResult, error) {
-	if authorId == 1 && id == 100 && content == "My new tweet!" && createdAt == 1700001000 {
-		return []*createPostResult{{
-			ID:         100,
-			Content:    "My new tweet!",
-			AuthorName: "Alice",
+func getPostsByAuthorMock(ctx context.Context, db neogo.Driver, authorId int) ([]*getPostsByAuthorResult, error) {
+	if authorId == 1 {
+		return []*getPostsByAuthorResult{{
+			ID:      0,
+			Title:   "Learning Neo4j",
+			Content: "",
 		}}, nil
-	} else if authorId == 1 && id == 101 && content == "" && createdAt == 1700001001 {
+	} else if authorId == 2 {
+		return []*getPostsByAuthorResult{{
+			ID:      0,
+			Title:   "Bob's Post",
+			Content: "",
+		}}, nil
+	}
+	panic("no matching test case")
+}
+
+func countPostsMock(ctx context.Context, db neogo.Driver) ([]int, error) {
+	if true {
+		return []int{3}, nil
+	}
+	panic("no matching test case")
+}
+
+func countRelationshipsMock(ctx context.Context, db neogo.Driver) ([]int, error) {
+	if true {
+		return []int{3}, nil
+	}
+	panic("no matching test case")
+}
+
+func createPostMock(ctx context.Context, db neogo.Driver, authorId int, id int, title string, content string, createdAt int) ([]*createPostResult, error) {
+	if authorId == 1 && id == 10 && title == "New Post" && content == "Some content here" && createdAt == 1700001000 {
 		return []*createPostResult{{
-			ID:         101,
-			Content:    "",
-			AuthorName: nil,
+			ID:      10,
+			Title:   "New Post",
+			Content: "",
+		}}, nil
+	}
+	panic("no matching test case")
+}
+
+func updatePostMock(ctx context.Context, db neogo.Driver, id int, title string, content string) ([]*updatePostResult, error) {
+	if id == 1 && title == "Hello World (Updated)" && content == "Updated content" {
+		return []*updatePostResult{{
+			ID:      0,
+			Title:   "Hello World (Updated)",
+			Content: "Updated content",
+		}}, nil
+	}
+	panic("no matching test case")
+}
+
+func deletePostMock(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
+	if id == 3 {
+		return []int{1}, nil
+	}
+	panic("no matching test case")
+}
+
+func listPostsMock(ctx context.Context, db neogo.Driver) ([]*listPostsResult, error) {
+	if true {
+		return []*listPostsResult{{
+			ID:         0,
+			Title:      "Bob's Post",
+			AuthorName: "Bob",
 		}}, nil
 	}
 	panic("no matching test case")
@@ -313,32 +361,6 @@ func getPostLikesMock(ctx context.Context, db neogo.Driver, postId int) ([]*getP
 			LikeCount: 0,
 			Likers:    nil,
 		}}, nil
-	}
-	panic("no matching test case")
-}
-
-func getUserPostsMock(ctx context.Context, db neogo.Driver, userId int) ([]*getUserPostsResult, error) {
-	if userId == 1 {
-		return []*getUserPostsResult{{
-			ID:        2,
-			Content:   "",
-			CreatedAt: 0,
-		}}, nil
-	} else if userId == 3 {
-		return []*getUserPostsResult{{
-			ID:        0,
-			Content:   "",
-			CreatedAt: 0,
-		}}, nil
-	}
-	panic("no matching test case")
-}
-
-func deletePostMock(ctx context.Context, db neogo.Driver, id int) ([]int, error) {
-	if id == 3 {
-		return []int{1}, nil
-	} else if id == 999 {
-		return []int{0}, nil
 	}
 	panic("no matching test case")
 }

@@ -756,7 +756,6 @@ func (s *Server) hoverSetupCall(doc *Document, f *analysis.AnalyzedFile, call *s
 
 			// Otherwise load from disk
 			importedFile, err := s.fileLoader.LoadAndAnalyze(importedPath)
-
 			if err != nil {
 				s.logger.Debug("Failed to load imported file for hover",
 					zap.String("path", importedPath),

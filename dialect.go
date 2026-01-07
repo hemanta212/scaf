@@ -40,8 +40,6 @@ type QueryAnalyzer interface {
 	AnalyzeQuery(query string) (*QueryMetadata, error)
 }
 
-
-
 // QueryAnalyzerFactory creates a QueryAnalyzer for a dialect.
 type QueryAnalyzerFactory func() QueryAnalyzer
 

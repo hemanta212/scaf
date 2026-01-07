@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/rlch/scaf"
-	"github.com/rlch/scaf/language/go"
+	golang "github.com/rlch/scaf/language/go"
 )
 
 // Binding implements golang.Binding for neogo.

@@ -10,10 +10,10 @@ import (
 
 // Type parsing errors.
 var (
-	ErrEmptyTypeString    = errors.New("empty type string")
-	ErrInvalidArrayType   = errors.New("invalid array type")
-	ErrInvalidMapType     = errors.New("invalid map type")
-	ErrUnrecognizedType   = errors.New("unrecognized type")
+	ErrEmptyTypeString  = errors.New("empty type string")
+	ErrInvalidArrayType = errors.New("invalid array type")
+	ErrInvalidMapType   = errors.New("invalid map type")
+	ErrUnrecognizedType = errors.New("unrecognized type")
 )
 
 // TypeKind represents the kind of a type.

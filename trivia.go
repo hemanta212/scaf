@@ -10,9 +10,9 @@ type Span struct {
 
 // Trivia represents non-semantic tokens like comments and whitespace.
 type Trivia struct {
-	Type  TriviaType
-	Text  string
-	Span  Span
+	Type TriviaType
+	Text string
+	Span Span
 	// HasNewlineBefore is true if there was a blank line before this trivia.
 	// Useful for distinguishing "detached" comments.
 	HasNewlineBefore bool

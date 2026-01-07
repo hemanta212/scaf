@@ -14,13 +14,13 @@ import (
 
 // Rename validation errors.
 var (
-	ErrEmptyName                   = errors.New("new name cannot be empty")
-	ErrParamMustStartWithDollar    = errors.New("parameter name must start with $")
-	ErrNameMustStartWithLetter     = errors.New("name must start with a letter or underscore")
-	ErrParamNameAfterDollar        = errors.New("parameter name must start with a letter or underscore after $")
-	ErrInvalidNameChars            = errors.New("name can only contain letters, digits, underscores, and dots")
-	ErrQueryAlreadyExists          = errors.New("query already exists")
-	ErrImportAliasAlreadyExists    = errors.New("import alias already exists")
+	ErrEmptyName                = errors.New("new name cannot be empty")
+	ErrParamMustStartWithDollar = errors.New("parameter name must start with $")
+	ErrNameMustStartWithLetter  = errors.New("name must start with a letter or underscore")
+	ErrParamNameAfterDollar     = errors.New("parameter name must start with a letter or underscore after $")
+	ErrInvalidNameChars         = errors.New("name can only contain letters, digits, underscores, and dots")
+	ErrQueryAlreadyExists       = errors.New("query already exists")
+	ErrImportAliasAlreadyExists = errors.New("import alias already exists")
 )
 
 // RenameKind identifies what kind of symbol is being renamed.
@@ -36,9 +36,9 @@ const (
 
 // RenameContext holds information about a rename operation.
 type RenameContext struct {
-	Kind       RenameKind
-	OldName    string
-	QueryScope string // For parameters and return fields
+	Kind        RenameKind
+	OldName     string
+	QueryScope  string // For parameters and return fields
 	ModuleAlias string // For cross-file query references
 }
 
@@ -391,7 +391,7 @@ func (s *Server) generateImportRenameEdits(doc *Document, oldAlias, newAlias str
 				// No explicit alias - need to add one
 				// Insert "newAlias " before the path
 				insertPos := protocol.Position{
-					Line:      uint32(imp.Pos.Line - 1),     //nolint:gosec
+					Line:      uint32(imp.Pos.Line - 1),       //nolint:gosec
 					Character: uint32(imp.Pos.Column - 1 + 7), //nolint:gosec // After "import "
 				}
 				docEdits = append(docEdits, protocol.TextEdit{

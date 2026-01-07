@@ -38,16 +38,16 @@ func DefaultRules() []*Rule {
 		duplicateQueryRule,
 		duplicateImportRule,
 		undefinedAssertQueryRule,
-		undefinedSetupQueryRule,    // Cross-file validation
-		paramTypeMismatchRule,      // Type checking for function parameters
-		returnTypeMismatchRule,     // Type checking for return value assertions
-		undeclaredQueryParamRule,   // Parameters used in query body but not declared
-		unknownParameterRule,       // Using a parameter that doesn't exist in the query
-		duplicateTestRule,          // Duplicate test names cause conflicts
-		duplicateGroupRule,         // Duplicate group names cause conflicts
-		missingRequiredParamsRule,  // Missing params will cause runtime failures
-		invalidExpressionRule,      // Expression syntax/type errors (compile-time)
-		invalidTypeAnnotationRule,  // Invalid type names in function signatures
+		undefinedSetupQueryRule,   // Cross-file validation
+		paramTypeMismatchRule,     // Type checking for function parameters
+		returnTypeMismatchRule,    // Type checking for return value assertions
+		undeclaredQueryParamRule,  // Parameters used in query body but not declared
+		unknownParameterRule,      // Using a parameter that doesn't exist in the query
+		duplicateTestRule,         // Duplicate test names cause conflicts
+		duplicateGroupRule,        // Duplicate group names cause conflicts
+		missingRequiredParamsRule, // Missing params will cause runtime failures
+		invalidExpressionRule,     // Expression syntax/type errors (compile-time)
+		invalidTypeAnnotationRule, // Invalid type names in function signatures
 
 		// Warning-level checks.
 		unusedImportRule,

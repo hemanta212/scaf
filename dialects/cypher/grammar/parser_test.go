@@ -3,7 +3,7 @@ package cyphergrammar_test
 import (
 	"testing"
 
-	"github.com/rlch/scaf/dialects/cypher/grammar"
+	cyphergrammar "github.com/rlch/scaf/dialects/cypher/grammar"
 )
 
 func TestParse_BasicQueries(t *testing.T) {

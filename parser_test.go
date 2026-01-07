@@ -59,11 +59,11 @@ func TestParse(t *testing.T) {
 			`,
 			expected: &scaf.Suite{
 				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
-				Setup: &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
+				Setup:     &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
 				Scopes: []*scaf.QueryScope{
 					{
 						FunctionName: "Q",
-						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+						Items:        []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
 				},
 			},
@@ -82,8 +82,8 @@ func TestParse(t *testing.T) {
 				Scopes: []*scaf.QueryScope{
 					{
 						FunctionName: "Q",
-						Setup: &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
-						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+						Setup:        &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
+						Items:        []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
 				},
 			},
@@ -298,9 +298,9 @@ func TestParse(t *testing.T) {
 				Q { test "t" {} }
 			`,
 			expected: &scaf.Suite{
-				Functions:  []*scaf.Query{{Name: "Q", Body: "Q"}},
-				Setup: &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
-				Teardown: ptr("MATCH (u:User) DELETE u"),
+				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
+				Setup:     &scaf.SetupClause{Inline: ptr("CREATE (:User)")},
+				Teardown:  ptr("MATCH (u:User) DELETE u"),
 				Scopes: []*scaf.QueryScope{
 					{FunctionName: "Q", Items: []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}}},
 				},
@@ -321,9 +321,9 @@ func TestParse(t *testing.T) {
 				Scopes: []*scaf.QueryScope{
 					{
 						FunctionName: "Q",
-						Setup: &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
-						Teardown:  ptr("SCOPE TEARDOWN"),
-						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+						Setup:        &scaf.SetupClause{Inline: ptr("SCOPE SETUP")},
+						Teardown:     ptr("SCOPE TEARDOWN"),
+						Items:        []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
 				},
 			},
@@ -349,7 +349,7 @@ func TestParse(t *testing.T) {
 							{
 								Group: &scaf.Group{
 									Name:     "g",
-									Setup: &scaf.SetupClause{Inline: ptr("GROUP SETUP")},
+									Setup:    &scaf.SetupClause{Inline: ptr("GROUP SETUP")},
 									Teardown: ptr("GROUP TEARDOWN"),
 									Items:    []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 								},
@@ -1271,10 +1271,10 @@ func TestParseWithRecovery(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		input          string
-		expectError    bool
-		checkAST       func(t *testing.T, suite *scaf.Suite)
+		name        string
+		input       string
+		expectError bool
+		checkAST    func(t *testing.T, suite *scaf.Suite)
 	}{
 		{
 			name: "valid input with recovery enabled",
@@ -1622,9 +1622,9 @@ func TestIsComplete(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		input    string
-		checkFn  func(t *testing.T, suite *scaf.Suite)
+		name    string
+		input   string
+		checkFn func(t *testing.T, suite *scaf.Suite)
 	}{
 		{
 			name: "complete test has Close",

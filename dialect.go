@@ -168,6 +168,10 @@ type ReturnInfo struct {
 	// IsWildcard indicates this is a wildcard (*) return.
 	IsWildcard bool
 
+	// Required indicates whether the field is required (non-nullable) in the schema.
+	// When false, code generators should use pointer types to represent nil values.
+	Required bool
+
 	// Line is the 1-indexed line number in the query where this return field appears.
 	Line int
 

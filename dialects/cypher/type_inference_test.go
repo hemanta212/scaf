@@ -1722,3 +1722,90 @@ func TestTypeInference_PatternComprehensionVariableBinding(t *testing.T) {
 		})
 	}
 }
+
+// TestTypeInference_RequiredField tests that ReturnInfo.Required is correctly set
+// based on field.Required from the schema. The type inference layer passes Required
+// through ReturnInfo, and signature.go uses it to decide pointer wrapping.
+func TestTypeInference_RequiredField(t *testing.T) {
+	t.Parallel()
+
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					// Required fields
+					{Name: "id", Type: analysis.TypeString, Required: true},
+					{Name: "age", Type: analysis.TypeInt, Required: true},
+					// Nullable fields (Required: false is default)
+					{Name: "bio", Type: analysis.TypeString, Required: false},
+					{Name: "score", Type: analysis.TypeFloat64, Required: false},
+					// Reference types (nil-able regardless of Required)
+					{Name: "tags", Type: analysis.SliceOf(analysis.TypeString), Required: false},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		query        string
+		wantType     string
+		wantRequired bool
+	}{
+		{
+			name:         "required string field",
+			query:        "MATCH (u:User) RETURN u.id",
+			wantType:     "string",
+			wantRequired: true,
+		},
+		{
+			name:         "required int field",
+			query:        "MATCH (u:User) RETURN u.age",
+			wantType:     "int",
+			wantRequired: true,
+		},
+		{
+			name:         "nullable string field",
+			query:        "MATCH (u:User) RETURN u.bio",
+			wantType:     "string", // Type stays string, Required=false signals nullable
+			wantRequired: false,
+		},
+		{
+			name:         "nullable float64 field",
+			query:        "MATCH (u:User) RETURN u.score",
+			wantType:     "float64",
+			wantRequired: false,
+		},
+		{
+			name:         "nullable slice field",
+			query:        "MATCH (u:User) RETURN u.tags",
+			wantType:     "[]string",
+			wantRequired: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			analyzer := cypher.NewAnalyzer()
+			metadata, err := analyzer.AnalyzeQueryWithSchema(tt.query, schema)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if len(metadata.Returns) != 1 {
+				t.Fatalf("expected 1 return, got %d", len(metadata.Returns))
+			}
+
+			ret := metadata.Returns[0]
+			gotType := typeString(ret.Type)
+			if gotType != tt.wantType {
+				t.Errorf("type = %q, want %q", gotType, tt.wantType)
+			}
+			if ret.Required != tt.wantRequired {
+				t.Errorf("Required = %v, want %v", ret.Required, tt.wantRequired)
+			}
+		})
+	}
+}

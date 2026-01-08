@@ -784,8 +784,15 @@ func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.Quer
 	// Check for wildcard
 	isWildcard := expression == "*" || strings.HasSuffix(expression, ".*")
 
-	// Infer type
+	// Infer type and get field info (including Required)
 	returnType := inferExpressionType(item.Expr, ctx)
+	fieldInfo := inferFieldInfo(item.Expr, ctx)
+
+	// Default to required=true (non-nullable) unless schema says otherwise
+	required := true
+	if fieldInfo != nil {
+		required = fieldInfo.Required
+	}
 
 	result.Returns = append(result.Returns, scaf.ReturnInfo{
 		Name:        name,
@@ -794,6 +801,7 @@ func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.Quer
 		Alias:       alias,
 		IsAggregate: isAggregate,
 		IsWildcard:  isWildcard,
+		Required:    required,
 		Line:        line,
 		Column:      column,
 		Length:      length,

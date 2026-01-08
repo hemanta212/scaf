@@ -500,8 +500,9 @@ func TestInferReturnTypeWithAnalyzerHint(t *testing.T) {
 	// When analyzer provides a type, use it directly
 	// The Cypher analyzer now returns Go type strings from schema
 	ret := scaf.ReturnInfo{
-		Name: "count",
-		Type: scaf.TypeInt64, // Analyzer-provided Go type from schema
+		Name:     "count",
+		Type:     scaf.TypeInt64, // Analyzer-provided Go type from schema
+		Required: true,           // Required field - no pointer wrapping
 	}
 
 	typ := inferReturnType(ret, nil)

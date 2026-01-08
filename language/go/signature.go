@@ -248,36 +248,47 @@ func inferParamType(param scaf.ParameterInfo, schema *analysis.TypeSchema) strin
 }
 
 // inferReturnType infers the Go type for a return field.
-// Uses the analyzer's type (from schema-aware analysis) or falls back to schema lookup.
-// When a field is not required (nullable), the type is wrapped in a pointer.
+// Uses the analyzer's type and Required from ReturnInfo when available.
+// Falls back to schema lookup by field name when analyzer couldn't determine type.
+// For nullable fields (!Required), wraps primitives in pointer types.
 func inferReturnType(ret scaf.ReturnInfo, schema *analysis.TypeSchema) string {
-	var typ string
+	var typ *scaf.Type
+	required := ret.Required
 
 	// If the analyzer already inferred the type from schema, use it directly
 	if ret.Type != nil {
-		typ = TypeToGoString(ret.Type)
+		typ = ret.Type
 	} else if schema != nil {
 		// Fallback: try to find the type from the schema using the parsed name
 		// (The analyzer already extracts the field name from expressions like "u.name")
 		if field := lookupField(ret.Name, schema); field != nil {
-			typ = TypeToGoString(field.Type)
+			typ = field.Type
+			required = field.Required
 		}
 	}
 
-	if typ == "" {
+	if typ == nil {
 		return "any"
 	}
 
-	// Check nullability: wrap in pointer if field is not required
-	if schema != nil {
-		if field := lookupField(ret.Name, schema); field != nil {
-			if !field.Required && !strings.HasPrefix(typ, "*") {
-				typ = "*" + typ
-			}
-		}
+	// Wrap in pointer if field is nullable (not required) and not already nil-able
+	if !required && !isNilableType(typ) {
+		return "*" + TypeToGoString(typ)
 	}
 
-	return typ
+	return TypeToGoString(typ)
+}
+
+// isNilableType checks if a type is already nil-able in Go (pointer, slice, map).
+func isNilableType(t *scaf.Type) bool {
+	if t == nil {
+		return false
+	}
+	switch t.Kind {
+	case scaf.TypeKindPointer, scaf.TypeKindSlice, scaf.TypeKindMap:
+		return true
+	}
+	return false
 }
 
 // lookupField searches the schema for a field with the given name.

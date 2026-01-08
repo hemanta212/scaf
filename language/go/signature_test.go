@@ -188,11 +188,132 @@ RETURN u.name AS name, u.age AS age, u.balance AS balance, u.createdAt AS create
 	assert.Equal(t, "string", sig.Params[0].Type)
 
 	// Return types should come from schema
+	// Non-required fields (age, balance) should be pointers
 	require.Len(t, sig.Returns, 4)
-	assert.Equal(t, "string", sig.Returns[0].Type, "name type from schema")
-	assert.Equal(t, "int", sig.Returns[1].Type, "age type from schema")
-	assert.Equal(t, "float64", sig.Returns[2].Type, "balance type from schema")
-	assert.Equal(t, "time.Time", sig.Returns[3].Type, "createdAt type from schema")
+	assert.Equal(t, "string", sig.Returns[0].Type, "name type from schema (required)")
+	assert.Equal(t, "*int", sig.Returns[1].Type, "age type should be pointer (not required)")
+	assert.Equal(t, "*float64", sig.Returns[2].Type, "balance type should be pointer (not required)")
+	assert.Equal(t, "time.Time", sig.Returns[3].Type, "createdAt type from schema (required)")
+}
+
+func TestExtractSignaturesNullableReturnTypes(t *testing.T) {
+	t.Parallel()
+
+	// Reproduce the bug: schema field with required: false should generate pointer type
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeInt, Required: true, Unique: true},
+					{Name: "name", Type: analysis.TypeString, Required: true},
+					{Name: "bio", Type: analysis.TypeString, Required: false}, // nullable
+				},
+			},
+		},
+	}
+
+	input := `
+fn getUser() ` + "`" + `
+MATCH (u:User {id: $id})
+RETURN u.id AS id, u.name AS name, u.bio AS bio
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, schema)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Returns, 3)
+
+	// Required fields stay non-pointer
+	assert.Equal(t, "int", sig.Returns[0].Type, "id should be int (required)")
+	assert.Equal(t, "string", sig.Returns[1].Type, "name should be string (required)")
+
+	// Non-required field should be pointer to allow nil
+	assert.Equal(t, "*string", sig.Returns[2].Type, "bio should be *string (not required)")
+}
+
+func TestExtractSignaturesNullableNamedTypes(t *testing.T) {
+	t.Parallel()
+
+	// Test that named types (like time.Time) also get wrapped in pointer when nullable
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeInt, Required: true},
+					{Name: "createdAt", Type: analysis.NamedType("time", "Time"), Required: true},
+					{Name: "deletedAt", Type: analysis.NamedType("time", "Time"), Required: false}, // nullable
+				},
+			},
+		},
+	}
+
+	input := `
+fn getUser() ` + "`" + `
+MATCH (u:User {id: $id})
+RETURN u.id AS id, u.createdAt AS createdAt, u.deletedAt AS deletedAt
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, schema)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Returns, 3)
+
+	assert.Equal(t, "int", sig.Returns[0].Type, "id should be int (required)")
+	assert.Equal(t, "time.Time", sig.Returns[1].Type, "createdAt should be time.Time (required)")
+	assert.Equal(t, "*time.Time", sig.Returns[2].Type, "deletedAt should be *time.Time (not required)")
+}
+
+func TestExtractSignaturesNoDoublePointer(t *testing.T) {
+	t.Parallel()
+
+	// Test that already-pointer types don't get double-wrapped
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeInt, Required: true},
+					// Field is already a pointer type AND not required
+					{Name: "ref", Type: analysis.PointerTo(analysis.TypeString), Required: false},
+				},
+			},
+		},
+	}
+
+	input := `
+fn getUser() ` + "`" + `
+MATCH (u:User {id: $id})
+RETURN u.id AS id, u.ref AS ref
+` + "`" + `
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+	sigs, err := ExtractSignatures(suite, analyzer, schema)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+
+	sig := sigs[0]
+	require.Len(t, sig.Returns, 2)
+
+	assert.Equal(t, "int", sig.Returns[0].Type, "id should be int")
+	// Should NOT become **string - already a pointer
+	assert.Equal(t, "*string", sig.Returns[1].Type, "ref should stay *string, not become **string")
 }
 
 func TestExtractSignaturesNilSuite(t *testing.T) {

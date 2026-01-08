@@ -117,10 +117,11 @@ func BuildMockFuncs(suite *scaf.Suite, signatures []*FuncSignature) []*MockFunc 
 
 // mockGenerator generates the scaf_test.go file content.
 type mockGenerator struct {
-	ctx          *Context
-	buf          *bytes.Buffer
-	packageName  string
-	needsReflect bool
+	ctx                 *Context
+	buf                 *bytes.Buffer
+	packageName         string
+	needsReflect        bool
+	needsPointerHelpers bool
 }
 
 // generateMockFile generates the complete scaf_test.go content.
@@ -147,6 +148,10 @@ func (m *mockGenerator) generate(mocks []*MockFunc) ([]byte, error) {
 	// First pass: determine if we need reflect for any complex comparisons
 	m.needsReflect = m.needsReflectImport(mocks)
 
+	// Check if we need pointer helpers (will be set during mock generation)
+	// We do a pre-pass to determine this
+	m.needsPointerHelpers = m.needsPointerHelpersCheck(mocks)
+
 	// Write header
 	m.writeHeader()
 
@@ -157,6 +162,11 @@ func (m *mockGenerator) generate(mocks []*MockFunc) ([]byte, error) {
 	for i, mock := range mocks {
 		isLast := i == len(mocks)-1
 		m.writeMockFunc(mock, isLast)
+	}
+
+	// Write pointer helper if needed
+	if m.needsPointerHelpers {
+		m.writePointerHelper()
 	}
 
 	return m.buf.Bytes(), nil
@@ -411,23 +421,42 @@ func (m *mockGenerator) writeStructReturn(tc *TestCase, sig *FuncSignature, retu
 
 // findOutputValue finds the output value for a return field from test case outputs.
 func (m *mockGenerator) findOutputValue(tc *TestCase, ret FuncReturn) string {
+	var val any
+	var found bool
+
 	// Try exact match first
-	if val, ok := tc.Outputs[ret.Name]; ok {
-		return goLiteral(val)
+	if v, ok := tc.Outputs[ret.Name]; ok {
+		val = v
+		found = true
 	}
 
 	// Try to find by field name with any prefix (e.g., "u.name" -> "name")
-	for key, val := range tc.Outputs {
-		parts := strings.Split(key, ".")
-		fieldName := parts[len(parts)-1]
+	if !found {
+		for key, v := range tc.Outputs {
+			parts := strings.Split(key, ".")
+			fieldName := parts[len(parts)-1]
 
-		if fieldName == ret.Name {
-			return goLiteral(val)
+			if fieldName == ret.Name {
+				val = v
+				found = true
+				break
+			}
 		}
 	}
 
-	// Return zero value
-	return zeroValue(ret.Type)
+	if !found {
+		// Return zero value
+		return zeroValue(ret.Type)
+	}
+
+	// Handle pointer types: wrap non-nil values with pointer helper
+	if strings.HasPrefix(ret.Type, "*") && val != nil {
+		m.needsPointerHelpers = true
+		baseType := strings.TrimPrefix(ret.Type, "*")
+		return fmt.Sprintf("ptr(%s)", goLiteralWithType(val, baseType))
+	}
+
+	return goLiteral(val)
 }
 
 // toImplVarName converts a function name to its implementation variable name.
@@ -557,4 +586,46 @@ func zeroValue(typ string) string {
 		// Struct types - use empty literal
 		return typ + "{}"
 	}
+}
+
+// goLiteralWithType converts a Go value to its source code representation with type hint.
+// Used for pointer types where we need to ensure the correct type is emitted.
+func goLiteralWithType(v any, typ string) string {
+	switch val := v.(type) {
+	case nil:
+		return "nil"
+	case string:
+		return fmt.Sprintf("%q", val)
+	case float64:
+		// Check if it's an integer
+		if val == float64(int64(val)) {
+			return fmt.Sprintf("%d", int64(val))
+		}
+		return fmt.Sprintf("%v", val)
+	case bool:
+		return fmt.Sprintf("%t", val)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// needsPointerHelpersCheck checks if any mock has pointer return types.
+// We emit the ptr helper if any pointer types exist - Go allows unused functions.
+func (m *mockGenerator) needsPointerHelpersCheck(mocks []*MockFunc) bool {
+	for _, mock := range mocks {
+		for _, ret := range mock.Signature.Returns {
+			if strings.HasPrefix(ret.Type, "*") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// writePointerHelper writes the generic ptr helper function.
+func (m *mockGenerator) writePointerHelper() {
+	m.buf.WriteString("\n// ptr returns a pointer to the given value.\n")
+	m.buf.WriteString("func ptr[T any](v T) *T {\n")
+	m.buf.WriteString("\treturn &v\n")
+	m.buf.WriteString("}\n")
 }

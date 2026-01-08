@@ -249,21 +249,54 @@ func inferParamType(param scaf.ParameterInfo, schema *analysis.TypeSchema) strin
 
 // inferReturnType infers the Go type for a return field.
 // Uses the analyzer's type (from schema-aware analysis) or falls back to schema lookup.
+// When a field is not required (nullable), the type is wrapped in a pointer.
 func inferReturnType(ret scaf.ReturnInfo, schema *analysis.TypeSchema) string {
+	var typ string
+
 	// If the analyzer already inferred the type from schema, use it directly
 	if ret.Type != nil {
-		return TypeToGoString(ret.Type)
-	}
-
-	// Fallback: try to find the type from the schema using the parsed name
-	// (The analyzer already extracts the field name from expressions like "u.name")
-	if schema != nil {
-		if fieldType := lookupFieldType(ret.Name, schema); fieldType != nil {
-			return TypeToGoString(fieldType)
+		typ = TypeToGoString(ret.Type)
+	} else if schema != nil {
+		// Fallback: try to find the type from the schema using the parsed name
+		// (The analyzer already extracts the field name from expressions like "u.name")
+		if field := lookupField(ret.Name, schema); field != nil {
+			typ = TypeToGoString(field.Type)
 		}
 	}
 
-	return "any"
+	if typ == "" {
+		return "any"
+	}
+
+	// Check nullability: wrap in pointer if field is not required
+	if schema != nil {
+		if field := lookupField(ret.Name, schema); field != nil {
+			if !field.Required && !strings.HasPrefix(typ, "*") {
+				typ = "*" + typ
+			}
+		}
+	}
+
+	return typ
+}
+
+// lookupField searches the schema for a field with the given name.
+// Returns the full Field struct (including Required info) if found, nil otherwise.
+func lookupField(fieldName string, schema *analysis.TypeSchema) *analysis.Field {
+	if schema == nil || fieldName == "" {
+		return nil
+	}
+
+	// Search all models for a matching field
+	for _, model := range schema.Models {
+		for _, field := range model.Fields {
+			if field.Name == fieldName {
+				return field
+			}
+		}
+	}
+
+	return nil
 }
 
 // lookupFieldType searches the schema for a field with the given name.

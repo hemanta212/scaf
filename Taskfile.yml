@@ -1,0 +1,62 @@
+version: "3"
+
+tasks:
+  default:
+    desc: Run all CI checks
+    cmds:
+      - task: ci
+
+  ci:
+    desc: Run full CI pipeline (build, test, lint, format check)
+    cmds:
+      - task: build
+      - task: test
+      - task: fmt:check
+      - task: build:examples
+
+  build:
+    desc: Build all packages and binaries
+    cmds:
+      - go build ./...
+      - go build -o bin/scaf ./cmd/scaf
+      - go build -o bin/scaf-lsp ./cmd/scaf-lsp
+
+  build:examples:
+    desc: Build example modules
+    dir: example
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  fmt:
+    desc: Format code with gofumpt and goimports
+    cmds:
+      - gofumpt -w .
+      - goimports -w .
+
+  fmt:check:
+    desc: Check code formatting
+    cmds:
+      - test -z "$(gofumpt -l .)" || (echo "Run 'task fmt' to fix formatting" && gofumpt -d . && exit 1)
+      - test -z "$(goimports -l .)" || (echo "Run 'task fmt' to fix imports" && goimports -d . && exit 1)
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  tools:
+    desc: Install required development tools
+    cmds:
+      - go install mvdan.cc/gofumpt@latest
+      - go install golang.org/x/tools/cmd/goimports@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin/

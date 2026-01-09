@@ -23,7 +23,7 @@ func (s *Server) DocumentSymbol(_ context.Context, params *protocol.DocumentSymb
 	}
 
 	symbols := s.buildDocumentSymbols(doc.Analysis)
-	
+
 	// Convert to []any for the protocol
 	result := make([]any, len(symbols))
 	for i, sym := range symbols {
@@ -218,7 +218,7 @@ func testNameRange(test *scaf.Test) protocol.Range {
 	// The test name is after "test " and within quotes
 	// Position points to "test", name starts after 'test "'
 	nameStartCol := test.Pos.Column + 6 // 'test "' = 6 chars
-	
+
 	return protocol.Range{
 		Start: protocol.Position{
 			Line:      uint32(test.Pos.Line - 1),
@@ -235,7 +235,7 @@ func testNameRange(test *scaf.Test) protocol.Range {
 func groupNameRange(group *scaf.Group) protocol.Range {
 	// The group name is after "group " and within quotes
 	nameStartCol := group.Pos.Column + 7 // 'group "' = 7 chars
-	
+
 	return protocol.Range{
 		Start: protocol.Position{
 			Line:      uint32(group.Pos.Line - 1),

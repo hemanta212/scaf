@@ -39,12 +39,12 @@ func NewLSPLogger(client protocol.Client, fallbackCore zapcore.Core, level zapco
 	ctx, cancel := context.WithCancel(context.Background())
 
 	lspCore := &lspLogCore{
-		client:    client,
-		level:     level,
-		encoder:   zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+		client: client,
+		level:  level,
+		encoder: zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
 			MessageKey:     "msg",
-			LevelKey:       "",  // Don't include level in message, it's in the MessageType
-			TimeKey:        "",  // Don't include timestamp
+			LevelKey:       "", // Don't include level in message, it's in the MessageType
+			TimeKey:        "", // Don't include timestamp
 			NameKey:        "logger",
 			CallerKey:      "",
 			FunctionKey:    "",

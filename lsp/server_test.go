@@ -27,6 +27,7 @@ func (m *mockClient) PublishDiagnostics(_ context.Context, params *protocol.Publ
 
 // Stub out remaining Client interface methods.
 func (m *mockClient) Progress(context.Context, *protocol.ProgressParams) error { return nil }
+
 func (m *mockClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
 	return nil
 }
@@ -41,15 +42,19 @@ func (m *mockClient) Telemetry(context.Context, any) error                      
 func (m *mockClient) RegisterCapability(context.Context, *protocol.RegistrationParams) error {
 	return nil
 }
+
 func (m *mockClient) UnregisterCapability(context.Context, *protocol.UnregistrationParams) error {
 	return nil
 }
+
 func (m *mockClient) ApplyEdit(context.Context, *protocol.ApplyWorkspaceEditParams) (bool, error) {
 	return false, nil
 }
+
 func (m *mockClient) Configuration(context.Context, *protocol.ConfigurationParams) ([]any, error) {
 	return nil, nil
 }
+
 func (m *mockClient) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, error) {
 	return nil, nil
 }
@@ -902,7 +907,7 @@ GetUser {
 		if docSym, ok := sym.(protocol.DocumentSymbol); ok {
 			symbolNames[docSym.Name] = true
 			t.Logf("Symbol: %s (%s) - %s", docSym.Name, docSym.Kind, docSym.Detail)
-			
+
 			// Check nested symbols for GetUser scope
 			if docSym.Name == "GetUser" && docSym.Kind == protocol.SymbolKindClass {
 				for _, child := range docSym.Children {
@@ -1251,9 +1256,9 @@ Q {
 	// Line 5: test "nested test" {}
 
 	expectations := map[string]uint32{
-		"scaf.runScope:Q":                   2, // Q scope at line 2 (0-indexed)
-		"scaf.runTest:Q/first test":         3, // first test at line 3
-		"scaf.runGroup:Q/my group":          4, // group at line 4
+		"scaf.runScope:Q":                     2, // Q scope at line 2 (0-indexed)
+		"scaf.runTest:Q/first test":           3, // first test at line 3
+		"scaf.runGroup:Q/my group":            4, // group at line 4
 		"scaf.runTest:Q/my group/nested test": 5, // nested test at line 5
 	}
 

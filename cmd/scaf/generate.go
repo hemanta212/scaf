@@ -12,7 +12,7 @@ import (
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/language"
-	"github.com/rlch/scaf/language/go"
+	golang "github.com/rlch/scaf/language/go"
 	"github.com/urfave/cli/v3"
 
 	// Register bindings and dialects.
@@ -67,8 +67,8 @@ func generateCommand() *cli.Command {
 				Aliases: []string{"s"},
 				Usage:   "path to schema HCL file (e.g., .scaf-schema.hcl)",
 			},
-			},
-			Action: runGenerate,
+		},
+		Action: runGenerate,
 	}
 }
 

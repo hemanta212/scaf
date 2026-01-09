@@ -133,17 +133,17 @@ const (
 
 // CompletionContext holds information about where completion was triggered.
 type CompletionContext struct {
-	Kind             CompletionKind
-	Prefix           string // Text being typed (for filtering)
-	InScope          string // Name of enclosing QueryScope
-	InTest           bool   // Inside a test body
-	InSetup          bool   // Inside a setup clause
-	InAssert         bool   // Inside an assert block
-	InExpr           bool   // Inside a parenthesized expression (assert or where clause)
-	AssertQueryName  string // Name of the assert's query (if any) - takes precedence over InScope for expression variables
-	AssertQueryBody  string // Inline query body (if any) - for inline assert queries
-	ModuleAlias      string // Import alias for module.function completion
-	TriggerChar      string // The trigger character (., $)
+	Kind            CompletionKind
+	Prefix          string // Text being typed (for filtering)
+	InScope         string // Name of enclosing QueryScope
+	InTest          bool   // Inside a test body
+	InSetup         bool   // Inside a setup clause
+	InAssert        bool   // Inside an assert block
+	InExpr          bool   // Inside a parenthesized expression (assert or where clause)
+	AssertQueryName string // Name of the assert's query (if any) - takes precedence over InScope for expression variables
+	AssertQueryBody string // Inline query body (if any) - for inline assert queries
+	ModuleAlias     string // Import alias for module.function completion
+	TriggerChar     string // The trigger character (., $)
 }
 
 // buildCompletionContext analyzes the document and returns completion context.
@@ -711,10 +711,10 @@ func (s *Server) completeQueryNames(doc *Document, _ *CompletionContext) []proto
 
 // keywordSnippet defines a keyword completion with its snippet.
 type keywordSnippet struct {
-	label      string
-	detail     string
-	snippet    string
-	doc        string
+	label   string
+	detail  string
+	snippet string
+	doc     string
 }
 
 // completeKeywords returns keyword completions based on context.

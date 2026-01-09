@@ -60,7 +60,7 @@ const (
 // This is the main entry point for recovery-based completions.
 //
 // Strategy:
-// 1. Look for nodes with RecoveredTokens in RecoverySuite (parser recovery) 
+// 1. Look for nodes with RecoveredTokens in RecoverySuite (parser recovery)
 // 2. Look at parse error position and preceding tokens
 // 3. Use token context at cursor position
 func GetRecoveryCompletionContext(f *AnalyzedFile, pos lexer.Position) *RecoveryCompletionContext {
@@ -101,7 +101,7 @@ func GetRecoveryCompletionContext(f *AnalyzedFile, pos lexer.Position) *Recovery
 			} else {
 				ctx.PrevToken = PrevTokenAtPosition(f, errorPos)
 			}
-			
+
 			// If cursor is at or near error position, use error context
 			if isNearPosition(pos, errorPos) {
 				analyzeErrorContext(ctx, f.Symbols)
@@ -210,13 +210,13 @@ func getErrorPosition(err error) lexer.Position {
 			return perr.Position()
 		}
 	}
-	
+
 	// Check for single participle error
 	var perr participle.Error
 	if errors.As(err, &perr) {
 		return perr.Position()
 	}
-	
+
 	return lexer.Position{}
 }
 
@@ -245,7 +245,7 @@ func analyzeErrorContext(ctx *RecoveryCompletionContext, symbols *SymbolTable) {
 	if ctx.PrevToken == nil {
 		return
 	}
-	
+
 	// Check what token precedes the error
 	switch ctx.PrevToken.Type {
 	case scaf.TokenSetup:
@@ -286,19 +286,19 @@ func analyzeTokenContext(ctx *RecoveryCompletionContext, pos lexer.Position, sui
 	if ctx.PrevToken == nil {
 		return
 	}
-	
+
 	// Determine context from surrounding structure
 	for _, scope := range suite.Scopes {
 		if ContainsPosition(scope.Span(), pos) {
 			ctx.QueryScope = scope.FunctionName
-			
+
 			// Check if we're in setup context (after "setup" keyword)
 			if ctx.PrevToken.Type == scaf.TokenSetup {
 				ctx.InSetup = true
 				ctx.Kind = RecoveryCompletionSetupAlias
 				return
 			}
-			
+
 			// Check if previous token is a DOT - need to find module alias before it
 			if ctx.PrevToken.Type == scaf.TokenDot {
 				// Find the token before the dot
@@ -311,7 +311,7 @@ func analyzeTokenContext(ctx *RecoveryCompletionContext, pos lexer.Position, sui
 					}
 				}
 			}
-			
+
 			// Check if previous token is an import alias (cursor might be ON the dot)
 			if ctx.PrevToken.Type == scaf.TokenIdent && symbols != nil {
 				if _, ok := symbols.Imports[ctx.PrevToken.Value]; ok {

@@ -4,24 +4,25 @@ package movies
 
 import (
 	"context"
+
 	"github.com/rlch/neogo"
 )
 
 type findActorsResult struct {
-	Name string
+	Name  string
 	Title string
 	Roles []string
 }
 
 type findDirectorsResult struct {
-	Name string
+	Name  string
 	Title string
 }
 
 type findReviewsResult struct {
-	Name string
+	Name    string
 	Summary string
-	Rating int
+	Rating  int
 }
 
 func FindActors(ctx context.Context, db neogo.Driver, name string) ([]*findActorsResult, error) {
@@ -45,7 +46,7 @@ func findActorsProd(ctx context.Context, db neogo.Driver, name string) ([]*findA
 	results := make([]*findActorsResult, len(rowsName))
 	for i := range rowsName {
 		results[i] = &findActorsResult{
-			Name: rowsName[i],
+			Name:  rowsName[i],
 			Title: rowsTitle[i],
 			Roles: rowsRoles[i],
 		}
@@ -72,7 +73,7 @@ func findDirectorsProd(ctx context.Context, db neogo.Driver) ([]*findDirectorsRe
 	results := make([]*findDirectorsResult, len(rowsName))
 	for i := range rowsName {
 		results[i] = &findDirectorsResult{
-			Name: rowsName[i],
+			Name:  rowsName[i],
 			Title: rowsTitle[i],
 		}
 	}
@@ -100,9 +101,9 @@ func findReviewsProd(ctx context.Context, db neogo.Driver, title string) ([]*fin
 	results := make([]*findReviewsResult, len(rowsName))
 	for i := range rowsName {
 		results[i] = &findReviewsResult{
-			Name: rowsName[i],
+			Name:    rowsName[i],
 			Summary: rowsSummary[i],
-			Rating: rowsRating[i],
+			Rating:  rowsRating[i],
 		}
 	}
 	return results, nil

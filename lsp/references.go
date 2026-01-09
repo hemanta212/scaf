@@ -422,7 +422,7 @@ func (s *Server) findParameterReferences(doc *Document, queryScope, paramKey str
 									Character: uint32(docColumn - 1), //nolint:gosec
 								},
 								End: protocol.Position{
-									Line:      uint32(docLine - 1),               //nolint:gosec
+									Line:      uint32(docLine - 1),              //nolint:gosec
 									Character: uint32(docColumn - 1 + p.Length), //nolint:gosec
 								},
 							},

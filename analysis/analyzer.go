@@ -135,7 +135,7 @@ func (a *Analyzer) Analyze(path string, content []byte) *AnalyzedFile {
 		// Convert parse errors to diagnostics
 		result.Diagnostics = append(result.Diagnostics, parseErrorsToDiagnostics(err)...)
 		// Don't return early - continue with partial AST for better LSP support
-		
+
 		// Also do a recovery parse for completion context.
 		// This may give us better information about what the user was typing
 		// even though it might misparse valid syntax elsewhere.

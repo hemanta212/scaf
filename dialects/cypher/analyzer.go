@@ -1376,5 +1376,7 @@ func checkNodePatternForUnique(node *cyphergrammar.NodePattern, schema *analysis
 }
 
 // Ensure Analyzer implements scaf.QueryAnalyzer and analysis.SchemaAwareAnalyzer.
-var _ scaf.QueryAnalyzer = (*Analyzer)(nil)
-var _ analysis.SchemaAwareAnalyzer = (*Analyzer)(nil)
+var (
+	_ scaf.QueryAnalyzer           = (*Analyzer)(nil)
+	_ analysis.SchemaAwareAnalyzer = (*Analyzer)(nil)
+)

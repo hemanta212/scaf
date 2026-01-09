@@ -37,16 +37,16 @@ func TestPrevTokenAtPosition(t *testing.T) {
 			wantType:  scaf.TokenRParen,
 		},
 		{
-			name: "after setup keyword with inline query",
-			input: "fn Q() `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
+			name:      "after setup keyword with inline query",
+			input:     "fn Q() `Q`\nQ {\n\tsetup `CREATE (n)`\n}\n",
 			line:      3,
 			col:       8, // right after "setup " (at position of backtick)
 			wantValue: "setup",
 			wantType:  scaf.TokenSetup,
 		},
 		{
-			name: "after dot in module reference",
-			input: "import fixtures \"./fixtures\"\nfn Q() `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
+			name:      "after dot in module reference",
+			input:     "import fixtures \"./fixtures\"\nfn Q() `Q`\nQ {\n\tsetup fixtures.CreateUser()\n}\n",
 			line:      4,
 			col:       17, // right after "fixtures." (at position of 'C')
 			wantValue: ".",
@@ -61,48 +61,48 @@ func TestPrevTokenAtPosition(t *testing.T) {
 			wantType:  scaf.TokenImport,
 		},
 		{
-			name: "after test keyword",
-			input: "fn Q() `Q`\nQ {\n\ttest \"my test\" {\n\t}\n}\n",
+			name:      "after test keyword",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"my test\" {\n\t}\n}\n",
 			line:      3,
 			col:       7, // right after "test " (at position of quote)
 			wantValue: "test",
 			wantType:  scaf.TokenTest,
 		},
 		{
-			name: "after group keyword",
-			input: "fn Q() `Q`\nQ {\n\tgroup \"my group\" {\n\t}\n}\n",
+			name:      "after group keyword",
+			input:     "fn Q() `Q`\nQ {\n\tgroup \"my group\" {\n\t}\n}\n",
 			line:      3,
 			col:       8, // right after "group " (at position of quote)
 			wantValue: "group",
 			wantType:  scaf.TokenGroup,
 		},
 		{
-			name: "after assert keyword",
-			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { (true) }\n\t}\n}\n",
+			name:      "after assert keyword",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\tassert { (true) }\n\t}\n}\n",
 			line:      4,
 			col:       10, // right after "assert " (at position of '{')
 			wantValue: "assert",
 			wantType:  scaf.TokenAssert,
 		},
 		{
-			name: "after open brace in test",
-			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			name:      "after open brace in test",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       3, // at start of "$id" line
 			wantValue: "{",
 			wantType:  scaf.TokenLBrace,
 		},
 		{
-			name: "after colon in statement",
-			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			name:      "after colon in statement",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       8, // right after ": " (at position of '1')
 			wantValue: ":",
 			wantType:  scaf.TokenColon,
 		},
 		{
-			name: "after parameter name",
-			input: "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
+			name:      "after parameter name",
+			input:     "fn Q() `Q`\nQ {\n\ttest \"t\" {\n\t\t$id: 1\n\t}\n}\n",
 			line:      4,
 			col:       6, // right after "$id" (at position of ':')
 			wantValue: "$id",

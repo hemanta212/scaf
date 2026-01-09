@@ -19,7 +19,7 @@ func TestServer_DocumentLink(t *testing.T) {
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	fixturesContent := `fn SetupUsers() ` + "`CREATE (u:User) RETURN u`" + `
 `
-	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0644); err != nil {
+	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
 	}
 
@@ -34,7 +34,7 @@ GetUser {
 	test "finds user" {}
 }
 `
-	if err := os.WriteFile(mainPath, []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(mainPath, []byte(mainContent), 0o644); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestServer_DocumentLink_WithAlias(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	_ = os.WriteFile(tmpDir+"/shared.scaf", []byte(`fn Q() `+"`Q`"+`
-`), 0644)
+`), 0o644)
 
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import f "./shared"
@@ -100,7 +100,7 @@ func TestServer_DocumentLink_WithAlias(t *testing.T) {
 fn GetUser() ` + "`Q`" + `
 GetUser { test "t" {} }
 `
-	_ = os.WriteFile(mainPath, []byte(mainContent), 0644)
+	_ = os.WriteFile(mainPath, []byte(mainContent), 0o644)
 
 	server, _ := newTestServer(t)
 	ctx := context.Background()

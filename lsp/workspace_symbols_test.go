@@ -25,7 +25,7 @@ GetUser {
 	}
 }
 `
-	if err := os.WriteFile(file1Path, []byte(file1Content), 0644); err != nil {
+	if err := os.WriteFile(file1Path, []byte(file1Content), 0o644); err != nil {
 		t.Fatalf("Failed to write file1: %v", err)
 	}
 
@@ -40,7 +40,7 @@ CountUsers {
 	}
 }
 `
-	if err := os.WriteFile(file2Path, []byte(file2Content), 0644); err != nil {
+	if err := os.WriteFile(file2Path, []byte(file2Content), 0o644); err != nil {
 		t.Fatalf("Failed to write file2: %v", err)
 	}
 
@@ -102,7 +102,7 @@ GetUser {
 	test "finds user" {}
 }
 `
-	if err := os.WriteFile(filePath, []byte(fileContent), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(fileContent), 0o644); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
 

@@ -89,7 +89,7 @@ func TestRunner_SimpleTest(t *testing.T) {
 		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u"}},
 		Scopes: []*scaf.QueryScope{{
 			FunctionName: "GetUser",
-			Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "finds user"}}},
+			Items:        []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "finds user"}}},
 		}},
 	}
 
@@ -195,7 +195,7 @@ func TestRunner_ScopeAndGroupSetup(t *testing.T) {
 		Functions: []*scaf.Query{{Name: "Query", Body: "Q"}},
 		Scopes: []*scaf.QueryScope{{
 			FunctionName: "Query",
-			Setup: &scaf.SetupClause{Inline: &scopeSetup},
+			Setup:        &scaf.SetupClause{Inline: &scopeSetup},
 			Items: []*scaf.TestOrGroup{{
 				Group: &scaf.Group{
 					Name:  "group",
@@ -486,7 +486,7 @@ func TestRunner_SetupCallWithModules(t *testing.T) {
 	// Create the root module
 	rootSuite := &scaf.Suite{
 		Functions: []*scaf.Query{{Name: "GetUser", Body: "MATCH (u:User) RETURN u.name"}},
-		Imports: []*scaf.Import{{Alias: ptr("fixtures"), Path: "./fixtures.scaf"}},
+		Imports:   []*scaf.Import{{Alias: ptr("fixtures"), Path: "./fixtures.scaf"}},
 		Scopes: []*scaf.QueryScope{{
 			FunctionName: "GetUser",
 			Setup: &scaf.SetupClause{

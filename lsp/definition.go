@@ -120,7 +120,7 @@ func queryNameRange(q *scaf.Function) protocol.Range {
 			Character: uint32(nameStartCol - 1), //nolint:gosec // Column numbers are always small positive integers
 		},
 		End: protocol.Position{
-			Line:      uint32(q.Pos.Line - 1),  //nolint:gosec // Line numbers are always small positive integers
+			Line:      uint32(q.Pos.Line - 1), //nolint:gosec // Line numbers are always small positive integers
 			Character: uint32(nameEndCol - 1), //nolint:gosec // Column numbers are always small positive integers
 		},
 	}
@@ -282,11 +282,11 @@ func (s *Server) findParameterDefinition(doc *Document, tokenCtx *analysis.Token
 				URI: doc.URI,
 				Range: protocol.Range{
 					Start: protocol.Position{
-						Line:      uint32(docLine - 1),  //nolint:gosec // Line numbers are always small
+						Line:      uint32(docLine - 1),   //nolint:gosec // Line numbers are always small
 						Character: uint32(docColumn - 1), //nolint:gosec // Column numbers are always small
 					},
 					End: protocol.Position{
-						Line:      uint32(docLine - 1),               //nolint:gosec
+						Line:      uint32(docLine - 1),                  //nolint:gosec
 						Character: uint32(docColumn - 1 + param.Length), //nolint:gosec
 					},
 				},
@@ -400,7 +400,7 @@ func (s *Server) findReturnFieldDefinition(doc *Document, tokenCtx *analysis.Tok
 							Character: uint32(docColumn - 1), //nolint:gosec // Column numbers are always small
 						},
 						End: protocol.Position{
-							Line:      uint32(docLine - 1),               //nolint:gosec
+							Line:      uint32(docLine - 1),                //nolint:gosec
 							Character: uint32(docColumn - 1 + ret.Length), //nolint:gosec
 						},
 					},

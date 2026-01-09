@@ -260,8 +260,8 @@ func TestResolvedContext_GetQueries(t *testing.T) {
 	queries := ctx.GetQueries()
 
 	expected := map[string]string{
-		"GetUser":           "MATCH (u) RETURN u",
-		"SetupDB":           "CREATE (:DB)",
+		"GetUser":             "MATCH (u) RETURN u",
+		"SetupDB":             "CREATE (:DB)",
 		"fixtures.CreatePost": "CREATE (:Post)",
 	}
 
@@ -274,9 +274,9 @@ func TestModule_GetSetup(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		suite     *scaf.Suite
-		hasSetup  bool
+		name     string
+		suite    *scaf.Suite
+		hasSetup bool
 	}{
 		{
 			name:     "no setup",

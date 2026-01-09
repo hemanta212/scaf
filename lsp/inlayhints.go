@@ -167,7 +167,7 @@ func (s *Server) findParameterPosition(fn *scaf.Function, paramName string) *pro
 		// Position is at the end of the parameter name
 		// p.Pos is 1-indexed, LSP is 0-indexed
 		pos := protocol.Position{
-			Line:      uint32(p.Pos.Line - 1),                       //nolint:gosec
+			Line:      uint32(p.Pos.Line - 1),                 //nolint:gosec
 			Character: uint32(p.Pos.Column - 1 + len(p.Name)), //nolint:gosec
 		}
 		return &pos

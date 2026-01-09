@@ -4,11 +4,12 @@ package basic
 
 import (
 	"context"
+
 	"github.com/rlch/neogo"
 )
 
 type getUserResult struct {
-	Name any
+	Name  any
 	Email any
 }
 
@@ -31,7 +32,7 @@ func getUserProd(ctx context.Context, db neogo.Driver, userId any) ([]*getUserRe
 	results := make([]*getUserResult, len(rowsName))
 	for i := range rowsName {
 		results[i] = &getUserResult{
-			Name: rowsName[i],
+			Name:  rowsName[i],
 			Email: rowsEmail[i],
 		}
 	}

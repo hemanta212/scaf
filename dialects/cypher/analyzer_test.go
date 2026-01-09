@@ -457,9 +457,9 @@ func TestAnalyzer_AnalyzeQueryWithSchema_ReturnsOne(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		query       string
-		wantOne     bool
+		name    string
+		query   string
+		wantOne bool
 	}{
 		{
 			name:    "filter on unique id field",

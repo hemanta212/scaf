@@ -47,7 +47,7 @@ fn B() ` + "`B`" + `
 			name: "query with global setup",
 			suite: &scaf.Suite{
 				Functions: []*scaf.Query{{Name: "Q", Body: "Q"}},
-				Setup:   inlineSetup("CREATE (:User)"),
+				Setup:     inlineSetup("CREATE (:User)"),
 			},
 			expected: `fn Q() ` + "`Q`" + `
 
@@ -82,7 +82,7 @@ GetUser {
 				Scopes: []*scaf.QueryScope{
 					{
 						FunctionName: "Q",
-						Setup:     inlineSetup("SCOPE SETUP"),
+						Setup:        inlineSetup("SCOPE SETUP"),
 						Items: []*scaf.TestOrGroup{
 							{Test: &scaf.Test{Name: "t"}},
 						},
@@ -418,7 +418,7 @@ Q {
 				Scopes: []*scaf.QueryScope{
 					{
 						FunctionName: "Q",
-						Items:     []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
+						Items:        []*scaf.TestOrGroup{{Test: &scaf.Test{Name: "t"}}},
 					},
 				},
 			},
@@ -687,7 +687,7 @@ func TestFormatPreservesSemantics(t *testing.T) {
 		Scopes: []*scaf.QueryScope{
 			{
 				FunctionName: "GetUser",
-				Setup:     inlineSetup("MATCH (u:User) SET u.active = true"),
+				Setup:        inlineSetup("MATCH (u:User) SET u.active = true"),
 				Items: []*scaf.TestOrGroup{
 					{
 						Group: &scaf.Group{

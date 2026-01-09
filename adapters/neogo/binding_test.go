@@ -3,7 +3,7 @@ package neogo
 import (
 	"testing"
 
-	"github.com/rlch/scaf/language/go"
+	golang "github.com/rlch/scaf/language/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

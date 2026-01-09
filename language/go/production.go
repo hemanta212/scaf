@@ -319,5 +319,3 @@ func (p *productionGenerator) writeProdFunc(baseSig *FuncSignature, fullSig *Bin
 
 	return nil
 }
-
-

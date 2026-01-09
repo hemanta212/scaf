@@ -129,7 +129,7 @@ func TestLSPFileLoader_Load(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.scaf")
 	testContent := "fn Test() `MATCH (n) RETURN n`\n"
 
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestLSPFileLoader_LoadAndAnalyze(t *testing.T) {
 fn GetUser() ` + "`MATCH (u:User {id: $id}) RETURN u`" + `
 `
 
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -208,13 +208,13 @@ func TestLSPFileLoader_ResolveImportPath_DialectExtension(t *testing.T) {
 	// Create temp directory with a dialect-specific file
 	tmpDir := t.TempDir()
 	sharedDir := filepath.Join(tmpDir, "shared")
-	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
 		t.Fatalf("Failed to create shared dir: %v", err)
 	}
 
 	// Create fixtures.cypher.scaf (not fixtures.scaf)
 	fixturesFile := filepath.Join(sharedDir, "fixtures.cypher.scaf")
-	if err := os.WriteFile(fixturesFile, []byte("fn Test() `test`"), 0644); err != nil {
+	if err := os.WriteFile(fixturesFile, []byte("fn Test() `test`"), 0o644); err != nil {
 		t.Fatalf("Failed to create fixtures file: %v", err)
 	}
 
@@ -237,18 +237,18 @@ func TestLSPFileLoader_ResolveImportPath_PreferPlainScaf(t *testing.T) {
 	// Create temp directory with both .scaf and .cypher.scaf files
 	tmpDir := t.TempDir()
 	sharedDir := filepath.Join(tmpDir, "shared")
-	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
 		t.Fatalf("Failed to create shared dir: %v", err)
 	}
 
 	// Create both files
 	plainFile := filepath.Join(sharedDir, "fixtures.scaf")
-	if err := os.WriteFile(plainFile, []byte("fn Test() `test`"), 0644); err != nil {
+	if err := os.WriteFile(plainFile, []byte("fn Test() `test`"), 0o644); err != nil {
 		t.Fatalf("Failed to create plain fixtures file: %v", err)
 	}
 
 	dialectFile := filepath.Join(sharedDir, "fixtures.cypher.scaf")
-	if err := os.WriteFile(dialectFile, []byte("fn Test() `test`"), 0644); err != nil {
+	if err := os.WriteFile(dialectFile, []byte("fn Test() `test`"), 0o644); err != nil {
 		t.Fatalf("Failed to create dialect fixtures file: %v", err)
 	}
 
@@ -273,7 +273,7 @@ func TestLSPFileLoader_InvalidatePath(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.scaf")
 	testContent := "fn Test() `MATCH (n) RETURN n`\n"
 
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -288,7 +288,7 @@ func TestLSPFileLoader_InvalidatePath(t *testing.T) {
 
 	// Update file content
 	newContent := "fn Updated() `MATCH (m) RETURN m`\n"
-	if err := os.WriteFile(testFile, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(newContent), 0o644); err != nil {
 		t.Fatalf("Failed to update test file: %v", err)
 	}
 

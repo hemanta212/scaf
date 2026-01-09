@@ -137,9 +137,9 @@ type treeNode struct {
 
 // SuiteTree holds a parsed suite and its tree representation.
 type SuiteTree struct {
-	path string                // file path
-	root *treeNode             // tree root for this suite
-	idx  map[string]*treeNode  // "suite::path" -> node lookup
+	path string               // file path
+	root *treeNode            // tree root for this suite
+	idx  map[string]*treeNode // "suite::path" -> node lookup
 }
 
 // BuildSuiteTree creates a tree representation from a parsed Suite.
@@ -796,8 +796,6 @@ func (m *tuiModel) renderSummaryWithProgress() string {
 
 	return "  " + summaryText + " " + bar + " " + elapsedStr
 }
-
-
 
 // Helper functions
 

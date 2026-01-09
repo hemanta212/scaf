@@ -90,7 +90,7 @@ func run(ctx context.Context, startupLogger *zap.Logger, in io.Reader, out io.Wr
 	var stderrCore zapcore.Core
 	if logfile != "" {
 		// Log to file
-		file, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			startupLogger.Warn("Failed to open logfile, falling back to stderr", zap.Error(err))
 			stderrCore = createStderrCore(level)

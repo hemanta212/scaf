@@ -896,21 +896,21 @@ GetUser {
 
 	// Define test cases
 	tests := []struct {
-		name         string
-		line         uint32
-		character    uint32
-		wantURI      protocol.DocumentURI
-		wantLine     uint32
-		wantFound    bool
-		description  string
+		name        string
+		line        uint32
+		character   uint32
+		wantURI     protocol.DocumentURI
+		wantLine    uint32
+		wantFound   bool
+		description string
 	}{
 		// 1. Query scope name -> query definition
 		{
 			name:        "query_scope_name",
-			line:        8,  // "GetUser {"
-			character:   3,  // On "GetUser"
+			line:        8, // "GetUser {"
+			character:   3, // On "GetUser"
 			wantURI:     mainURI,
-			wantLine:    2,  // query GetUser line
+			wantLine:    2, // query GetUser line
 			wantFound:   true,
 			description: "Query scope name should go to query definition",
 		},
@@ -918,10 +918,10 @@ GetUser {
 		// 2. Global setup - import alias (goes to imported file)
 		{
 			name:        "global_setup_import_alias",
-			line:        6,  // "setup fixtures.SetupCleanDB()"
-			character:   7,  // On "fixtures"
+			line:        6, // "setup fixtures.SetupCleanDB()"
+			character:   7, // On "fixtures"
 			wantURI:     fixturesURI,
-			wantLine:    0,  // start of imported file
+			wantLine:    0, // start of imported file
 			wantFound:   true,
 			description: "Import alias in global setup should go to imported file",
 		},
@@ -940,10 +940,10 @@ GetUser {
 		// 4. Scope setup - import alias (goes to imported file)
 		{
 			name:        "scope_setup_import_alias",
-			line:        9,  // "\tsetup fixtures.SetupUsers()"
-			character:   7,  // On "fixtures"
+			line:        9, // "\tsetup fixtures.SetupUsers()"
+			character:   7, // On "fixtures"
 			wantURI:     fixturesURI,
-			wantLine:    0,  // start of imported file
+			wantLine:    0, // start of imported file
 			wantFound:   true,
 			description: "Import alias in scope setup should go to imported file",
 		},
@@ -954,7 +954,7 @@ GetUser {
 			line:        9,  // "\tsetup fixtures.SetupUsers()"
 			character:   17, // On "SetupUsers"
 			wantURI:     fixturesURI,
-			wantLine:    1,  // query SetupUsers line in fixtures (0-indexed, after comment)
+			wantLine:    1, // query SetupUsers line in fixtures (0-indexed, after comment)
 			wantFound:   true,
 			description: "Function name in scope setup should go to query in imported file",
 		},
@@ -965,7 +965,7 @@ GetUser {
 			line:        11, // "\t\tsetup fixtures.SetupUsers()"
 			character:   9,  // On "fixtures"
 			wantURI:     fixturesURI,
-			wantLine:    0,  // start of imported file
+			wantLine:    0, // start of imported file
 			wantFound:   true,
 			description: "Import alias in group setup should go to imported file",
 		},
@@ -976,7 +976,7 @@ GetUser {
 			line:        11, // "\t\tsetup fixtures.SetupUsers()"
 			character:   18, // On "SetupUsers"
 			wantURI:     fixturesURI,
-			wantLine:    1,  // query SetupUsers line in fixtures
+			wantLine:    1, // query SetupUsers line in fixtures
 			wantFound:   true,
 			description: "Function name in group setup should go to query in imported file",
 		},
@@ -987,7 +987,7 @@ GetUser {
 			line:        13, // "\t\t\tsetup fixtures.SetupPosts(...)"
 			character:   10, // On "fixtures"
 			wantURI:     fixturesURI,
-			wantLine:    0,  // start of imported file
+			wantLine:    0, // start of imported file
 			wantFound:   true,
 			description: "Import alias in test setup should go to imported file",
 		},
@@ -998,7 +998,7 @@ GetUser {
 			line:        13, // "\t\t\tsetup fixtures.SetupPosts(...)"
 			character:   19, // On "SetupPosts"
 			wantURI:     fixturesURI,
-			wantLine:    6,  // query SetupPosts line in fixtures
+			wantLine:    6, // query SetupPosts line in fixtures
 			wantFound:   true,
 			description: "Function name in test setup should go to query in imported file",
 		},
@@ -1009,7 +1009,7 @@ GetUser {
 			line:        14, // "\t\t\t$userId: 1"
 			character:   4,  // On "$userId"
 			wantURI:     mainURI,
-			wantLine:    2,  // query GetUser line (where $userId is used)
+			wantLine:    2, // query GetUser line (where $userId is used)
 			wantFound:   true,
 			description: "Parameter in test should go to parameter in query body",
 		},
@@ -1020,7 +1020,7 @@ GetUser {
 			line:        16, // "\t\t\tassert CountUserPosts(...)"
 			character:   11, // On "CountUserPosts"
 			wantURI:     mainURI,
-			wantLine:    4,  // query CountUserPosts line
+			wantLine:    4, // query CountUserPosts line
 			wantFound:   true,
 			description: "Query name in assert should go to query definition",
 		},
@@ -1062,5 +1062,5 @@ GetUser {
 
 // mkdirAll is a test helper to create directories.
 func mkdirAll(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0o755)
 }

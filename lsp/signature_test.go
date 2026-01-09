@@ -20,7 +20,7 @@ func TestServer_SignatureHelp(t *testing.T) {
 	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
 fn SimpleSetup() ` + "`CREATE (:Marker)`" + `
 `
-	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0644); err != nil {
+	if err := os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write fixtures.scaf: %v", err)
 	}
 
@@ -35,7 +35,7 @@ GetUser {
 	test "finds user" {}
 }
 `
-	if err := os.WriteFile(mainPath, []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(mainPath, []byte(mainContent), 0o644); err != nil {
 		t.Fatalf("Failed to write main.scaf: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestServer_SignatureHelp_SecondParameter(t *testing.T) {
 	fixturesPath := tmpDir + "/fixtures.scaf"
 	fixturesContent := `fn CreateUser() ` + "`CREATE (u:User {name: $name, age: $age}) RETURN u`" + `
 `
-	_ = os.WriteFile(fixturesPath, []byte(fixturesContent), 0644)
+	_ = os.WriteFile(fixturesPath, []byte(fixturesContent), 0o644)
 
 	mainPath := tmpDir + "/main.scaf"
 	mainContent := `import fixtures "./fixtures"
@@ -113,7 +113,7 @@ GetUser {
 	test "t" {}
 }
 `
-	_ = os.WriteFile(mainPath, []byte(mainContent), 0644)
+	_ = os.WriteFile(mainPath, []byte(mainContent), 0o644)
 
 	server, _ := newTestServer(t)
 	ctx := context.Background()

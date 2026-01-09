@@ -10,7 +10,7 @@ import (
 var Parser = participle.MustBuild[Script](
 	participle.Lexer(CypherLexer),
 	participle.Elide("Whitespace", "BlockComment", "LineComment"),
-	participle.UseLookahead(10), // Higher lookahead for nested property access + function calls
+	participle.UseLookahead(10),         // Higher lookahead for nested property access + function calls
 	participle.CaseInsensitive("Ident"), // Cypher keywords are case-insensitive
 )
 

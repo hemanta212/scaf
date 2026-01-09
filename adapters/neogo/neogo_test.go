@@ -95,7 +95,7 @@ type PointsTo struct {
 type Owner struct {
 	neogo.Node `neo4j:"Owner"`
 
-	Name string        `neo4j:"name"`
+	Name string         `neo4j:"name"`
 	Pet  neogo.One[Pet] `neo4j:"->"`
 }
 

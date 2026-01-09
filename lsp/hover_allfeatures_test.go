@@ -77,7 +77,6 @@ func TestHover_AllFeaturesFile(t *testing.T) {
 					Position:     protocol.Position{Line: tc.line, Character: tc.char},
 				},
 			})
-
 			if err != nil {
 				t.Fatalf("Hover() error: %v", err)
 			}
@@ -131,29 +130,29 @@ func TestHover_DebugPositions(t *testing.T) {
 
 	// Test multiple lines
 	testLines := []uint32{41, 50, 51, 52, 54, 87}
-	
+
 	for _, lineNum := range testLines {
-	line := lines[lineNum]
-	t.Logf("\n=== Testing line %d: %q (len=%d) ===", lineNum, line, len(line))
+		line := lines[lineNum]
+		t.Logf("\n=== Testing line %d: %q (len=%d) ===", lineNum, line, len(line))
 
-	for col := uint32(0); col <= uint32(len(line)); col++ {
-		result, _ := server.Hover(ctx, &protocol.HoverParams{
-			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-				TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
-				Position:     protocol.Position{Line: lineNum, Character: col},
-			},
-		})
+		for col := uint32(0); col <= uint32(len(line)); col++ {
+			result, _ := server.Hover(ctx, &protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: "file:///test.scaf"},
+					Position:     protocol.Position{Line: lineNum, Character: col},
+				},
+			})
 
-		if result != nil {
-			first50 := result.Contents.Value
-			if len(first50) > 50 {
-				first50 = first50[:50] + "..."
+			if result != nil {
+				first50 := result.Contents.Value
+				if len(first50) > 50 {
+					first50 = first50[:50] + "..."
+				}
+				first50 = strings.ReplaceAll(first50, "\n", "\\n")
+				t.Logf("  Col %2d: %s", col, first50)
+			} else {
+				t.Logf("  Col %2d: nil", col)
 			}
-			first50 = strings.ReplaceAll(first50, "\n", "\\n")
-			t.Logf("  Col %2d: %s", col, first50)
-		} else {
-			t.Logf("  Col %2d: nil", col)
 		}
 	}
-}
 }

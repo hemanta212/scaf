@@ -5,6 +5,7 @@ package basic
 
 import (
 	"context"
+
 	"github.com/rlch/neogo"
 )
 
@@ -15,17 +16,17 @@ func init() {
 func getUserMock(ctx context.Context, db neogo.Driver, userId any) ([]*getUserResult, error) {
 	if userId == 1 {
 		return []*getUserResult{{
-			Name: "Alice",
+			Name:  "Alice",
 			Email: "alice@example.com",
 		}}, nil
 	} else if userId == 2 {
 		return []*getUserResult{{
-			Name: "Bob",
+			Name:  "Bob",
 			Email: "bob@example.com",
 		}}, nil
 	} else if userId == 1 {
 		return []*getUserResult{{
-			Name: "Alice",
+			Name:  "Alice",
 			Email: nil,
 		}}, nil
 	}

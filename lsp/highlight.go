@@ -154,12 +154,12 @@ func assertQueryNameRange(aq *scaf.AssertQuery) protocol.Range {
 
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      uint32(aq.Pos.Line - 1),   //nolint:gosec
+			Line:      uint32(aq.Pos.Line - 1),  //nolint:gosec
 			Character: uint32(nameStartCol - 1), //nolint:gosec
 		},
 		End: protocol.Position{
-			Line:      uint32(aq.Pos.Line - 1),  //nolint:gosec
-			Character: uint32(nameEndCol - 1), //nolint:gosec
+			Line:      uint32(aq.Pos.Line - 1), //nolint:gosec
+			Character: uint32(nameEndCol - 1),  //nolint:gosec
 		},
 	}
 }
@@ -202,7 +202,7 @@ func importAliasRange(imp *scaf.Import) protocol.Range {
 		aliasStartCol := imp.Pos.Column + 7 // "import " = 7 chars
 		return protocol.Range{
 			Start: protocol.Position{
-				Line:      uint32(imp.Pos.Line - 1),     //nolint:gosec
+				Line:      uint32(imp.Pos.Line - 1),  //nolint:gosec
 				Character: uint32(aliasStartCol - 1), //nolint:gosec
 			},
 			End: protocol.Position{
@@ -274,11 +274,11 @@ func setupModuleRange(setup *scaf.SetupClause) protocol.Range {
 func setupCallModuleRange(call *scaf.SetupCall) protocol.Range {
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      uint32(call.Pos.Line - 1),      //nolint:gosec
+			Line:      uint32(call.Pos.Line - 1),   //nolint:gosec
 			Character: uint32(call.Pos.Column - 1), //nolint:gosec
 		},
 		End: protocol.Position{
-			Line:      uint32(call.Pos.Line - 1),                    //nolint:gosec
+			Line:      uint32(call.Pos.Line - 1),                      //nolint:gosec
 			Character: uint32(call.Pos.Column - 1 + len(call.Module)), //nolint:gosec
 		},
 	}
@@ -291,11 +291,11 @@ func setupItemModuleRange(item *scaf.SetupItem) protocol.Range {
 	}
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      uint32(item.Pos.Line - 1),      //nolint:gosec
+			Line:      uint32(item.Pos.Line - 1),   //nolint:gosec
 			Character: uint32(item.Pos.Column - 1), //nolint:gosec
 		},
 		End: protocol.Position{
-			Line:      uint32(item.Pos.Line - 1),                    //nolint:gosec
+			Line:      uint32(item.Pos.Line - 1),                       //nolint:gosec
 			Character: uint32(item.Pos.Column - 1 + len(*item.Module)), //nolint:gosec
 		},
 	}
@@ -371,11 +371,11 @@ func setupCallQueryRange(call *scaf.SetupCall) protocol.Range {
 	queryStartCol := call.Pos.Column + len(call.Module) + 1 // +1 for dot
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      uint32(call.Pos.Line - 1),      //nolint:gosec
+			Line:      uint32(call.Pos.Line - 1), //nolint:gosec
 			Character: uint32(queryStartCol - 1), //nolint:gosec
 		},
 		End: protocol.Position{
-			Line:      uint32(call.Pos.Line - 1),                    //nolint:gosec
+			Line:      uint32(call.Pos.Line - 1),                   //nolint:gosec
 			Character: uint32(queryStartCol - 1 + len(call.Query)), //nolint:gosec
 		},
 	}
@@ -426,11 +426,11 @@ func statementKeyRange(stmt *scaf.Statement) protocol.Range {
 	key := stmt.Key()
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      uint32(stmt.Pos.Line - 1),      //nolint:gosec
+			Line:      uint32(stmt.Pos.Line - 1),   //nolint:gosec
 			Character: uint32(stmt.Pos.Column - 1), //nolint:gosec
 		},
 		End: protocol.Position{
-			Line:      uint32(stmt.Pos.Line - 1),             //nolint:gosec
+			Line:      uint32(stmt.Pos.Line - 1),              //nolint:gosec
 			Character: uint32(stmt.Pos.Column - 1 + len(key)), //nolint:gosec
 		},
 	}

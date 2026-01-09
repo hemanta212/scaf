@@ -5,6 +5,7 @@ package movies
 
 import (
 	"context"
+
 	"github.com/rlch/neogo"
 )
 
@@ -15,9 +16,9 @@ func init() {
 }
 
 func findActorsMock(ctx context.Context, db neogo.Driver, name string) ([]*findActorsResult, error) {
-	if name == "Tom Hanks" {
+	if name == 2 {
 		return []*findActorsResult{{
-			Name: "Tom Hanks",
+			Name:  "Tom Hanks",
 			Title: "Forrest Gump",
 			Roles: nil,
 		}}, nil
@@ -28,7 +29,7 @@ func findActorsMock(ctx context.Context, db neogo.Driver, name string) ([]*findA
 func findDirectorsMock(ctx context.Context, db neogo.Driver) ([]*findDirectorsResult, error) {
 	if true {
 		return []*findDirectorsResult{{
-			Name: "Robert Zemeckis",
+			Name:  "Robert Zemeckis",
 			Title: "Forrest Gump",
 		}}, nil
 	}
@@ -38,9 +39,9 @@ func findDirectorsMock(ctx context.Context, db neogo.Driver) ([]*findDirectorsRe
 func findReviewsMock(ctx context.Context, db neogo.Driver, title string) ([]*findReviewsResult, error) {
 	if title == "The Matrix" {
 		return []*findReviewsResult{{
-			Name: "",
+			Name:    "",
 			Summary: "",
-			Rating: 5,
+			Rating:  5,
 		}}, nil
 	}
 	panic("no matching test case")

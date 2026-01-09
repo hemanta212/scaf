@@ -206,8 +206,8 @@ Q {
 			wantError:   true,
 		},
 		{
-			name: "mid-query error still gets earlier queries",
-			input: "fn Valid1() `Q1`\nfn Valid2() `Q2`\nfn Broken() `incomplete",
+			name:        "mid-query error still gets earlier queries",
+			input:       "fn Valid1() `Q1`\nfn Valid2() `Q2`\nfn Broken() `incomplete",
 			wantQueries: []string{"Valid1", "Valid2"},
 			wantError:   true,
 		},

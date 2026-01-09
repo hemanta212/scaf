@@ -118,7 +118,7 @@ GetUser {
 
 		// Assert expression - variable
 		{"assert_expr_var", 18, 11, []string{"variable", "u"}},
-		
+
 		// Assert expression - property
 		{"assert_expr_prop", 18, 13, []string{"property", "u.age"}},
 
@@ -141,7 +141,6 @@ GetUser {
 					Position:     protocol.Position{Line: tc.line, Character: tc.char},
 				},
 			})
-
 			if err != nil {
 				t.Fatalf("Hover() error: %v", err)
 			}
@@ -220,7 +219,6 @@ GetUser {
 			Position:     protocol.Position{Line: 6, Character: 7}, // On "views"
 		},
 	})
-
 	if err != nil {
 		t.Fatalf("Hover() error: %v", err)
 	}
@@ -304,7 +302,6 @@ GetUser {
 			Position:     protocol.Position{Line: 5, Character: 7}, // On "likes"
 		},
 	})
-
 	if err != nil {
 		t.Fatalf("Hover() error: %v", err)
 	}

@@ -49,7 +49,7 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
-  tools:
+  tools:install:
     desc: Install required development tools
     cmds:
       - go install mvdan.cc/gofumpt@latest

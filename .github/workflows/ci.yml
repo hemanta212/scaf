@@ -23,7 +23,7 @@ jobs:
           version: 3.x
 
       - name: Install tools
-        run: task tools
+        run: task tools:install
 
       - name: Run CI
         run: task ci

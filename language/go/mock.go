@@ -451,9 +451,7 @@ func (m *mockGenerator) findOutputValue(tc *TestCase, ret FuncReturn) string {
 
 	// Handle pointer types: wrap non-nil values with pointer helper
 	if strings.HasPrefix(ret.Type, "*") && val != nil {
-		m.needsPointerHelpers = true
-		baseType := strings.TrimPrefix(ret.Type, "*")
-		return fmt.Sprintf("ptr(%s)", goLiteralWithType(val, baseType))
+		return fmt.Sprintf("ptr(%s)", goLiteral(val))
 	}
 
 	return goLiteral(val)
@@ -585,27 +583,6 @@ func zeroValue(typ string) string {
 		}
 		// Struct types - use empty literal
 		return typ + "{}"
-	}
-}
-
-// goLiteralWithType converts a Go value to its source code representation with type hint.
-// Used for pointer types where we need to ensure the correct type is emitted.
-func goLiteralWithType(v any, typ string) string {
-	switch val := v.(type) {
-	case nil:
-		return "nil"
-	case string:
-		return fmt.Sprintf("%q", val)
-	case float64:
-		// Check if it's an integer
-		if val == float64(int64(val)) {
-			return fmt.Sprintf("%d", int64(val))
-		}
-		return fmt.Sprintf("%v", val)
-	case bool:
-		return fmt.Sprintf("%t", val)
-	default:
-		return fmt.Sprintf("%v", v)
 	}
 }
 

@@ -23,78 +23,6 @@ func inferExpressionType(expr *cyphergrammar.Expression, qctx *queryContext) *an
 	return inferExpression(expr, qctx)
 }
 
-// inferFieldInfo extracts FieldInfo (type + required) for property access expressions.
-// Returns nil for non-field expressions (literals, function calls, etc).
-func inferFieldInfo(expr *cyphergrammar.Expression, qctx *queryContext) *FieldInfo {
-	if expr == nil || qctx.schema == nil {
-		return nil
-	}
-
-	// Drill down to the postfix expression (where property access lives)
-	post := getPostfixExpr(expr)
-	if post == nil || post.Atom == nil {
-		return nil
-	}
-
-	// Need a variable reference as base
-	varName := post.Atom.Variable
-	if varName == "" {
-		return nil
-	}
-
-	// Check if it's a bound variable (from MATCH)
-	binding, ok := qctx.bindings[varName]
-	if !ok || len(binding.labels) == 0 {
-		return nil
-	}
-
-	// Find property access suffix
-	for _, suffix := range post.Suffixes {
-		if suffix != nil && suffix.Property != "" {
-			return LookupFieldInfo(binding.labels[0], suffix.Property, qctx.schema)
-		}
-	}
-
-	return nil
-}
-
-// getPostfixExpr drills down through the expression tree to get the PostfixExpr.
-func getPostfixExpr(expr *cyphergrammar.Expression) *cyphergrammar.PostfixExpr {
-	if expr == nil || expr.Left == nil {
-		return nil
-	}
-	xor := expr.Left
-	if xor.Left == nil {
-		return nil
-	}
-	and := xor.Left
-	if and.Left == nil {
-		return nil
-	}
-	not := and.Left
-	if not.Expr == nil {
-		return nil
-	}
-	comp := not.Expr
-	if comp.Left == nil {
-		return nil
-	}
-	add := comp.Left
-	if add.Left == nil {
-		return nil
-	}
-	mult := add.Left
-	if mult.Left == nil {
-		return nil
-	}
-	pow := mult.Left
-	if pow.Left == nil {
-		return nil
-	}
-	unary := pow.Left
-	return unary.Expr
-}
-
 // inferExpression handles the expression rule.
 // expression: xorExpression (OR xorExpression)*
 func inferExpression(expr *cyphergrammar.Expression, qctx *queryContext) *analysis.Type {
@@ -347,36 +275,6 @@ func lookupModelField(modelName, fieldName string, qctx *queryContext) *analysis
 	for _, field := range model.Fields {
 		if field.Name == fieldName {
 			return field.Type
-		}
-	}
-
-	return nil
-}
-
-// FieldInfo holds type and required info for a field lookup.
-type FieldInfo struct {
-	Type     *analysis.Type
-	Required bool
-}
-
-// LookupFieldInfo looks up a field from the schema and returns both type and required info.
-// This is used by extractProjectionItem to pass Required through to ReturnInfo.
-func LookupFieldInfo(modelName, fieldName string, schema *analysis.TypeSchema) *FieldInfo {
-	if schema == nil {
-		return nil
-	}
-
-	model, ok := schema.Models[modelName]
-	if !ok {
-		return nil
-	}
-
-	for _, field := range model.Fields {
-		if field.Name == fieldName {
-			return &FieldInfo{
-				Type:     field.Type,
-				Required: field.Required,
-			}
 		}
 	}
 

@@ -784,14 +784,14 @@ func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.Quer
 	// Check for wildcard
 	isWildcard := expression == "*" || strings.HasSuffix(expression, ".*")
 
-	// Infer type and get field info (including Required)
+	// Infer type
 	returnType := inferExpressionType(item.Expr, ctx)
-	fieldInfo := inferFieldInfo(item.Expr, ctx)
 
+	// Get Required from schema for simple property access (e.g., "u.name")
 	// Default to required=true (non-nullable) unless schema says otherwise
 	required := true
-	if fieldInfo != nil {
-		required = fieldInfo.Required
+	if field := lookupFieldFromExpression(expression, ctx); field != nil {
+		required = field.Required
 	}
 
 	result.Returns = append(result.Returns, scaf.ReturnInfo{
@@ -806,6 +806,50 @@ func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.Quer
 		Column:      column,
 		Length:      length,
 	})
+}
+
+// lookupFieldFromExpression extracts variable.property from expression and looks up the field.
+// Returns nil if expression is not a simple property access or field not found.
+func lookupFieldFromExpression(expression string, ctx *queryContext) *analysis.Field {
+	if ctx.schema == nil {
+		return nil
+	}
+
+	// Parse "variable.property" pattern
+	parts := strings.SplitN(expression, ".", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+
+	varName := parts[0]
+	propName := parts[1]
+
+	// Check for additional operations (not a simple property access)
+	// e.g., "u.name IS NULL", "u.name + 'x'", "u.tags[0]"
+	if strings.ContainsAny(propName, " []()+<>=!") {
+		return nil
+	}
+
+	// Look up the binding to get the model
+	binding, ok := ctx.bindings[varName]
+	if !ok || len(binding.labels) == 0 {
+		return nil
+	}
+
+	modelName := binding.labels[0]
+	model, ok := ctx.schema.Models[modelName]
+	if !ok {
+		return nil
+	}
+
+	// Find the field
+	for _, field := range model.Fields {
+		if field.Name == propName {
+			return field
+		}
+	}
+
+	return nil
 }
 
 // expressionToString converts an Expression AST back to a string representation.

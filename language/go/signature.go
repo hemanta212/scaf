@@ -229,54 +229,28 @@ func isAcronym(s string) bool {
 }
 
 // inferParamType infers the Go type for a query parameter.
-// Uses the analyzer's type (from schema-aware analysis) or falls back to schema lookup.
-func inferParamType(param scaf.ParameterInfo, schema *analysis.TypeSchema) string {
-	// If the analyzer already inferred the type from schema, use it directly
+// Uses the analyzer's type from schema-aware analysis.
+func inferParamType(param scaf.ParameterInfo, _ *analysis.TypeSchema) string {
 	if param.Type != nil {
 		return TypeToGoString(param.Type)
 	}
-
-	// Fallback: try to find the type from the schema by looking up fields with matching names
-	// This is a best-effort approach when the analyzer couldn't determine the model context
-	if schema != nil {
-		if fieldType := lookupFieldType(param.Name, schema); fieldType != nil {
-			return TypeToGoString(fieldType)
-		}
-	}
-
 	return "any"
 }
 
 // inferReturnType infers the Go type for a return field.
-// Uses the analyzer's type and Required from ReturnInfo when available.
-// Falls back to schema lookup by field name when analyzer couldn't determine type.
+// Uses the analyzer's type and Required from ReturnInfo.
 // For nullable fields (!Required), wraps primitives in pointer types.
-func inferReturnType(ret scaf.ReturnInfo, schema *analysis.TypeSchema) string {
-	var typ *scaf.Type
-	required := ret.Required
-
-	// If the analyzer already inferred the type from schema, use it directly
-	if ret.Type != nil {
-		typ = ret.Type
-	} else if schema != nil {
-		// Fallback: try to find the type from the schema using the parsed name
-		// (The analyzer already extracts the field name from expressions like "u.name")
-		if field := lookupField(ret.Name, schema); field != nil {
-			typ = field.Type
-			required = field.Required
-		}
-	}
-
-	if typ == nil {
+func inferReturnType(ret scaf.ReturnInfo, _ *analysis.TypeSchema) string {
+	if ret.Type == nil {
 		return "any"
 	}
 
 	// Wrap in pointer if field is nullable (not required) and not already nil-able
-	if !required && !isNilableType(typ) {
-		return "*" + TypeToGoString(typ)
+	if !ret.Required && !isNilableType(ret.Type) {
+		return "*" + TypeToGoString(ret.Type)
 	}
 
-	return TypeToGoString(typ)
+	return TypeToGoString(ret.Type)
 }
 
 // isNilableType checks if a type is already nil-able in Go (pointer, slice, map).
@@ -289,44 +263,6 @@ func isNilableType(t *scaf.Type) bool {
 		return true
 	}
 	return false
-}
-
-// lookupField searches the schema for a field with the given name.
-// Returns the full Field struct (including Required info) if found, nil otherwise.
-func lookupField(fieldName string, schema *analysis.TypeSchema) *analysis.Field {
-	if schema == nil || fieldName == "" {
-		return nil
-	}
-
-	// Search all models for a matching field
-	for _, model := range schema.Models {
-		for _, field := range model.Fields {
-			if field.Name == fieldName {
-				return field
-			}
-		}
-	}
-
-	return nil
-}
-
-// lookupFieldType searches the schema for a field with the given name.
-// Returns the field's type if found, nil otherwise.
-func lookupFieldType(fieldName string, schema *analysis.TypeSchema) *analysis.Type {
-	if schema == nil || fieldName == "" {
-		return nil
-	}
-
-	// Search all models for a matching field
-	for _, model := range schema.Models {
-		for _, field := range model.Fields {
-			if field.Name == fieldName {
-				return field.Type
-			}
-		}
-	}
-
-	return nil
 }
 
 // LookupFieldTypeInModel looks up a field type in a specific model.

@@ -509,47 +509,6 @@ func TestInferReturnTypeWithAnalyzerHint(t *testing.T) {
 	assert.Equal(t, "int64", typ)
 }
 
-func TestLookupFieldType(t *testing.T) {
-	t.Parallel()
-
-	schema := &analysis.TypeSchema{
-		Models: map[string]*analysis.Model{
-			"User": {
-				Name: "User",
-				Fields: []*analysis.Field{
-					{Name: "id", Type: analysis.TypeString},
-					{Name: "age", Type: analysis.TypeInt},
-				},
-			},
-			"Post": {
-				Name: "Post",
-				Fields: []*analysis.Field{
-					{Name: "title", Type: analysis.TypeString},
-				},
-			},
-		},
-	}
-
-	// Found in first model
-	typ := lookupFieldType("id", schema)
-	require.NotNil(t, typ)
-	assert.Equal(t, "string", typ.String())
-
-	// Found in second model
-	typ = lookupFieldType("title", schema)
-	require.NotNil(t, typ)
-	assert.Equal(t, "string", typ.String())
-
-	// Not found
-	assert.Nil(t, lookupFieldType("nonexistent", schema))
-
-	// Empty field name
-	assert.Nil(t, lookupFieldType("", schema))
-
-	// Nil schema
-	assert.Nil(t, lookupFieldType("id", nil))
-}
-
 func TestToExportedName(t *testing.T) {
 	t.Parallel()
 

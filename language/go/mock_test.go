@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rlch/scaf"
+	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/language"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -766,4 +767,79 @@ func TestToProdFuncName(t *testing.T) {
 			assert.Equal(t, tt.expected, toProdFuncName(tt.input))
 		})
 	}
+}
+
+func TestGenerateMockFileWithPointerTypes(t *testing.T) {
+	t.Parallel()
+
+	// Test that mock generation correctly handles pointer types for nullable fields
+	input := `
+fn GetUser() ` + "`" + `
+MATCH (u:User {id: $userId})
+RETURN u.id AS id, u.name AS name, u.bio AS bio
+` + "`" + `
+
+GetUser {
+	test "user with bio" {
+		$userId: 1
+		id: 1
+		name: "Alice"
+		bio: "Hello world"
+	}
+
+	test "user without bio" {
+		$userId: 2
+		id: 2
+		name: "Bob"
+		bio: null
+	}
+}
+`
+	suite, err := scaf.Parse([]byte(input))
+	require.NoError(t, err)
+
+	analyzer := scaf.GetAnalyzer("cypher")
+
+	// Create schema with bio as nullable
+	schema := &analysis.TypeSchema{
+		Models: map[string]*analysis.Model{
+			"User": {
+				Name: "User",
+				Fields: []*analysis.Field{
+					{Name: "id", Type: analysis.TypeInt, Required: true},
+					{Name: "name", Type: analysis.TypeString, Required: true},
+					{Name: "bio", Type: analysis.TypeString, Required: false}, // nullable
+				},
+			},
+		},
+	}
+
+	ctx := &Context{
+		GenerateContext: language.GenerateContext{
+			Suite:         suite,
+			QueryAnalyzer: analyzer,
+			Schema:        schema,
+		},
+		PackageName: "testpkg",
+	}
+
+	gen := &generator{ctx: ctx}
+	signatures, err := gen.extractSignatures()
+	require.NoError(t, err)
+
+	content, err := gen.generateMockFile(signatures)
+	require.NoError(t, err)
+	require.NotNil(t, content)
+
+	contentStr := string(content)
+
+	// Should contain ptr helper for pointer types
+	assert.Contains(t, contentStr, "func ptr[T any](v T) *T", "should emit ptr helper")
+	assert.Contains(t, contentStr, "return &v", "ptr helper should return address")
+
+	// Should use ptr() for non-nil string value
+	assert.Contains(t, contentStr, `Bio: ptr("Hello world")`, "should wrap string with ptr()")
+
+	// Should use nil for null value
+	assert.Contains(t, contentStr, "Bio: nil", "should use nil for null")
 }

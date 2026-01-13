@@ -14,15 +14,6 @@ import (
 	"unicode"
 )
 
-// goKeywords is the set of Go reserved keywords that cannot be package names.
-var goKeywords = map[string]bool{
-	"break": true, "case": true, "chan": true, "const": true, "continue": true,
-	"default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
-	"func": true, "go": true, "goto": true, "if": true, "import": true,
-	"interface": true, "map": true, "package": true, "range": true, "return": true,
-	"select": true, "struct": true, "switch": true, "type": true, "var": true,
-}
-
 // InferPackageName determines the Go package name for a directory.
 //
 // It uses a ladder of strategies in order of preference:
@@ -53,14 +44,14 @@ func InferPackageName(dir string) (string, error) {
 //   - Removes invalid characters (hyphens, dots, spaces)
 //   - Converts to lowercase
 //   - Prefixes with "pkg" if empty or starts with a digit
-//   - Prefixes with "pkg" if the result is a Go keyword
+//   - Suffixes with "pkg" if the result is a Go keyword
 //
 // Examples:
 //
 //	"my-package" -> "mypackage"
 //	"My.Package" -> "mypackage"
 //	"123start"   -> "pkg123start"
-//	"type"       -> "pkgtype"
+//	"type"       -> "typepkg"
 func SanitizePackageName(name string) string {
 	var b strings.Builder
 	for _, r := range name {
@@ -78,12 +69,17 @@ func SanitizePackageName(name string) string {
 		result = "pkg" + result
 	}
 
-	// Go keyword: prefix with "pkg"
-	if goKeywords[result] {
-		result = "pkg" + result
+	// Go keyword: suffix with "pkg"
+	if IsKeyword(result) {
+		result = result + "pkg"
 	}
 
 	return result
+}
+
+// IsKeyword returns true if name is a Go keyword.
+func IsKeyword(name string) bool {
+	return token.Lookup(name).IsKeyword()
 }
 
 // parseAnyPackageClause finds any .go file in dir and extracts its package name.

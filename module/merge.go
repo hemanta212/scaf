@@ -200,42 +200,6 @@ func DeduplicateImports(imports []*scaf.Import, baseDir string) []*scaf.Import {
 	return result
 }
 
-// FindSamePackageImports identifies imports that point to sibling files.
-// Returns the imports and their resolved sibling paths.
-func FindSamePackageImports(imports []*scaf.Import, baseDir string, siblingPaths []string) []struct {
-	Import      *scaf.Import
-	SiblingPath string
-} {
-	// Normalize sibling paths
-	siblingSet := make(map[string]string, len(siblingPaths))
-	for _, p := range siblingPaths {
-		abs, err := filepath.Abs(p)
-		if err == nil {
-			siblingSet[abs] = p
-		}
-	}
-
-	var result []struct {
-		Import      *scaf.Import
-		SiblingPath string
-	}
-
-	for _, imp := range imports {
-		resolved := resolveImportPath(imp.Path, baseDir)
-		if siblingPath, ok := siblingSet[resolved]; ok {
-			result = append(result, struct {
-				Import      *scaf.Import
-				SiblingPath string
-			}{
-				Import:      imp,
-				SiblingPath: siblingPath,
-			})
-		}
-	}
-
-	return result
-}
-
 // ValidateMerge checks if a set of files can be merged without errors.
 // Returns nil if merge would succeed, otherwise returns the first error.
 func ValidateMerge(inputs []ParsedFile) error {

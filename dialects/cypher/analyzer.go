@@ -792,9 +792,11 @@ func extractProjectionItem(item *cyphergrammar.ProjectionItem, result *scaf.Quer
 	returnType := inferExpressionType(item.Expr, ctx)
 
 	// Get Required from schema for simple property access (e.g., "u.name")
-	// Default to required=true (non-nullable) unless schema says otherwise
-	// or the variable came from OPTIONAL MATCH
-	required := true
+	// Conservative default: assume nullable for complex expressions we can't analyze.
+	// Only use schema's Required for simple "variable.property" patterns where we can
+	// confidently determine nullability. This avoids generating non-pointer types for
+	// expressions that might return null (function calls, CASE, aggregates, etc.)
+	required := false
 	if field, binding := lookupFieldFromExpression(expression, ctx); field != nil {
 		// If binding is from OPTIONAL MATCH, always treat as nullable
 		if binding != nil && binding.optional {

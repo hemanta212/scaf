@@ -58,9 +58,6 @@ func MergePackageFiles(inputs []ParsedFile) (*scaf.File, []MergeWarning, error) 
 		file int // index of file where function was defined
 	})
 
-	// Track which file has setup/teardown
-	var setupFile, teardownFile int = -1, -1
-
 	// Normalize sibling paths to absolute for comparison
 	siblingSet := make(map[string]bool, len(inputs))
 	for _, input := range inputs {
@@ -116,36 +113,6 @@ func MergePackageFiles(inputs []ParsedFile) (*scaf.File, []MergeWarning, error) 
 			merged.Functions = append(merged.Functions, fn)
 		}
 
-		// Process setup
-		if file.Setup != nil {
-			if setupFile >= 0 {
-				return nil, warnings, &MergeError{
-					Span: file.Setup.Span(),
-					Code: "conflicting-setup",
-					Message: fmt.Sprintf("setup clause already defined in file %d; only one file can have file-level setup",
-						setupFile+1),
-				}
-			}
-			setupFile = fileIdx
-			merged.Setup = file.Setup
-		}
-
-		// Process teardown
-		if file.Teardown != nil {
-			if teardownFile >= 0 {
-				// For teardown we don't have a Span easily, use NodeMeta from file
-				return nil, warnings, &MergeError{
-					Span: file.Span(),
-					Code: "conflicting-teardown",
-					Message: fmt.Sprintf("teardown clause already defined in file %d; only one file can have file-level teardown",
-						teardownFile+1),
-				}
-			}
-			teardownFile = fileIdx
-			merged.Teardown = file.Teardown
-		}
-
-		// Concatenate scopes
 		merged.Scopes = append(merged.Scopes, file.Scopes...)
 	}
 

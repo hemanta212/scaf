@@ -1,6 +1,0 @@
-dialect: cypher
-database: neo4j
-
-generate:
-  adapter: neogo
-  schema: .scaf-schema.yaml

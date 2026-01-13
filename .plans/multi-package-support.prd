@@ -7,6 +7,7 @@
 1. **File overwrite**: Multiple `.scaf` files in same directory overwrite `scaf.go` - only last file's functions survive
 2. **Same-package imports**: Sibling `.scaf` files importing each other create redundant imports after merge
 3. **Package naming**: Current logic in `cmd/scaf/generate.go:283-292` uses naive folder sanitization, ignoring existing Go package declarations
+4. **Config discovery**: Config lookup only checks input file's directory, doesn't walk up to find project root config
 
 ## Root Cause Analysis
 
@@ -33,6 +34,34 @@ packageName = strings.ReplaceAll(packageName, "-", "")
 
 This belongs in `language/go/` since package naming is language-specific.
 
+### Config Discovery (wrong scope)
+
+**Location**: `cmd/scaf/generate.go:92-100`
+
+```go
+// Line 92-100 - only checks first file's directory, no walk-up
+configDir := filepath.Dir(files[0])
+loadedCfg, err := scaf.LoadConfig(configDir)
+```
+
+**Problem**: Current behavior requires specifying individual files/dirs. Expected behavior is `go generate ./...` style:
+
+```bash
+# Current (broken)
+scaf generate internal/users/  # looks for config in internal/users/
+
+# Expected (like go generate)
+scaf generate                  # from project root, finds all packages
+```
+
+**Expected flow**:
+1. Run `scaf generate` from project root
+2. Load `.scaf.yaml` from cwd
+3. Load `.scaf-schema.yaml` relative to config file
+4. Walk all subdirs, find `*.scaf` files
+5. Group by directory (each dir = one package)
+6. For each package: merge files, infer package name, generate
+
 ## Solution Architecture
 
 ### Layer Responsibilities
@@ -43,6 +72,7 @@ This belongs in `language/go/` since package naming is language-specific.
 | analysis | `analysis/rules.go` | Warn on same-package imports |
 | language/go | `language/go/package.go` (new) | Infer Go package name from dir |
 | cmd | `cmd/scaf/generate.go` | Orchestration only |
+| cmd | `cmd/scaf/config.go` | Walk up to find `.scaf.yaml`, track config dir for relative paths |
 
 ## Detailed Implementation
 
@@ -313,47 +343,135 @@ func SanitizePackageName(name string) string {
 
 ### 3. cmd/scaf/generate.go updates
 
-**Purpose**: Orchestration - delegate to module and language layers.
+**Purpose**: New `go generate ./...` style flow - run from project root, discover all packages.
 
-**Reference**: Current implementation at `cmd/scaf/generate.go:256-326`
+**Reference**: Current implementation at `cmd/scaf/generate.go:75-243`
 
 ```go
-// Updated generateMergedFiles - delegates to module.MergePackageFiles
-// and language/go.InferPackageName
-func generateMergedFiles(outputDir string, inputFiles []string, opts *generateOptions) error {
-    // Parse all files
-    var parsedFiles []*scaf.File
-    for _, inputFile := range inputFiles {
-        data, err := os.ReadFile(inputFile)
+func runGenerate(ctx context.Context, cmd *cli.Command) error {
+    // Step 1: Load config from cwd (project root)
+    cwd, err := os.Getwd()
+    if err != nil {
+        return fmt.Errorf("getting cwd: %w", err)
+    }
+    
+    cfg, err := scaf.LoadConfig(cwd)
+    if err != nil {
+        return fmt.Errorf("loading config: %w (run from project root with .scaf.yaml)", err)
+    }
+    
+    // Step 2: Load schema relative to config file location (cwd)
+    var schema *analysis.TypeSchema
+    if cfg.Generate.Schema != "" {
+        schemaPath := filepath.Join(cwd, cfg.Generate.Schema)
+        schema, err = analysis.LoadSchema(schemaPath, cwd)
         if err != nil {
-            return fmt.Errorf("reading %s: %w", inputFile, err)
+            return fmt.Errorf("loading schema: %w", err)
+        }
+    }
+    
+    // Step 3: Discover all .scaf files, group by directory
+    packages, err := discoverPackages(cwd)
+    if err != nil {
+        return fmt.Errorf("discovering packages: %w", err)
+    }
+    
+    if len(packages) == 0 {
+        return fmt.Errorf("no .scaf files found under %s", cwd)
+    }
+    
+    // Step 4: Get language/adapter (from config or defaults)
+    langName := firstNonEmpty(cmd.String("lang"), cfg.Generate.Lang, scaf.LangGo)
+    adapterName := firstNonEmpty(cmd.String("adapter"), cfg.Generate.Adapter, scaf.AdapterNeogo)
+    
+    goLang := language.Get(langName).(*golang.GoLanguage)
+    binding := golang.GetBinding(adapterName)
+    queryAnalyzer := scaf.GetAnalyzer(cfg.DialectName())
+    
+    // Step 5: Generate each package
+    for pkgDir, scafFiles := range packages {
+        // Parse all files in package
+        var parsedFiles []*scaf.File
+        for _, f := range scafFiles {
+            data, _ := os.ReadFile(f)
+            suite, _ := scaf.Parse(data)
+            parsedFiles = append(parsedFiles, suite)
         }
         
-        suite, err := scaf.Parse(data)
+        // Merge using module layer
+        mergeResult, err := module.MergePackageFiles(scafFiles, parsedFiles)
         if err != nil {
-            return fmt.Errorf("parsing %s: %w", inputFile, err)
+            return fmt.Errorf("merging %s: %w", pkgDir, err)
         }
-        parsedFiles = append(parsedFiles, suite)
+        
+        // Print warnings
+        for _, w := range mergeResult.Warnings {
+            fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.File, w.Message)
+        }
+        
+        // Infer package name using language layer
+        packageName := golang.InferPackageName(pkgDir)
+        
+        // Generate
+        goCtx := &golang.Context{
+            GenerateContext: language.GenerateContext{
+                Suite:         mergeResult.File,
+                QueryAnalyzer: queryAnalyzer,
+                Schema:        schema,
+                OutputDir:     pkgDir,
+            },
+            PackageName: packageName,
+            Binding:     binding,
+        }
+        
+        files, err := goLang.GenerateWithContext(goCtx)
+        if err != nil {
+            return fmt.Errorf("generating %s: %w", pkgDir, err)
+        }
+        
+        for filename, content := range files {
+            if content == nil {
+                continue
+            }
+            outPath := filepath.Join(pkgDir, filename)
+            os.WriteFile(outPath, content, 0o644)
+            fmt.Printf("wrote %s\n", outPath)
+        }
     }
     
-    // Delegate merging to module layer
-    mergeResult, err := module.MergePackageFiles(inputFiles, parsedFiles)
-    if err != nil {
-        return fmt.Errorf("merging files: %w", err)
-    }
+    return nil
+}
+
+// discoverPackages walks cwd and finds all directories containing .scaf files.
+// Returns map[directory][]scafFiles
+func discoverPackages(root string) (map[string][]string, error) {
+    packages := make(map[string][]string)
     
-    // Print warnings
-    for _, w := range mergeResult.Warnings {
-        fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.File, w.Message)
-    }
+    err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+        if err != nil {
+            return err
+        }
+        // Skip hidden directories and common non-source dirs
+        if d.IsDir() && (strings.HasPrefix(d.Name(), ".") || d.Name() == "vendor" || d.Name() == "node_modules") {
+            return filepath.SkipDir
+        }
+        if !d.IsDir() && strings.HasSuffix(path, ".scaf") {
+            dir := filepath.Dir(path)
+            packages[dir] = append(packages[dir], path)
+        }
+        return nil
+    })
     
-    // Delegate package naming to language layer
-    packageName := opts.packageName
-    if packageName == "" {
-        packageName = golang.InferPackageName(outputDir)
+    return packages, err
+}
+
+func firstNonEmpty(values ...string) string {
+    for _, v := range values {
+        if v != "" {
+            return v
+        }
     }
-    
-    // ... rest of generation using mergeResult.File ...
+    return ""
 }
 ```
 

@@ -1,7 +1,8 @@
 // Fixture functions for users package
 // 
-// PROBLEM: This imports a sibling file in same package.
-// After merge, this import is redundant - GetUser will be in same output file.
+// NOTE: After merge, GetUser from queries.scaf is in the same file,
+// so we can reference it directly without the import prefix.
+// The same-package import warning will be emitted during merge.
 
 import queries "./queries"
 
@@ -13,15 +14,3 @@ CREATE (:User {id: 2, name: "Bob", email: "bob@test.com"})
 fn CleanupUsers() `
 MATCH (u:User) DETACH DELETE u
 `
-
-// This scope uses GetUser from sibling file via import
-// After merge, should work without import
-queries.GetUser {
-    setup CreateTestUsers()
-    teardown CleanupUsers()
-    
-    test "fixture creates alice" {
-        $id: 1
-        name: "Alice"
-    }
-}

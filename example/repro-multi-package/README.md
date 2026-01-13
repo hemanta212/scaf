@@ -1,64 +1,60 @@
 # Reproduction: Multi-Package Support
 
-Demonstrates two issues with multi-file scaf projects:
+This example demonstrates the multi-package support feature:
 
-1. Multiple `.scaf` files in same directory overwrite output
-2. Same-package imports create redundant/broken references after merge
+1. Multiple `.scaf` files in same directory are merged into single output
+2. Same-package imports are detected and warned about
+3. Config is discovered by walking up from cwd
 
-## The Problems
-
-### Problem 1: File Overwrite
+## Directory Structure
 
 ```
 internal/users/
-├── queries.scaf    # defines GetUser, CreateUser
-├── fixtures.scaf   # defines CreateTestUsers
-└── scaf.go         # ONLY has fixtures - queries.scaf was overwritten!
+  queries.scaf    # defines GetUser, GetAllUsers + tests
+  fixtures.scaf   # defines CreateTestUsers, CleanupUsers
+  scaf.go         # MERGED: all functions from both files
+  scaf_test.go    # MERGED: test mocks from both files
 ```
 
-### Problem 2: Same-Package Import
+## Same-Package Import Warning
 
-```scaf
-// fixtures.scaf
-fn CreateTestUsers() `CREATE (:User {id: 1})`
+When `fixtures.scaf` imports `./queries` (a sibling file), the merge emits a warning:
 
-// queries.scaf  
-import fixtures "./fixtures"  // <-- imports sibling file
-
-fn GetUser(id: int) `MATCH (u:User {id: $id}) RETURN u`
-
-GetUser {
-    setup fixtures.CreateTestUsers()  // after merge, this is redundant
-}
+```
+7:1: warning: import "./queries" resolves to sibling file in same package
 ```
 
-After merge, `fixtures.CreateTestUsers` is already in the same file - the import is meaningless.
+This tells the user the import is redundant after merge - functions from `queries.scaf`
+are already available directly.
 
-## Expected Behavior
-
-1. All `.scaf` files in a directory merge into single `scaf.go` / `scaf_test.go`
-2. Imports pointing to sibling files are detected and warned
-3. Functions from sibling files are directly available (no import needed)
-4. Package name inferred from existing Go files or folder name
-
-## Steps to Reproduce
+## Running
 
 ```bash
 cd example/repro-multi-package
 
-# Generate - currently overwrites, only last file wins
-scaf generate internal/users/
+# Run from project root - config discovered automatically
+scaf generate
 
-# Check output - missing functions from queries.scaf
-cat internal/users/scaf.go
+# Output:
+# 7:1: warning: import "./queries" resolves to sibling file in same package
+# wrote internal/users/scaf.go
+# wrote internal/users/scaf_test.go
+```
 
-# Expected: both GetUser and CreateTestUsers present
-# Actual: only one of them (depending on file order)
+## Verify Merge
+
+```bash
+# Check that scaf.go has functions from BOTH files
+grep "^func " internal/users/scaf.go
+# CreateTestUsers
+# CleanupUsers
+# GetUser
+# GetAllUsers
 ```
 
 ## Files
 
-- `internal/users/queries.scaf` - Query functions
-- `internal/users/fixtures.scaf` - Test fixture functions (imports queries)
-- `.scaf.yaml` - Root config
-- `.scaf-schema.yaml` - Shared schema
+- `internal/users/queries.scaf` - Query functions with tests
+- `internal/users/fixtures.scaf` - Test fixture functions (demonstrates same-package import warning)
+- `.scaf.yaml` - Root config (dialect, adapter settings)
+- `.scaf-schema.yaml` - Shared schema for type inference

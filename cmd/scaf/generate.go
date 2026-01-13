@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/boyter/gocodewalker"
 	"github.com/rlch/scaf"
 	"github.com/rlch/scaf/analysis"
 	"github.com/rlch/scaf/language"
 	golang "github.com/rlch/scaf/language/go"
+	"github.com/rlch/scaf/module"
 	"github.com/urfave/cli/v3"
 
 	// Register bindings and dialects.
@@ -73,54 +75,26 @@ func generateCommand() *cli.Command {
 }
 
 func runGenerate(ctx context.Context, cmd *cli.Command) error {
-	args := cmd.Args().Slice()
-	if len(args) == 0 {
-		args = []string{"."}
-	}
-
-	// Collect scaf files
-	files, err := collectScafFiles(args)
+	// Step 1: Load config from cwd (project root)
+	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting cwd: %w", err)
 	}
 
-	if len(files) == 0 {
-		return ErrNoScafFilesForGenerate
+	cfg, configDir, err := loadConfigWithDir(cwd)
+	if err != nil {
+		// Config is optional - continue with defaults if not found
+		cfg = nil
+		configDir = cwd
 	}
 
-	// Load config from the first file's directory
-	configDir := filepath.Dir(files[0])
-
-	var cfg *scaf.Config
-
-	loadedCfg, err := scaf.LoadConfig(configDir)
-	if err == nil {
-		cfg = loadedCfg
-	}
-
-	// Get settings from flags, falling back to config
-	langName := cmd.String("lang")
-	if langName == "" && cfg != nil && cfg.Generate.Lang != "" {
-		langName = cfg.Generate.Lang
-	}
-
-	if langName == "" {
-		langName = scaf.LangGo // default
-	}
-
-	adapterName := cmd.String("adapter")
-	if adapterName == "" && cfg != nil && cfg.Generate.Adapter != "" {
-		adapterName = cfg.Generate.Adapter
-	}
-
-	dialectName := cmd.String("dialect")
-	if dialectName == "" && cfg != nil {
-		dialectName = cfg.DialectName()
-	}
-
-	if dialectName == "" {
-		dialectName = scaf.DialectCypher // default
-	}
+	// Step 2: Get settings from flags, falling back to config
+	langName := firstNonEmpty(cmd.String("lang"), cfgString(cfg, func(c *scaf.Config) string { return c.Generate.Lang }), scaf.LangGo)
+	adapterName := firstNonEmpty(cmd.String("adapter"), cfgString(cfg, func(c *scaf.Config) string { return c.Generate.Adapter }))
+	dialectName := firstNonEmpty(cmd.String("dialect"), cfgDialect(cfg), scaf.DialectCypher)
+	outputDir := firstNonEmpty(cmd.String("out"), cfgString(cfg, func(c *scaf.Config) string { return c.Generate.Out }))
+	packageName := firstNonEmpty(cmd.String("package"), cfgString(cfg, func(c *scaf.Config) string { return c.Generate.Package }))
+	schemaPath := firstNonEmpty(cmd.String("schema"), cfgString(cfg, func(c *scaf.Config) string { return c.Generate.Schema }))
 
 	// Infer adapter from database/dialect if not specified
 	if adapterName == "" {
@@ -129,45 +103,27 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 				adapterName = scaf.AdapterForDatabase(dbName, langName)
 			}
 		}
-
 		// Fall back to dialect-based inference
 		if adapterName == "" && dialectName == scaf.DialectCypher {
 			adapterName = scaf.AdapterNeogo
 		}
 	}
 
-	outputDir := cmd.String("out")
-	if outputDir == "" && cfg != nil && cfg.Generate.Out != "" {
-		outputDir = cfg.Generate.Out
-	}
-
-	packageName := cmd.String("package")
-	if packageName == "" && cfg != nil && cfg.Generate.Package != "" {
-		packageName = cfg.Generate.Package
-	}
-
-	schemaPath := cmd.String("schema")
-	if schemaPath == "" && cfg != nil && cfg.Generate.Schema != "" {
-		schemaPath = cfg.Generate.Schema
-	}
-
-	// Load schema if specified
+	// Step 3: Load schema relative to config file location
 	var schema *analysis.TypeSchema
 	if schemaPath != "" {
-		var err error
 		schema, err = analysis.LoadSchema(schemaPath, configDir)
 		if err != nil {
 			return fmt.Errorf("loading schema: %w", err)
 		}
 	}
 
-	// Get language
+	// Step 4: Get language and binding
 	lang := language.Get(langName)
 	if lang == nil {
 		return fmt.Errorf("%w: %s (available: %v)", ErrUnknownLanguage, langName, language.RegisteredLanguages())
 	}
 
-	// Validate adapter support for the language
 	goLang, ok := lang.(*golang.GoLanguage)
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrLanguageNoAdapters, langName)
@@ -183,28 +139,44 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 
 	queryAnalyzer := scaf.GetAnalyzer(dialectName)
 
-	// Run analysis and check for errors before generating code
+	// Step 5: Discover packages - either from args or by walking cwd
+	args := cmd.Args().Slice()
+	if len(args) == 0 {
+		args = []string{"."}
+	}
+
+	packages, err := discoverPackages(args)
+	if err != nil {
+		return fmt.Errorf("discovering packages: %w", err)
+	}
+
+	if len(packages) == 0 {
+		return ErrNoScafFilesForGenerate
+	}
+
+	// Step 6: Run analysis on all files first
 	semanticAnalyzer := analysis.NewAnalyzerWithQueryAnalyzer(nil, nil, queryAnalyzer)
-
 	var hasErrors bool
-	for _, inputFile := range files {
-		data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", inputFile, err)
-		}
 
-		result := semanticAnalyzer.Analyze(inputFile, data)
-		if result.HasErrors() {
-			hasErrors = true
-			// Print errors
-			for _, diag := range result.Errors() {
-				loc := ""
-				if diag.Span.Start.Line > 0 {
-					loc = fmt.Sprintf("%s:%d:%d: ", inputFile, diag.Span.Start.Line, diag.Span.Start.Column)
-				} else {
-					loc = fmt.Sprintf("%s: ", inputFile)
+	for _, scafFiles := range packages {
+		for _, inputFile := range scafFiles {
+			data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", inputFile, err)
+			}
+
+			result := semanticAnalyzer.Analyze(inputFile, data)
+			if result.HasErrors() {
+				hasErrors = true
+				for _, diag := range result.Errors() {
+					loc := ""
+					if diag.Span.Start.Line > 0 {
+						loc = fmt.Sprintf("%s:%d:%d: ", inputFile, diag.Span.Start.Line, diag.Span.Start.Column)
+					} else {
+						loc = fmt.Sprintf("%s: ", inputFile)
+					}
+					fmt.Fprintf(os.Stderr, "%serror: %s\n", loc, diag.Message)
 				}
-				fmt.Fprintf(os.Stderr, "%serror: %s\n", loc, diag.Message)
 			}
 		}
 	}
@@ -213,6 +185,7 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		return ErrGenerateDiagnosticErrors
 	}
 
+	// Step 7: Generate each package
 	opts := &generateOptions{
 		goLang:      goLang,
 		analyzer:    queryAnalyzer,
@@ -222,9 +195,14 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 		packageName: packageName,
 	}
 
-	// Process each file
-	for _, inputFile := range files {
-		if err := generateFile(inputFile, opts); err != nil {
+	for pkgDir, scafFiles := range packages {
+		// Output directory: use flag if specified, otherwise use package dir
+		outDir := outputDir
+		if outDir == "" {
+			outDir = pkgDir
+		}
+
+		if err := generateMergedFiles(scafFiles, outDir, opts); err != nil {
 			return err
 		}
 	}
@@ -232,49 +210,162 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// generateOptions holds configuration for file generation.
-type generateOptions struct {
-	goLang      *golang.GoLanguage
-	analyzer    scaf.QueryAnalyzer
-	binding     golang.Binding
-	schema      *analysis.TypeSchema
-	outputDir   string
-	packageName string
+// loadConfigWithDir loads config and returns both the config and the directory it was found in.
+// Walks up from startDir to find .scaf.yaml.
+func loadConfigWithDir(startDir string) (*scaf.Config, string, error) {
+	dir := startDir
+	for {
+		cfg, err := scaf.LoadConfig(dir)
+		if err == nil {
+			return cfg, dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached root, no config found
+			return nil, startDir, fmt.Errorf("no .scaf.yaml found")
+		}
+		dir = parent
+	}
 }
 
-func generateFile(inputFile string, opts *generateOptions) error {
-	// Read and parse the scaf file
-	data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
+// discoverPackages finds all .scaf files and groups them by directory.
+// Uses gocodewalker for fast traversal with .gitignore support.
+// Returns map[directory][]scafFiles.
+func discoverPackages(args []string) (map[string][]string, error) {
+	packages := make(map[string][]string)
+	var mu sync.Mutex
+
+	for _, arg := range args {
+		info, err := os.Stat(arg)
+		if err != nil {
+			return nil, err
+		}
+
+		if info.IsDir() {
+			// Use gocodewalker for directories - respects .gitignore
+			if err := walkDirWithGocodewalker(arg, func(path string) {
+				dir := filepath.Dir(path)
+				mu.Lock()
+				packages[dir] = append(packages[dir], path)
+				mu.Unlock()
+			}); err != nil {
+				return nil, err
+			}
+		} else if strings.HasSuffix(arg, ".scaf") {
+			dir := filepath.Dir(arg)
+			packages[dir] = append(packages[dir], arg)
+		}
+	}
+
+	return packages, nil
+}
+
+// walkDirWithGocodewalker uses gocodewalker for fast directory traversal.
+// It respects .gitignore and .ignore files automatically.
+func walkDirWithGocodewalker(root string, callback func(path string)) error {
+	fileListQueue := make(chan *gocodewalker.File, 100)
+
+	fileWalker := gocodewalker.NewFileWalker(root, fileListQueue)
+	fileWalker.AllowListExtensions = []string{"scaf"}
+
+	// Collect errors
+	var walkErr error
+	fileWalker.SetErrorHandler(func(e error) bool {
+		walkErr = e
+		return true // continue on error
+	})
+
+	// Process files as they come in
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for f := range fileListQueue {
+			callback(f.Location)
+		}
+	}()
+
+	// Start walking (blocks until done, closes queue)
+	if err := fileWalker.Start(); err != nil {
+		return err
+	}
+
+	wg.Wait()
+
+	return walkErr
+}
+
+// Helper functions for config access
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func cfgString(cfg *scaf.Config, getter func(*scaf.Config) string) string {
+	if cfg == nil {
+		return ""
+	}
+	return getter(cfg)
+}
+
+func cfgDialect(cfg *scaf.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.DialectName()
+}
+
+// generateMergedFiles parses, merges, and generates code for a group of files.
+func generateMergedFiles(inputFiles []string, outputDir string, opts *generateOptions) error {
+	// Parse all files
+	var parsedFiles []*scaf.File
+	for _, inputFile := range inputFiles {
+		data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", inputFile, err)
+		}
+
+		suite, err := scaf.Parse(data)
+		if err != nil {
+			return fmt.Errorf("parsing %s: %w", inputFile, err)
+		}
+		parsedFiles = append(parsedFiles, suite)
+	}
+
+	// Merge files from the same directory
+	merged, warnings, err := module.MergePackageFilesWithPaths(parsedFiles, inputFiles)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", inputFile, err)
+		return fmt.Errorf("merging files: %w", err)
 	}
 
-	suite, err := scaf.Parse(data)
-	if err != nil {
-		return fmt.Errorf("parsing %s: %w", inputFile, err)
+	// Print merge warnings (same-package imports)
+	for _, w := range warnings {
+		loc := ""
+		if w.Span.Start.Line > 0 {
+			loc = fmt.Sprintf("%d:%d: ", w.Span.Start.Line, w.Span.Start.Column)
+		}
+		fmt.Fprintf(os.Stderr, "%swarning: %s\n", loc, w.Message)
 	}
 
-	// Determine output directory (default: same as input file)
-	outputDir := opts.outputDir
-	if outputDir == "" {
-		outputDir = filepath.Dir(inputFile)
-	}
-
-	// Determine package name (default: directory name)
+	// Determine package name using the Go-specific inference ladder
 	packageName := opts.packageName
 	if packageName == "" {
-		packageName = filepath.Base(outputDir)
-		// Clean up package name (remove invalid characters)
-		packageName = strings.ReplaceAll(packageName, "-", "")
-		packageName = strings.ReplaceAll(packageName, ".", "")
-		if packageName == "" {
-			packageName = "main"
+		var err error
+		packageName, err = golang.InferPackageName(outputDir)
+		if err != nil {
+			// Fallback to sanitized directory name
+			packageName = golang.SanitizePackageName(filepath.Base(outputDir))
 		}
 	}
 
 	goCtx := &golang.Context{
 		GenerateContext: language.GenerateContext{
-			Suite:         suite,
+			Suite:         merged,
 			QueryAnalyzer: opts.analyzer,
 			Schema:        opts.schema,
 			OutputDir:     outputDir,
@@ -285,7 +376,7 @@ func generateFile(inputFile string, opts *generateOptions) error {
 
 	files, err := opts.goLang.GenerateWithContext(goCtx)
 	if err != nil {
-		return fmt.Errorf("generating code for %s: %w", inputFile, err)
+		return fmt.Errorf("generating code for %v: %w", inputFiles, err)
 	}
 
 	// Write output files
@@ -307,34 +398,12 @@ func generateFile(inputFile string, opts *generateOptions) error {
 	return nil
 }
 
-func collectScafFiles(args []string) ([]string, error) {
-	var files []string
-
-	for _, arg := range args {
-		info, err := os.Stat(arg)
-		if err != nil {
-			return nil, err
-		}
-
-		if info.IsDir() {
-			err := filepath.WalkDir(arg, func(path string, d fs.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-
-				if !d.IsDir() && strings.HasSuffix(path, ".scaf") {
-					files = append(files, path)
-				}
-
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			files = append(files, arg)
-		}
-	}
-
-	return files, nil
+// generateOptions holds configuration for file generation.
+type generateOptions struct {
+	goLang      *golang.GoLanguage
+	analyzer    scaf.QueryAnalyzer
+	binding     golang.Binding
+	schema      *analysis.TypeSchema
+	outputDir   string
+	packageName string
 }

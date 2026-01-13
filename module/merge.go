@@ -3,7 +3,6 @@ package module
 import (
 	"fmt"
 	"path/filepath"
-	"slices"
 
 	"github.com/rlch/scaf"
 )
@@ -181,50 +180,4 @@ func resolveImportPath(importPath, fileDir string) string {
 	}
 
 	return cleaned
-}
-
-// DeduplicateImports returns a deduplicated list of imports based on resolved paths.
-// This is useful for standalone import deduplication without full merge.
-func DeduplicateImports(imports []*scaf.Import, baseDir string) []*scaf.Import {
-	seen := make(map[string]bool)
-	var result []*scaf.Import
-
-	for _, imp := range imports {
-		resolved := resolveImportPath(imp.Path, baseDir)
-		if !seen[resolved] {
-			seen[resolved] = true
-			result = append(result, imp)
-		}
-	}
-
-	return result
-}
-
-// ValidateMerge checks if a set of files can be merged without errors.
-// Returns nil if merge would succeed, otherwise returns the first error.
-func ValidateMerge(inputs []ParsedFile) error {
-	_, _, err := MergePackageFiles(inputs)
-	return err
-}
-
-// CollectFunctionNames returns all function names across multiple files.
-// Returns duplicates as a map of name -> list of file indices where it appears.
-func CollectFunctionNames(files []*scaf.File) map[string][]int {
-	nameToFiles := make(map[string][]int)
-
-	for fileIdx, file := range files {
-		for _, fn := range file.Functions {
-			nameToFiles[fn.Name] = append(nameToFiles[fn.Name], fileIdx)
-		}
-	}
-
-	// Filter to only duplicates
-	result := make(map[string][]int)
-	for name, indices := range nameToFiles {
-		if len(indices) > 1 {
-			result[name] = slices.Clone(indices)
-		}
-	}
-
-	return result
 }

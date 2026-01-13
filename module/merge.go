@@ -26,22 +26,25 @@ func (e *MergeError) Error() string {
 	return fmt.Sprintf("%s at %s: %s", e.Code, e.Span.Start, e.Message)
 }
 
+// ParsedFile pairs a parsed scaf file with its source path.
+type ParsedFile struct {
+	File *scaf.File
+	Path string
+}
+
 // MergePackageFiles merges multiple parsed .scaf files from the same directory
 // into a single logical suite. It handles import deduplication, detects same-package
-// imports, and reports errors for duplicate functions or conflicting setup/teardown.
-//
-// Parameters:
-//   - files: parsed File structs to merge
-//   - siblingPaths: list of all .scaf file paths in the same directory (used to detect same-package imports)
+// imports (warns and skips them), and reports errors for duplicate functions or
+// conflicting setup/teardown.
 //
 // Returns the merged file, any warnings, and an error if merge fails.
-func MergePackageFiles(files []*scaf.File, siblingPaths []string) (*scaf.File, []MergeWarning, error) {
-	if len(files) == 0 {
+func MergePackageFiles(inputs []ParsedFile) (*scaf.File, []MergeWarning, error) {
+	if len(inputs) == 0 {
 		return &scaf.File{}, nil, nil
 	}
 
-	if len(files) == 1 {
-		return files[0], nil, nil
+	if len(inputs) == 1 {
+		return inputs[0].File, nil, nil
 	}
 
 	merged := &scaf.File{}
@@ -60,21 +63,17 @@ func MergePackageFiles(files []*scaf.File, siblingPaths []string) (*scaf.File, [
 	var setupFile, teardownFile int = -1, -1
 
 	// Normalize sibling paths to absolute for comparison
-	siblingSet := make(map[string]bool, len(siblingPaths))
-	for _, p := range siblingPaths {
-		abs, err := filepath.Abs(p)
+	siblingSet := make(map[string]bool, len(inputs))
+	for _, input := range inputs {
+		abs, err := filepath.Abs(input.Path)
 		if err == nil {
 			siblingSet[abs] = true
 		}
 	}
 
-	for fileIdx, file := range files {
-		// Get directory of current file for resolving relative imports
-		// We use the first file's position info to derive directory
-		fileDir := ""
-		if len(siblingPaths) > fileIdx {
-			fileDir = filepath.Dir(siblingPaths[fileIdx])
-		}
+	for fileIdx, input := range inputs {
+		file := input.File
+		fileDir := filepath.Dir(input.Path)
 
 		// Process imports
 		for _, imp := range file.Imports {
@@ -87,6 +86,7 @@ func MergePackageFiles(files []*scaf.File, siblingPaths []string) (*scaf.File, [
 					Code:    "same-package-import",
 					Message: fmt.Sprintf("import %q resolves to sibling file in same package", imp.Path),
 				})
+				continue // skip same-package imports entirely
 			}
 
 			// Deduplicate by resolved path
@@ -183,27 +183,6 @@ func resolveImportPath(importPath, fileDir string) string {
 	return cleaned
 }
 
-// MergePackageFilesWithPaths is a convenience function that also tracks
-// which original file each element came from.
-func MergePackageFilesWithPaths(files []*scaf.File, paths []string) (*scaf.File, []MergeWarning, error) {
-	if len(files) != len(paths) {
-		return nil, nil, fmt.Errorf("files and paths length mismatch: %d vs %d", len(files), len(paths))
-	}
-
-	// Collect all sibling paths (all paths in the same directory as first file)
-	var siblingPaths []string
-	if len(paths) > 0 {
-		dir := filepath.Dir(paths[0])
-		for _, p := range paths {
-			if filepath.Dir(p) == dir {
-				siblingPaths = append(siblingPaths, p)
-			}
-		}
-	}
-
-	return MergePackageFiles(files, siblingPaths)
-}
-
 // DeduplicateImports returns a deduplicated list of imports based on resolved paths.
 // This is useful for standalone import deduplication without full merge.
 func DeduplicateImports(imports []*scaf.Import, baseDir string) []*scaf.Import {
@@ -259,8 +238,8 @@ func FindSamePackageImports(imports []*scaf.Import, baseDir string, siblingPaths
 
 // ValidateMerge checks if a set of files can be merged without errors.
 // Returns nil if merge would succeed, otherwise returns the first error.
-func ValidateMerge(files []*scaf.File, siblingPaths []string) error {
-	_, _, err := MergePackageFiles(files, siblingPaths)
+func ValidateMerge(inputs []ParsedFile) error {
+	_, _, err := MergePackageFiles(inputs)
 	return err
 }
 

@@ -210,25 +210,6 @@ func runGenerate(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// loadConfigWithDir loads config and returns both the config and the directory it was found in.
-// Walks up from startDir to find .scaf.yaml.
-func loadConfigWithDir(startDir string) (*scaf.Config, string, error) {
-	dir := startDir
-	for {
-		cfg, err := scaf.LoadConfig(dir)
-		if err == nil {
-			return cfg, dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached root, no config found
-			return nil, startDir, fmt.Errorf("no .scaf.yaml found")
-		}
-		dir = parent
-	}
-}
-
 // discoverPackages finds all .scaf files and groups them by directory.
 // Uses gocodewalker for fast traversal with .gitignore support.
 // Returns map[directory][]scafFiles.
@@ -323,7 +304,7 @@ func cfgDialect(cfg *scaf.Config) string {
 // generateMergedFiles parses, merges, and generates code for a group of files.
 func generateMergedFiles(inputFiles []string, outputDir string, opts *generateOptions) error {
 	// Parse all files
-	var parsedFiles []*scaf.File
+	var inputs []module.ParsedFile
 	for _, inputFile := range inputFiles {
 		data, err := os.ReadFile(inputFile) //nolint:gosec // G304: file path from user input is expected
 		if err != nil {
@@ -334,11 +315,11 @@ func generateMergedFiles(inputFiles []string, outputDir string, opts *generateOp
 		if err != nil {
 			return fmt.Errorf("parsing %s: %w", inputFile, err)
 		}
-		parsedFiles = append(parsedFiles, suite)
+		inputs = append(inputs, module.ParsedFile{File: suite, Path: inputFile})
 	}
 
 	// Merge files from the same directory
-	merged, warnings, err := module.MergePackageFilesWithPaths(parsedFiles, inputFiles)
+	merged, warnings, err := module.MergePackageFiles(inputs)
 	if err != nil {
 		return fmt.Errorf("merging files: %w", err)
 	}

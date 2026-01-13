@@ -43,10 +43,6 @@ type AnalyzedFile struct {
 	// Used for parameter type checking against inferred types.
 	// May be nil if no schema is available.
 	Schema *TypeSchema
-
-	// SiblingPaths contains absolute paths of sibling .scaf files in the same directory.
-	// Used for same-package import detection. May be nil if not provided.
-	SiblingPaths []string
 }
 
 // SymbolTable holds all named definitions in a file.

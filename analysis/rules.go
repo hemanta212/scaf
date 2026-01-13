@@ -3,7 +3,6 @@ package analysis
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -54,7 +53,6 @@ func DefaultRules() []*Rule {
 		unusedImportRule,
 		unusedDeclaredParamRule, // Declared param not used in query body
 		emptyGroupRule,
-		samePackageImportRule,
 
 		// Hint-level checks.
 		emptyTestRule,
@@ -2068,65 +2066,4 @@ func checkItemReturnTypes(f *AnalyzedFile, items []*scaf.TestOrGroup, returnType
 			checkItemReturnTypes(f, item.Group.Items, returnTypes, queryName)
 		}
 	}
-}
-
-// ----------------------------------------------------------------------------
-// Rule: same-package-import
-// ----------------------------------------------------------------------------
-
-var samePackageImportRule = &Rule{
-	Name:     "same-package-import",
-	Doc:      "Warns when an import points to a sibling .scaf file in the same directory.",
-	Severity: SeverityWarning,
-	Run:      checkSamePackageImport,
-}
-
-func checkSamePackageImport(f *AnalyzedFile) {
-	if f.Suite == nil || len(f.SiblingPaths) == 0 {
-		return
-	}
-
-	// Build set of sibling absolute paths
-	siblingSet := make(map[string]bool)
-	for _, p := range f.SiblingPaths {
-		abs, err := filepath.Abs(p)
-		if err == nil {
-			siblingSet[abs] = true
-		}
-	}
-
-	fileDir := filepath.Dir(f.Path)
-
-	for _, imp := range f.Suite.Imports {
-		resolved := resolveImportPath(imp.Path, fileDir)
-		if siblingSet[resolved] {
-			f.Diagnostics = append(f.Diagnostics, Diagnostic{
-				Span:     imp.Span(),
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("import %q resolves to sibling file in same package", imp.Path),
-				Code:     "same-package-import",
-				Source:   "scaf",
-			})
-		}
-	}
-}
-
-// resolveImportPath resolves an import path relative to the file directory.
-func resolveImportPath(importPath, fileDir string) string {
-	if filepath.IsAbs(importPath) {
-		return filepath.Clean(importPath)
-	}
-	if fileDir == "" {
-		return importPath
-	}
-	resolved := filepath.Join(fileDir, importPath)
-	abs, err := filepath.Abs(resolved)
-	if err != nil {
-		return resolved
-	}
-	cleaned := filepath.Clean(abs)
-	if filepath.Ext(cleaned) == "" {
-		return cleaned + ".scaf"
-	}
-	return cleaned
 }

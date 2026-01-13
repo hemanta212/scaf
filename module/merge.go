@@ -75,22 +75,11 @@ func MergePackageFiles(inputs []ParsedFile) (*scaf.File, []MergeWarning, error) 
 		for _, imp := range file.Imports {
 			resolvedPath := resolveImportPath(imp.Path, fileDir)
 
-			// Check for same-package import
 			if siblingSet[resolvedPath] {
-				warnings = append(warnings, MergeWarning{
-					Span:    imp.Span(),
-					Code:    "same-package-import",
-					Message: fmt.Sprintf("import %q resolves to sibling file in same package", imp.Path),
-				})
-				continue // skip same-package imports entirely
+				continue
 			}
 
-			// Deduplicate by resolved path
-			if existing, ok := importsByPath[resolvedPath]; ok {
-				// Already have this import, skip duplicate
-				// Use existing import (keep first occurrence)
-				_ = existing
-			} else {
+			if _, ok := importsByPath[resolvedPath]; !ok {
 				importsByPath[resolvedPath] = imp
 				merged.Imports = append(merged.Imports, imp)
 			}
